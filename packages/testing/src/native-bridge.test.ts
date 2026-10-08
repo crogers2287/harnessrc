@@ -7,8 +7,11 @@ import os from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { bridgeRequest } from '@harnessrc/adapters';
 import { eventually } from './helpers.ts';
+import { MockHarness } from './mock.ts';
 test('sole-writer Codex bridge uses native turn, streaming, approval response, and task correlation', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'native-'));
+  const herdr = new MockHarness();
+  await herdr.listen(path.join(dir, 'herdr.sock'), path.join(dir, 'mock.sock'));
   const binary = path.join(dir, 'codex-fixture');
   await writeFile(
     binary,
@@ -22,8 +25,8 @@ test('sole-writer Codex bridge uses native turn, streaming, approval response, a
       RC_BRIDGE_DIR: dir,
       RC_CODEX_BINARY: binary,
       RC_CODEX_SCHEMA_DIR: path.resolve('packages/testing/fixtures/codex-0.161.0'),
-      HERDR_SOCKET_PATH: '',
-      HERDR_PANE_ID: '',
+      HERDR_SOCKET_PATH: path.join(dir, 'herdr.sock'),
+      HERDR_PANE_ID: herdr.paneId,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -41,6 +44,11 @@ test('sole-writer Codex bridge uses native turn, streaming, approval response, a
         return false;
       }
     });
+    assert.equal(
+      herdr.sessionId,
+      'native-fixture',
+      'native bridge must bind its session through an accepted Herdr integration source',
+    );
     const taskId = randomUUID();
     const sent = await call('send', { taskId, prompt: 'Test approvals' });
     assert.equal(sent.correlation, 'turn-1');
@@ -64,6 +72,7 @@ test('sole-writer Codex bridge uses native turn, streaming, approval response, a
   } finally {
     child.kill('SIGTERM');
     await exited;
+    await herdr.close();
     await rm(dir, { recursive: true, force: true });
   }
 });

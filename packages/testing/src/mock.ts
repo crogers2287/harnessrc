@@ -106,6 +106,13 @@ export class MockHarness {
     }
   }
   herdr(r: any) {
+    if (r.method === 'pane.report_agent_session') {
+      // Herdr ignores session identity from unrecognized integration sources even when it returns ok.
+      if (r.params.source === 'herdr:codex' && r.params.agent === 'codex')
+        this.sessionId = r.params.agent_session_id;
+      return { type: 'ok' };
+    }
+    if (r.method === 'pane.report_agent') return { type: 'ok' };
     if (r.method === 'session.snapshot')
       return {
         type: 'session_snapshot',
