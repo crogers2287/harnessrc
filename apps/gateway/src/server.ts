@@ -11,19 +11,27 @@ import type { SessionView } from '@harnessrc/protocol';
 import { Auth, type Device } from './auth.ts';
 import { Runtime } from './runtime.ts';
 import { startHookServer } from './hook-server.ts';
+import { TailnetAuth, type TailnetNode } from './tailnet.ts';
 import type { Config } from './config.ts';
 declare module 'fastify' {
   interface FastifyRequest {
     device: Device;
+    tailnetNode?: TailnetNode;
   }
 }
 export async function createGateway(
   config: Config,
-  options: { startRuntime?: boolean; hook?: boolean; store?: Store } = {},
+  options: {
+    startRuntime?: boolean;
+    hook?: boolean;
+    store?: Store;
+    tailnetLookup?: (ip: string) => Promise<TailnetNode>;
+  } = {},
 ) {
   mkdirSync(config.dataDir, { recursive: true, mode: 0o700 });
   const store = options.store ?? new Store(path.join(config.dataDir, 'gateway.db'));
   const runtime = new Runtime(store, config);
+  const tailnet = new TailnetAuth(options.tailnetLookup);
   const auth = new Auth(store, config.dataDir);
   const app = Fastify({ logger: false, bodyLimit: 256 * 1024, trustProxy: false });
   await app.register(cookie);
@@ -51,20 +59,37 @@ export async function createGateway(
       .header('Referrer-Policy', 'no-referrer')
       .header(
         'Content-Security-Policy',
-        "default-src 'self'; connect-src 'self' ws: wss:; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+        `default-src 'self'; connect-src 'self' ws: wss: ${config.tailnet?.endpoint ?? ''}; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'`,
       );
     const url = req.url.split('?')[0];
     if (!url.startsWith('/api/') && url !== '/ws') return;
     reply.header('Cache-Control', 'no-store');
-    if (req.headers.origin && req.headers.origin !== config.origin)
+    const origins = [
+      config.origin,
+      ...(config.tailnet ? [new URL(config.tailnet.endpoint).origin] : []),
+    ];
+    if (req.headers.origin && !origins.includes(req.headers.origin))
       return reply.code(403).send({ error: 'Origin not allowed' });
-    if (url === '/ws' && req.headers.origin !== config.origin)
+    if (url === '/ws' && !origins.includes(req.headers.origin ?? ''))
       return reply.code(403).send({ error: 'WebSocket origin required' });
+    if (config.tailnet && req.headers.origin && origins.includes(req.headers.origin)) {
+      reply
+        .header('Access-Control-Allow-Origin', req.headers.origin)
+        .header('Vary', 'Origin')
+        .header('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS')
+        .header('Access-Control-Allow-Headers', 'Content-Type, X-RC-Request')
+        .header('Access-Control-Allow-Private-Network', 'true');
+      if (req.method === 'OPTIONS') return reply.code(204).send();
+    }
+    if (url === '/api/connection') return;
     if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && req.headers['x-rc-request'] !== '1')
       return reply.code(403).send({ error: 'CSRF request header required' });
     if (['/api/auth/pair', '/api/auth/refresh'].includes(url)) return;
     try {
-      req.device = auth.authenticate(req.cookies.rc_access);
+      req.tailnetNode = config.tailnet ? await tailnet.identify(req.raw) : undefined;
+      req.device = req.tailnetNode
+        ? auth.tailnetDevice(req.tailnetNode)
+        : auth.authenticate(req.cookies.rc_access);
     } catch {
       return reply.code(401).send({ error: 'Authentication required or expired' });
     }
@@ -101,6 +126,7 @@ export async function createGateway(
         pendingCount: store.interactions(s.id).filter((i) => i.status === 'pending').length,
         queuedCount: store.tasks(s.id).filter((t) => t.status === 'pending').length,
       }));
+  app.get('/api/connection', async () => ({ tailnetEndpoint: config.tailnet?.endpoint ?? null }));
   app.get('/health', async () => ({ ok: true }));
   app.post(
     '/api/auth/pair',
@@ -257,7 +283,9 @@ export async function createGateway(
     let timer: NodeJS.Timeout | undefined;
     const push = () => {
       try {
-        const device = auth.authenticate(token);
+        const device = req.tailnetNode
+          ? auth.tailnetDevice(req.tailnetNode)
+          : auth.authenticate(token);
         if (socket.readyState === 1)
           socket.send(JSON.stringify({ type: 'invalidate', sessions: sessionViews(device) }));
       } catch {

@@ -21,6 +21,15 @@ export const configSchema = z.object({
       omp: path.join(home, '.omp/agent/sessions'),
       hermes: path.join(home, '.hermes/state.db'),
     }),
+  tailnet: z
+    .object({
+      endpoint: z
+        .string()
+        .url()
+        .refine((value) => new URL(value).protocol === 'https:', 'Tailnet endpoint requires HTTPS'),
+      port: z.number().int().min(1).max(65535),
+    })
+    .optional(),
   bridges: z
     .array(
       z.object({

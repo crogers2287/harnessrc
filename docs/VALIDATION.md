@@ -30,3 +30,9 @@ Diagnostics print version, available required methods, private socket ownership 
 5. Test Android Chrome and iOS Safari/PWA installation, software keyboard, safe areas, focus, text scaling and foreground notifications. Closed-app native push is not implemented.
 
 CLI chat and queue transport is implemented; complete native question/approval parity remains limited as documented in CAPABILITIES.md. Mock-backed Phase 1 and the supported native bridge pathway are executable now; live interactive parity must not be inferred from fixture results.
+
+## Fred validation, October 8, 2026
+
+A normal Claude Code CLI was started in an additional Herdr tab, not a native gateway bridge. Discovery found its existing native identity and title “Relay CLI validation.” The staged gateway submitted three harmless messages through `agent.prompt`. All three reached that same process and completed serially according to its native JSONL `end_turn` events. Existing user panes were left running. This verifies actual existing-CLI chat and queue dispatch, not universal native question parity.
+
+The CWD test covers a foreground MCP helper in a different directory: discovery selects the coding-agent process's directory instead. The tailnet authentication contract tests verify key-free private HTTP/WebSocket access, rejection of forged public headers and unknown peers, CSRF/origin enforcement, and device revocation.

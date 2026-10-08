@@ -7,18 +7,35 @@ export class ApiError extends Error {
     super(message);
   }
 }
+let transportOrigin = '';
+export async function selectTransport() {
+  try {
+    const config = await fetch('/api/connection', { signal: AbortSignal.timeout(3000) }).then((r) =>
+      r.json(),
+    );
+    if (!config.tailnetEndpoint) return;
+    const origin = new URL(config.tailnetEndpoint).origin;
+    const response = await fetch(origin + '/api/auth/me', {
+      credentials: 'omit',
+      signal: AbortSignal.timeout(4000),
+    });
+    if (response.ok) transportOrigin = origin;
+  } catch {
+    /* Outside the tailnet, the ordinary paired transport remains available. */
+  }
+}
 export async function api<T = any>(url: string, init: RequestInit = {}): Promise<T> {
   const send = () =>
-    fetch(url, {
+    fetch(transportOrigin + url, {
       ...init,
-      credentials: 'same-origin',
+      credentials: transportOrigin ? 'omit' : 'same-origin',
       headers: { 'Content-Type': 'application/json', 'X-RC-Request': '1', ...init.headers },
     });
   let response = await send();
   if (response.status === 401 && !['/api/auth/pair', '/api/auth/refresh'].includes(url)) {
-    const refresh = await fetch('/api/auth/refresh', {
+    const refresh = await fetch(transportOrigin + '/api/auth/refresh', {
       method: 'POST',
-      credentials: 'same-origin',
+      credentials: transportOrigin ? 'omit' : 'same-origin',
       headers: { 'X-RC-Request': '1' },
     });
     if (refresh.ok) response = await send();
@@ -55,7 +72,9 @@ export class Connection {
     this.state('reconnecting');
     if (!navigator.onLine) return;
     this.socket = new WebSocket(
-      `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws`,
+      transportOrigin
+        ? transportOrigin.replace('https:', 'wss:') + '/ws'
+        : `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws`,
     );
     this.socket.onopen = () => {
       this.attempt = 0;

@@ -73,7 +73,7 @@ export class Store extends EventEmitter {
     const out = { ...JSON.parse(saved.body as string), sequence: Number(saved.sequence) } as Event;
     if (r.changes) {
       const s = this.session(session.id);
-      s.lastActivity = src.timestamp;
+      if (Date.parse(src.timestamp) > Date.parse(s.lastActivity)) s.lastActivity = src.timestamp;
       if (src.kind === 'assistant.message') s.preview = String(out.data.text ?? '').slice(0, 180);
       this.saveSession(s);
       this.emit('event', out);

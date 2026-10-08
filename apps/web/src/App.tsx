@@ -35,6 +35,11 @@ const agentLabel = (harness: string) =>
   ({ claude: 'Claude Code', codex: 'Codex', hermes: 'Hermes', opencode: 'OpenCode', omp: 'OMP' })[
     harness
   ] ?? harness;
+const previewText = (text: string) =>
+  text
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/[*_`#]/g, '')
+    .trim();
 const sessionLabel = (s: SessionView) => s.sessionName || s.tabName || s.project;
 const scrollPositions = new Map<string, number>();
 const drafts = new Map<string, string>();
@@ -217,7 +222,7 @@ export function App() {
                         {s.project}
                         {s.paneName ? ` · ${s.paneName}` : ''}
                       </div>
-                      <p>{s.preview || s.diagnostic || 'Waiting for conversation'}</p>
+                      <p>{previewText(s.preview) || s.diagnostic || 'Waiting for conversation'}</p>
                       <div className="row-bottom">
                         <Status status={s.status} />
                         {s.pendingCount > 0 && (

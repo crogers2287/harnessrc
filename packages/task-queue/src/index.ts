@@ -19,6 +19,15 @@ export class TaskQueue {
     const value = taskInputSchema.parse(input);
     const s = this.store.session(sessionId);
     if (!s.capabilities.queueTask) throw new Error('Queue control is unavailable for this session');
+    if (value.attachments.length && !s.capabilities.attachFiles)
+      throw new Error('Attachments are unavailable for this session');
+    if (
+      s.ownership === 'herdr-cli' &&
+      [...value.prompt].some(
+        (c) => (c.charCodeAt(0) < 32 && !['\t', '\n', '\r'].includes(c)) || c.charCodeAt(0) === 127,
+      )
+    )
+      throw new Error('CLI messages cannot contain terminal control characters');
     return this.store.transaction(() => {
       const existing = this.store
         .tasks(sessionId)

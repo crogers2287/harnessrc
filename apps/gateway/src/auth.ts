@@ -42,6 +42,19 @@ export class Auth {
       return this.issue(id);
     });
   }
+  tailnetDevice(node: { id: string; name: string }): Device {
+    const id = `tailscale:${node.id}`;
+    let row = this.store.db.prepare('SELECT id,name,admin,revoked FROM devices WHERE id=?').get(id);
+    if (!row) {
+      this.store.db
+        .prepare('INSERT INTO devices VALUES(?,?,?,?,?,?)')
+        .run(id, node.name, hash(randomUUID()), 1, 0, new Date().toISOString());
+      this.store.audit(id, 'device.tailnet', null, { name: node.name });
+      row = this.store.db.prepare('SELECT id,name,admin,revoked FROM devices WHERE id=?').get(id);
+    }
+    if (row!.revoked) throw new Error('Tailnet device revoked');
+    return row as unknown as Device;
+  }
   issue(deviceId: string) {
     const access = randomBytes(32).toString('base64url');
     const refresh = randomBytes(32).toString('base64url');

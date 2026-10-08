@@ -10,6 +10,7 @@ async function pair(page: any) {
     /* First device in isolated fixture. */
   }
   await page.goto('/');
+  await page.getByRole('heading', { name: /^(Connect to Relay|Sessions)$/ }).waitFor();
   if (await page.getByRole('heading', { name: 'Connect to Relay' }).isVisible()) {
     await page.getByLabel('Device name').fill('Browser test');
     await page

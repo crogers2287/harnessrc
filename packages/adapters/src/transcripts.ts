@@ -189,7 +189,17 @@ export class JsonlAdapter implements Adapter {
     private harness: 'claude' | 'codex' | 'omp',
   ) {}
   async read(session: Session): Promise<SourceEvent[]> {
-    const file = await resolveTranscript(session, this.root);
+    let file = this.cursors.get(session.id)?.file;
+    if (file) {
+      try {
+        if ((await realpath(file)) !== file)
+          throw new Error('Cached transcript path became a symlink');
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') file = undefined;
+        else throw error;
+      }
+    }
+    file ??= await resolveTranscript(session, this.root);
     const s = await stat(file);
     let c = this.cursors.get(session.id);
     if (!c || c.file !== file || c.inode !== s.ino || s.size < c.offset)

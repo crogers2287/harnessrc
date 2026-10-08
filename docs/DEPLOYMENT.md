@@ -69,3 +69,18 @@ RC_CONFIG=~/.config/relay/config.json npm exec -- tsx scripts/rc.ts status
 Offline host: verify socket path, owner and permissions. No transcript: verify native ID and matching allowlisted root. Control disabled: check adapter capabilities, live process identity, bridge registration and device grant. Pending interaction expired: answer via the original harness; never reuse a stale card. Repeated authentication failure: match browser origin/HTTPS and Secure cookie configuration. Blank assets after an upgrade: rebuild and reload the PWA. Uncertain queue entry: inspect native correlation; it intentionally blocks subsequent dispatch.
 
 Back up SQLite with its supported online backup mechanism or stop the gateway first and preserve the database/WAL consistently. Include bridge state separately. Protect backups with private permissions. Stop only the gateway for upgrades; Herdr agents stay running. Retain config and state, replace code/assets, run diagnostics, then restart the service.
+
+## Key-free access from the tailnet
+
+Configure the optional `tailnet` setting with a distinct HTTPS Tailscale Serve endpoint and loopback listener port:
+
+```json
+"tailnet": {
+  "endpoint": "https://fred.taile5e8a3.ts.net:11543",
+  "port": 4081
+}
+```
+
+Run `tailscale serve --bg --https=11543 --yes http://127.0.0.1:4081`. Keep this separate from the public NPM upstream on port 4080/11443. Do not enable Funnel or point a public reverse proxy at the private listener. That listener trusts the local Tailscale Serve transport; other local host users must be trusted. It uses the actual peer IP that Serve overwrites into X-Forwarded-For and validates it through `tailscale whois`. A public request to the ordinary gateway cannot authenticate by supplying Tailscale headers.
+
+The web app at the public hostname probes this private HTTPS endpoint and uses it for HTTP and WebSocket traffic when reachable and verified. No pairing key or browser credential storage is needed on the tailnet. Outside the tailnet, it retains the ordinary pairing flow. MagicDNS must resolve the private endpoint; browser local-network permission may be necessary. Device revocation still applies to automatically registered tailnet devices. All verified tailnet nodes receive administrator/control permissions, as requested for this deployment. Tailnet ACLs govern who can reach the private Serve endpoint.

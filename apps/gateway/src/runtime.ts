@@ -105,6 +105,12 @@ export class Runtime extends EventEmitter {
         try {
           const { process_info } = await client.request('pane.process_info', { pane_id: s.paneId });
           s.processIdentity = processIdentity(process_info);
+          const foregroundOwner =
+            process_info.foreground_processes?.find((p: any) => p.name === s.harness) ??
+            process_info.foreground_processes?.find(
+              (p: any) => p.pid === process_info.foreground_process_group_id,
+            );
+          s.cwd = foregroundOwner?.cwd || a.cwd || a.foreground_cwd || '';
           s.generation = createHash('sha256')
             .update(`${s.generation}:${s.processIdentity}`)
             .digest('hex');

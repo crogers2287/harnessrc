@@ -135,6 +135,20 @@ test('native session titles and CWD survive discovery', async () => {
       terminal_title_stripped: 'Other title',
       foreground_cwd: '/work/nested-project',
     });
+    const originalHerdr = f.mock.herdr.bind(f.mock);
+    f.mock.herdr = (request): any =>
+      request.method === 'pane.process_info'
+        ? {
+            process_info: {
+              shell_pid: 1234,
+              foreground_process_group_id: 5678,
+              foreground_processes: [
+                { pid: 20, name: 'bun', cwd: '/plugins/helper' },
+                { pid: 5678, name: 'codex', cwd: '/work/nested-project' },
+              ],
+            },
+          }
+        : originalHerdr(request);
     await f.gateway.runtime.refresh('test');
     assert.equal(f.session.sessionName, 'API refactor');
     assert.equal(f.session.cwd, '/work/nested-project');

@@ -12,13 +12,22 @@ export async function eventually(fn: () => boolean | Promise<boolean>, timeout =
   }
   throw new Error('Condition did not become true before deadline');
 }
-export async function fixture(options: { harness?: string; startRuntime?: boolean } = {}) {
+export async function fixture(
+  options: {
+    harness?: string;
+    startRuntime?: boolean;
+    tailnetLookup?: (ip: string) => Promise<{ id: string; name: string }>;
+  } = {},
+) {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'relay-'));
   const mock = new MockHarness();
   if (options.harness) mock.harness = options.harness;
   await mock.listen(path.join(dir, 'herdr.sock'), path.join(dir, 'native.sock'));
   const config = configSchema.parse({
     dataDir: dir,
+    tailnet: options.tailnetLookup
+      ? { endpoint: 'https://private.example.test', port: 49001 }
+      : undefined,
     origin: 'http://localhost:4080',
     hosts: [{ id: 'test', name: 'Test host', socket: path.join(dir, 'herdr.sock') }],
     bridges:
@@ -34,7 +43,10 @@ export async function fixture(options: { harness?: string; startRuntime?: boolea
           ],
     transcripts: { claude: dir, codex: dir, omp: dir, hermes: path.join(dir, 'hermes.db') },
   });
-  let gateway = await createGateway(config, { startRuntime: options.startRuntime !== false });
+  let gateway = await createGateway(config, {
+    startRuntime: options.startRuntime !== false,
+    tailnetLookup: options.tailnetLookup,
+  });
   if (options.startRuntime === false) {
     gateway.runtime.clients.get('test')!.host.connected = true;
     await gateway.runtime.refresh('test');
