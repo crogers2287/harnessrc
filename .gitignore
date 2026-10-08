@@ -1,0 +1,9 @@
+node_modules/
+apps/web/dist/
+.data/
+.env
+*.db*
+*.sock
+artifacts/
+test-results/
+playwright-report/

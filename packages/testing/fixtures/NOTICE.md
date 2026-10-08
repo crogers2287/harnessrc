@@ -1,0 +1,1 @@
+Herdr schema generated with herdr 0.8.0 api schema --json; Apache-2.0, Herdr contributors. Codex schemas generated with codex 0.161.0 app-server generate-json-schema; Apache-2.0, OpenAI contributors. No application source reused.
