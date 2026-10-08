@@ -55,7 +55,11 @@ test('mobile chat: native approval, serial queued work, reconnect, and settings'
   await page.screenshot({ path: 'docs/screenshots/queue-mobile.png' });
   await page.getByRole('button', { name: 'Back to sessions' }).click();
   await page.getByRole('button', { name: 'Allow once', exact: true }).click();
-  await expect(page.getByText(/Follow-up saved|Message saved/)).toBeVisible();
+  await expect(
+    page.getByText(
+      /Instruction queued|Sent\. Your agent|Last instruction completed|Sending to your agent/,
+    ),
+  ).toBeVisible();
   await page.context().setOffline(true);
   await expect(page.getByText('Reconnecting. Your agent keeps running.')).toBeVisible({
     timeout: 15000,

@@ -430,6 +430,7 @@ function Conversation({
   const attachments = useAttachments(session.id);
   const [mode, setMode] = useState('queue');
   const [notice, setNotice] = useState('');
+  const [receiptId, setReceiptId] = useState<string>();
   const [atBottom, setAtBottom] = useState(true);
   const scroll = useRef<HTMLDivElement>(null);
   const restored = useRef(false);
@@ -495,6 +496,7 @@ function Conversation({
             }),
           }),
     onSuccess: (_result, submitted) => {
+      setReceiptId(_result?.task?.id);
       setDraft((current) => (current === submitted.prompt ? '' : current));
       attachments.clear(submitted.attachments);
       submission.current = undefined;
@@ -531,6 +533,18 @@ function Conversation({
     send.mutate(submission.current);
   };
   const pending = detail.data?.interactions.filter((i) => i.status === 'pending') ?? [];
+  const receipt = detail.data?.tasks.find((t) => t.id === receiptId);
+  const receiptStatus = receipt
+    ? {
+        pending: 'Instruction queued. It will run when your agent is ready.',
+        dispatching: 'Sending to your agent…',
+        running: 'Sent. Your agent is working.',
+        completed: 'Last instruction completed.',
+        failed: 'Instruction failed. Open the queue for details.',
+        cancelled: 'Instruction cancelled.',
+        uncertain: 'Delivery uncertain. Check the queue before retrying.',
+      }[receipt.status]
+    : undefined;
   const loadOlder = async () => {
     if (loadingMore) return;
     setLoadingMore(true);
@@ -840,7 +854,8 @@ function Conversation({
           </p>
         )}
         <p className="composer-footer" role="status">
-          {notice ||
+          {receiptStatus ||
+            notice ||
             (session.status === 'working'
               ? 'Follow-ups wait until this turn finishes.'
               : 'Messages go to your existing agent session.')}
