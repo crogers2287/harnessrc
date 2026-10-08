@@ -1,0 +1,19 @@
+import React from 'react';
+import { createRoot } from 'react-dom/client';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { App } from './App.tsx';
+import './style.css';
+const savedTheme = localStorage.getItem('relay-theme') ?? 'system';
+document.documentElement.dataset.theme = savedTheme;
+const client = new QueryClient({
+  defaultOptions: { queries: { retry: false, refetchOnWindowFocus: true } },
+});
+createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <QueryClientProvider client={client}>
+      <App />
+    </QueryClientProvider>
+  </React.StrictMode>,
+);
+if ('serviceWorker' in navigator)
+  window.addEventListener('load', () => void navigator.serviceWorker.register('/sw.js'));
