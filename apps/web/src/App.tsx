@@ -24,7 +24,15 @@ import {
   X,
   Pause,
   Play,
+  Copy,
+  Download,
 } from 'lucide-react';
+import {
+  AttachmentPicker,
+  AttachmentTray,
+  useAttachments,
+  SentAttachment,
+} from './attachments.tsx';
 import { api, Connection } from '@harnessrc/client-sdk';
 import type { SessionView, Event, Interaction, Task } from '@harnessrc/protocol';
 import { Status, IconButton, Empty } from '@harnessrc/ui';
@@ -43,6 +51,13 @@ const previewText = (text: string) =>
 const sessionLabel = (s: SessionView) => s.sessionName || s.tabName || s.project;
 const scrollPositions = new Map<string, number>();
 const drafts = new Map<string, string>();
+function restoreDraft(id: string) {
+  try {
+    return drafts.get(id) ?? sessionStorage.getItem(`relay-draft:${id}`) ?? '';
+  } catch {
+    return drafts.get(id) ?? '';
+  }
+}
 function when(value: string) {
   const ms = Date.now() - Date.parse(value);
   if (ms < 60000) return 'Just now';
@@ -128,19 +143,16 @@ export function App() {
             <h1>Relay</h1>
             <span>Your agent workspace</span>
           </div>
-          <IconButton label="Settings" onClick={() => navigate({ view: 'settings' })}>
-            <Settings size={21} />
-          </IconButton>
         </header>
         <div className="inbox-heading">
           <h2>Sessions</h2>
-          <span className="count">{sessions.filter((s) => s.status !== 'ended').length}</span>
+          <span className="count">{shown.length}</span>
           <span className="host-health">
             <span
               className={connection === 'connected' ? 'online' : 'offline'}
               aria-hidden="true"
             />
-            {connection === 'connected' ? 'Connected' : 'Reconnecting'}
+            {connection === 'connected' ? 'Live updates' : 'Reconnecting'}
           </span>
         </div>
         <label className="search">
@@ -153,34 +165,37 @@ export function App() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </label>
-        <div className="filters" aria-label="Session filters">
-          {[
-            ['all', 'All'],
-            ['working', 'Working'],
-            ['attention', 'Needs input'],
-          ].map(([key, label]) => (
-            <button key={key} aria-pressed={filter === key} onClick={() => setFilter(key)}>
-              {label}
-            </button>
-          ))}
+        <div className="inbox-filters">
+          <label>
+            <span className="sr-only">Filter by status</span>
+            <select
+              aria-label="Filter by status"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+            >
+              <option value="all">All activity</option>
+              <option value="working">Working</option>
+              <option value="attention">Needs input</option>
+            </select>
+          </label>
+          <label className="agent-filter">
+            <span className="sr-only">Agent</span>
+            <select
+              aria-label="Filter by agent"
+              value={agentFilter}
+              onChange={(e) => setAgentFilter(e.target.value)}
+            >
+              <option value="all">All agents</option>
+              {[...new Set(sessions.filter((s) => s.status !== 'ended').map((s) => s.harness))]
+                .sort()
+                .map((h) => (
+                  <option key={h} value={h}>
+                    {agentLabel(h)}
+                  </option>
+                ))}
+            </select>
+          </label>
         </div>
-        <label className="agent-filter">
-          Agent
-          <select
-            aria-label="Filter by agent"
-            value={agentFilter}
-            onChange={(e) => setAgentFilter(e.target.value)}
-          >
-            <option value="all">All agents</option>
-            {[...new Set(sessions.filter((s) => s.status !== 'ended').map((s) => s.harness))]
-              .sort()
-              .map((h) => (
-                <option key={h} value={h}>
-                  {agentLabel(h)}
-                </option>
-              ))}
-          </select>
-        </label>
         <div className="session-list">
           {[...new Set(shown.map((s) => s.harness))].sort().map((harness) => (
             <section
@@ -210,7 +225,6 @@ export function App() {
                     <div className="session-summary">
                       <div className="row-title">
                         <strong>{sessionLabel(s)}</strong>
-                        <time dateTime={s.lastActivity}>{when(s.lastActivity)}</time>
                       </div>
                       <div className="session-meta">
                         {agentLabel(s.harness)} <span>on {s.hostId}</span>
@@ -218,13 +232,16 @@ export function App() {
                       <div className="session-cwd" title={s.cwd}>
                         <span>CWD</span> <code>{s.cwd || 'Not reported'}</code>
                       </div>
-                      <div className="session-location">
-                        {s.project}
-                        {s.paneName ? ` · ${s.paneName}` : ''}
-                      </div>
-                      <p>{previewText(s.preview) || s.diagnostic || 'Waiting for conversation'}</p>
+
+                      <p>
+                        {previewText(s.preview) ||
+                          (s.capabilities.sendMessage
+                            ? 'Start a conversation'
+                            : 'Chat connection needs attention')}
+                      </p>
                       <div className="row-bottom">
                         <Status status={s.status} />
+                        <time dateTime={s.lastActivity}>{when(s.lastActivity)}</time>
                         {s.pendingCount > 0 && (
                           <span className="attention-count">
                             <CircleHelp size={14} aria-hidden="true" />
@@ -409,13 +426,16 @@ function Conversation({
   const [history, setHistory] = useState<Event[]>([]);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [draft, setDraft] = useState(drafts.get(session.id) ?? '');
+  const [draft, setDraft] = useState(restoreDraft(session.id));
+  const attachments = useAttachments(session.id);
   const [mode, setMode] = useState('queue');
   const [notice, setNotice] = useState('');
   const [atBottom, setAtBottom] = useState(true);
   const scroll = useRef<HTMLDivElement>(null);
   const restored = useRef(false);
-  const submission = useRef<{ prompt: string; key: string } | undefined>(undefined);
+  const submission = useRef<{ prompt: string; key: string; attachments: string[] } | undefined>(
+    undefined,
+  );
   const lastCount = useRef(0);
   const merged = useMemo(() => {
     const all = new Map([...history, ...(events.data?.events ?? [])].map((e) => [e.id, e]));
@@ -431,6 +451,11 @@ function Conversation({
   });
   useEffect(() => {
     drafts.set(session.id, draft);
+    try {
+      sessionStorage.setItem(`relay-draft:${session.id}`, draft);
+    } catch {
+      /* Storage unavailable. */
+    }
   }, [draft, session.id]);
   useEffect(() => {
     if (!events.data) return;
@@ -455,7 +480,7 @@ function Conversation({
     lastCount.current = visible.length;
   }, [visible.length, virtual, session.id, atBottom, route.view]);
   const send = useMutation({
-    mutationFn: (value: { prompt: string; key: string }) =>
+    mutationFn: (value: { prompt: string; key: string; attachments: string[] }) =>
       mode === 'steer'
         ? api(`/api/sessions/${session.id}/steer`, {
             method: 'POST',
@@ -463,10 +488,15 @@ function Conversation({
           })
         : api(`/api/sessions/${session.id}/tasks`, {
             method: 'POST',
-            body: JSON.stringify({ prompt: value.prompt, idempotencyKey: value.key }),
+            body: JSON.stringify({
+              prompt: value.prompt,
+              idempotencyKey: value.key,
+              attachments: value.attachments,
+            }),
           }),
     onSuccess: (_result, submitted) => {
       setDraft((current) => (current === submitted.prompt ? '' : current));
+      attachments.clear(submitted.attachments);
       submission.current = undefined;
       setNotice(
         mode === 'steer'
@@ -484,9 +514,20 @@ function Conversation({
   });
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (!draft.trim() || send.isPending) return;
-    if (submission.current?.prompt !== draft)
-      submission.current = { prompt: draft, key: crypto.randomUUID() };
+    if (
+      (!draft.trim() && !attachments.files.length) ||
+      send.isPending ||
+      attachments.busy ||
+      attachments.invalid
+    )
+      return;
+    const ids = attachments.files.flatMap((f) => (f.id ? [f.id] : []));
+    const prompt = draft || 'Please review the attached files.';
+    if (
+      submission.current?.prompt !== prompt ||
+      JSON.stringify(submission.current?.attachments) !== JSON.stringify(ids)
+    )
+      submission.current = { prompt, key: crypto.randomUUID(), attachments: ids };
     send.mutate(submission.current);
   };
   const pending = detail.data?.interactions.filter((i) => i.status === 'pending') ?? [];
@@ -542,6 +583,30 @@ function Conversation({
           {session.queuedCount > 0 && <span className="icon-badge">{session.queuedCount}</span>}
         </IconButton>
         <IconButton
+          label="Export loaded conversation"
+          onClick={() => {
+            const blob = new Blob(
+              [
+                merged
+                  .map(
+                    (e) =>
+                      `## ${e.kind} · ${e.timestamp}\n\n${String(e.data.text ?? JSON.stringify(e.data))}`,
+                  )
+                  .join('\n\n'),
+              ],
+              { type: 'text/markdown' },
+            );
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'conversation.md';
+            link.click();
+            URL.revokeObjectURL(url);
+          }}
+        >
+          <Download size={20} />
+        </IconButton>
+        <IconButton
           label="Session details"
           onClick={() => navigate({ session: session.id, view: 'details' })}
         >
@@ -582,9 +647,21 @@ function Conversation({
             {events.error.message}
           </p>
         )}
-        {visible.length === 0 && !events.isPending && (
-          <Empty title="Ready for your next instruction">
-            The conversation will appear here when the agent writes to its native session.
+        {visible.length === 0 && !events.isPending && !events.error && (
+          <Empty
+            title={
+              !session.capabilities.readConversation
+                ? 'Chat is not connected'
+                : session.status === 'working'
+                  ? 'Your agent is working'
+                  : 'Send your first message'
+            }
+          >
+            {!session.capabilities.readConversation
+              ? 'The agent is running, but Relay has not connected its conversation yet. Open session details for the connection issue.'
+              : session.status === 'working'
+                ? 'Waiting for conversation updates. You can queue your next instruction below.'
+                : 'Ask a question, describe a change, or attach a file to get started.'}
           </Empty>
         )}
         <div
@@ -638,6 +715,20 @@ function Conversation({
         </button>
       )}
       <div className="composer-area">
+        {!!detail.data?.tasks.some((t) => t.status === 'pending') && (
+          <button
+            type="button"
+            className="queue-peek"
+            onClick={() => navigate({ session: session.id, view: 'queue' })}
+          >
+            <ListTodo size={18} />
+            <span>
+              <strong>Queued next</strong>{' '}
+              {detail.data.tasks.find((t) => t.status === 'pending')?.prompt}
+            </span>
+            <ChevronRight size={18} />
+          </button>
+        )}
         {pending.length > 0 && (
           <p className="composer-hint attention-text">
             <CircleHelp size={16} aria-hidden="true" />
@@ -646,13 +737,35 @@ function Conversation({
           </p>
         )}
         {session.capabilities.queueTask ? (
-          <form className="composer" onSubmit={submit}>
+          <form
+            className="composer"
+            onSubmit={submit}
+            onDragOver={(e) => {
+              if (session.capabilities.attachFiles) e.preventDefault();
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              if (session.capabilities.attachFiles)
+                attachments.add(Array.from(e.dataTransfer.files));
+            }}
+            onPaste={(e) => {
+              if (session.capabilities.attachFiles && e.clipboardData.files.length) {
+                e.preventDefault();
+                attachments.add(Array.from(e.clipboardData.files));
+              }
+            }}
+          >
+            <AttachmentTray value={attachments} />
             <label className="sr-only" htmlFor="composer">
               Instruction
             </label>
             <textarea
               id="composer"
               rows={2}
+              onInput={(e) => {
+                e.currentTarget.style.height = 'auto';
+                e.currentTarget.style.height = `${Math.min(e.currentTarget.scrollHeight, 160)}px`;
+              }}
               placeholder={
                 session.status === 'working' || pending.length
                   ? 'What should happen next?'
@@ -665,6 +778,12 @@ function Conversation({
               }}
             />
             <div className="composer-controls">
+              {session.capabilities.attachFiles && (
+                <AttachmentPicker
+                  disabled={send.isPending || attachments.files.length >= 10 || mode === 'steer'}
+                  add={attachments.add}
+                />
+              )}
               <div className="composer-mode">
                 <Layers size={16} aria-hidden="true" />
                 <label className="sr-only" htmlFor="mode">
@@ -676,16 +795,18 @@ function Conversation({
                       ? 'Send message'
                       : 'Queue follow-up'}
                   </option>
-                  {session.capabilities.steerActiveTurn && session.status === 'working' && (
-                    <option value="steer">Steer active turn</option>
-                  )}
+                  {session.capabilities.steerActiveTurn &&
+                    session.status === 'working' &&
+                    !attachments.files.length && <option value="steer">Steer active turn</option>}
                 </select>
               </div>
               <button
                 className="send-button"
                 type="submit"
                 disabled={
-                  !draft.trim() ||
+                  (!draft.trim() && !attachments.files.length) ||
+                  attachments.busy ||
+                  attachments.invalid ||
                   send.isPending ||
                   !session.connected ||
                   connection !== 'connected'
@@ -719,7 +840,10 @@ function Conversation({
           </p>
         )}
         <p className="composer-footer" role="status">
-          {notice || 'Your agent runs independently of this connection.'}
+          {notice ||
+            (session.status === 'working'
+              ? 'Follow-ups wait until this turn finishes.'
+              : 'Messages go to your existing agent session.')}
         </p>
       </div>
     </>
@@ -732,6 +856,7 @@ function conversationItems(events: Event[]): Event[] {
   const deltas = new Map<unknown, Event>();
   const output: Event[] = [];
   for (const e of events) {
+    if (e.data.nativeMeta) continue;
     if (e.kind === 'assistant.delta') {
       const key = e.data.itemId;
       if (completed.has(key)) continue;
@@ -745,6 +870,10 @@ function conversationItems(events: Event[]): Event[] {
     } else if (
       ![
         'turn.started',
+        'turn.completed',
+        'task.queued',
+        'task.dispatched',
+        'task.completed',
         'connection.state',
         'agent.status',
         'question',
@@ -754,11 +883,39 @@ function conversationItems(events: Event[]): Event[] {
     )
       output.push(e);
   }
-  return output;
+  const grouped: Event[] = [];
+  for (const event of output) {
+    const previous = grouped[grouped.length - 1];
+    if (event.kind.startsWith('tool.')) {
+      if (previous?.data.activityGroup) (previous.data.activities as Event[]).push(event);
+      else grouped.push({ ...event, data: { activityGroup: true, activities: [event] } });
+    } else grouped.push(event);
+  }
+  return grouped;
 }
 function EventCard({ event }: { event: Event }) {
   const data = event.data;
   const text = String(data.text ?? '');
+  const [copied, setCopied] = useState(false);
+  if (data.activityGroup) {
+    const activities = data.activities as Event[];
+    const calls = activities.filter((e) => e.kind === 'tool.invocation');
+    const names = [...new Set(calls.map((e) => String(e.data.tool ?? 'Tool')))];
+    return (
+      <details className="activity-group">
+        <summary>
+          <ChevronRight size={16} aria-hidden="true" />
+          <span>
+            {calls.length || activities.length} {calls.length === 1 ? 'action' : 'actions'}
+            {names.length ? ` · ${names.slice(0, 3).join(', ')}` : ''}
+          </span>
+        </summary>
+        {activities.map((e) => (
+          <EventCard key={e.id} event={e} />
+        ))}
+      </details>
+    );
+  }
   if (['user.message', 'assistant.message', 'assistant.delta'].includes(event.kind))
     return (
       <article
@@ -770,6 +927,34 @@ function EventCard({ event }: { event: Event }) {
         </div>
         <div className="message-content">
           <Mark text={text} />
+          {Array.isArray(data.attachments) && (
+            <div className="sent-attachments">
+              {(data.attachments as { id: string; name: string; mime?: string }[]).map((file) => (
+                <SentAttachment key={file.id} sessionId={event.sessionId} file={file} />
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="message-actions">
+          <button
+            type="button"
+            aria-label="Copy message"
+            onClick={() =>
+              void navigator.clipboard.writeText(text).then(() => {
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+              })
+            }
+          >
+            <Copy size={15} />
+            {copied ? 'Copied' : 'Copy'}
+          </button>
+          <time dateTime={event.timestamp}>
+            {new Date(event.timestamp).toLocaleTimeString([], {
+              hour: 'numeric',
+              minute: '2-digit',
+            })}
+          </time>
         </div>
       </article>
     );

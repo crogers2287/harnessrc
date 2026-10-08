@@ -38,3 +38,7 @@ npm run package
 ![Mobile permission review](docs/screenshots/approval-mobile.png)
 
 Monorepo: `apps/web`, `apps/gateway`, `packages/{protocol,herdr,adapters,interaction-broker,task-queue,client-sdk,ui,storage,testing}`. No terminal emulator, terminal scraping, private Claude Remote Control API, external broker, or duplicated Herdr supervision.
+
+## Mobile chat and attachments
+
+The mobile-first composer supports files, photos/camera selection, upload progress, retries, removable previews and draft recovery. Sent images can be inspected and downloaded; messages can be copied. Tool activity is collapsed into readable groups. Set `hosts[].localFiles: true` for Fred or another host sharing the gateway filesystem. [Attachment setup](docs/ATTACHMENTS.md), [UI audit](docs/UI_AUDIT.md), and [live validation evidence](docs/VALIDATION.md) distinguish working features from outstanding native interaction gaps.

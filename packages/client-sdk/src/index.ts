@@ -29,7 +29,11 @@ export async function api<T = any>(url: string, init: RequestInit = {}): Promise
     fetch(transportOrigin + url, {
       ...init,
       credentials: transportOrigin ? 'omit' : 'same-origin',
-      headers: { 'Content-Type': 'application/json', 'X-RC-Request': '1', ...init.headers },
+      headers: {
+        ...(init.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+        'X-RC-Request': '1',
+        ...init.headers,
+      },
     });
   let response = await send();
   if (response.status === 401 && !['/api/auth/pair', '/api/auth/refresh'].includes(url)) {
@@ -111,4 +115,53 @@ export class Connection {
     clearTimeout(this.timer);
     this.socket?.close();
   }
+}
+
+/** Binary uploads with visible progress; the same authenticated transport as chat. */
+export function uploadFile(
+  sessionId: string,
+  file: File,
+  progress: (percent: number) => void,
+): Promise<{
+  attachment: { id: string; name: string; mime: string; size: number; createdAt: string };
+}> {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open(
+      'POST',
+      `${transportOrigin}/api/sessions/${sessionId}/attachments?${new URLSearchParams({ name: file.name, mime: file.type || 'application/octet-stream' })}`,
+    );
+    request.withCredentials = !transportOrigin;
+    request.setRequestHeader('Content-Type', 'application/octet-stream');
+    request.setRequestHeader('X-RC-Request', '1');
+    request.upload.onprogress = (event) => {
+      if (event.lengthComputable) progress(Math.round((event.loaded / event.total) * 100));
+    };
+    request.timeout = 120000;
+    request.onerror = request.ontimeout = () =>
+      reject(new Error('Upload interrupted. Retry this file.'));
+    request.onload = () => {
+      try {
+        const body = JSON.parse(request.responseText);
+        if (request.status < 200 || request.status >= 300)
+          reject(new ApiError(request.status, body.error ?? 'Upload failed'));
+        else resolve(body);
+      } catch {
+        reject(new Error('Upload failed. Retry this file.'));
+      }
+    };
+    request.send(file);
+  });
+}
+
+export async function downloadAttachment(sessionId: string, fileId: string): Promise<Blob> {
+  const url = `${transportOrigin}/api/sessions/${sessionId}/attachments/${fileId}`;
+  const send = () => fetch(url, { credentials: transportOrigin ? 'omit' : 'same-origin' });
+  let response = await send();
+  if (response.status === 401) {
+    await api('/api/auth/refresh', { method: 'POST' });
+    response = await send();
+  }
+  if (!response.ok) throw new Error('Attachment download failed');
+  return response.blob();
 }

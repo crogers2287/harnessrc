@@ -1,8 +1,8 @@
 # Validation evidence and Fred acceptance
 
-Local inspection found Herdr 0.8.0, protocol 19 and Codex CLI 0.161.0. The installed Herdr schema is checked into test fixtures; mock response contracts are validated with AJV. Installed Codex generates ClientRequest/ServerRequest schemas and the bridge detects supported methods. No real transcript or production agent prompt was read or sent during this build.
+Local inspection found Herdr 0.8.0, protocol 19 and Codex CLI 0.161.0. The installed Herdr schema is checked into test fixtures; mock response contracts are validated with AJV. Installed Codex generates ClientRequest/ServerRequest schemas and the bridge detects supported methods. Subsequent Fred checks read real structured transcripts and sent harmless instructions only to dedicated validation sessions. Codex has since updated to 0.162.0; its shared-daemon topology was inspected separately.
 
-Latest local result: **26/26 unit/integration tests and 2/2 browser tests passed**, TypeScript/lint/production build passed, pinned design-skill checks passed, and production npm audit reported zero vulnerabilities.
+Latest local result: **35/35 unit/integration tests and 4/4 browser tests passed**, TypeScript/lint/production build passed, pinned design-skill checks passed. No dependencies were added for the mobile attachment update.
 
 Run `npm run check` for TypeScript, lint, unit/integration contracts and production assets. Run `npm run test:e2e` after installing Playwright Chromium (or set `CHROMIUM_PATH` to an installed Chrome executable). Tests cover partial UTF-8 transcripts, rotation and symlink escapes; native dedup/redaction; queue CRUD/idempotency/order/recovery/uncertain delivery; exact pending questions/approvals/double submission/expiry/replacement; device authorization/rotation/revocation and WebSocket origin; a genuine Claude hook executable's documented output; and a real Codex bridge process against a credential-free JSON-RPC fixture.
 
@@ -21,7 +21,7 @@ npm run test:e2e
 
 Diagnostics print version, available required methods, private socket ownership and counts only. Treat the installed schema as authoritative if Fred differs. No undocumented API is required.
 
-## Manual live acceptance, still unverified
+## Remaining live acceptance
 
 1. Start an ordinary Claude/Codex CLI in Herdr. Pair the phone, verify automatic discovery, correct native ID, ordered structured history, and simultaneous original terminal usability. Send a harmless instruction from the composer and verify it appears in the original native transcript. Queue two follow-ups and verify native completion releases them in order.
 2. Install the Claude hook and trigger a real supported tool permission. Verify the exact pending card, allow/deny, original process continuation and terminal fallback when the gateway is unavailable. Generic Claude questions are outside this adapter's supported scope.
@@ -36,3 +36,13 @@ CLI chat and queue transport is implemented; complete native question/approval p
 A normal Claude Code CLI was started in an additional Herdr tab, not a native gateway bridge. Discovery found its existing native identity and title “Relay CLI validation.” The staged gateway submitted three harmless messages through `agent.prompt`. All three reached that same process and completed serially according to its native JSONL `end_turn` events. Existing user panes were left running. This verifies actual existing-CLI chat and queue dispatch, not universal native question parity.
 
 The CWD test covers a foreground MCP helper in a different directory: discovery selects the coding-agent process's directory instead. The tailnet authentication contract tests verify key-free private HTTP/WebSocket access, rejection of forged public headers and unknown peers, CSRF/origin enforcement, and device revocation.
+
+## Mobile attachments and UI audit, October 8, 2026
+
+A separate ordinary Claude CLI named “Relay file validation” was started under Herdr. The staged gateway uploaded a text file and a screenshot, sent both through the existing CLI via Herdr, and verified the native answers (`RELAY_ATTACHMENT_READ_OK` and the screenshot title `Atlas API`). Both final tests completed automatically from native transcript evidence, with uploaded attachment metadata attached to the chat event. No user agent was restarted. Two earlier fixture attempts were cancelled because the already-running validation CLI retained its old file-read permission matcher.
+
+Live image testing exposed Claude's native inline-image expansion: it rewrites the submitted prompt and emits an image-source companion. Transport-generated request receipts now survive that transformation; native meta companions are not shown as separate user turns. Multiline pasted-content envelopes are matched exactly. Read/Glob/Grep have been added to the Claude permission-hook configuration. A live mobile permission decision on those newly added tools remains unverified.
+
+The expanded suite passes 35 unit/integration tests and 4 browser tests. Mobile cases now include file/photo pickers, saved upload references, draft reload, remove/send, a 20-session inbox, missing native identity, and a keyboard-sized visual viewport. Screenshots include dense inbox, attachments, disconnected chat and unbound chat. Physical Android/iOS keyboard and camera checks remain outstanding.
+
+The selected unbound Codex CLI is a thin client connected to an already-running shared Codex app-server daemon. The CLI foreground PID and executing daemon PID differ. Standalone ancestor-based identity hooks cannot establish that binding. Integrating the existing daemon's native session identity is a separate requirement; do not launch a second app-server to attach to it or guess a thread from its title/CWD. Installed 0.162.0 CLI help and generated protocol were inspected; no daemon write operation was performed.

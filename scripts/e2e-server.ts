@@ -14,7 +14,9 @@ const config = configSchema.parse({
   dataDir: dir,
   port,
   origin: `http://localhost:${port}`,
-  hosts: [{ id: 'demo', name: 'Demo host', socket: path.join(dir, 'herdr.sock') }],
+  hosts: [
+    { id: 'demo', name: 'Demo host', localFiles: true, socket: path.join(dir, 'herdr.sock') },
+  ],
   bridges: [
     {
       hostId: 'demo',

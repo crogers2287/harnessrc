@@ -7,6 +7,13 @@ import { selectTransport } from '@harnessrc/client-sdk';
 
 const savedTheme = localStorage.getItem('relay-theme') ?? 'system';
 document.documentElement.dataset.theme = savedTheme;
+// Mobile browsers may resize only the visual viewport when the keyboard opens.
+const resizeViewport = () => {
+  if (window.visualViewport && window.visualViewport.scale === 1)
+    document.documentElement.style.setProperty('--app-height', `${window.visualViewport.height}px`);
+};
+window.visualViewport?.addEventListener('resize', resizeViewport);
+resizeViewport();
 const client = new QueryClient({
   defaultOptions: { queries: { retry: false, refetchOnWindowFocus: true } },
 });

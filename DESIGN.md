@@ -25,3 +25,7 @@ Phone navigation uses a session list and full conversation with browser history,
 Use safe-area inset padding, 100dvh with a 100vh fallback, scroll restoration, a jump-to-latest action, paginated/virtualized history, and content insets that keep controls clear of the composer. Approval cards show the exact action and never default to allow. Drafts remain in memory across screen changes and failed requests; auth credentials stay in HttpOnly cookies.
 
 Verification evidence belongs in docs/VALIDATION.md; do not confuse browser-emulated devices with physical-device testing.
+
+## Chat-first revision, 8 October 2026
+
+Phone inbox uses a Sessions header and a compact pair of activity/agent filters. The Relay brand remains in the desktop sidebar. Names may occupy two lines; CWD remains visible and timestamps share the status line. Tool activity is grouped; internal queue/dispatch/completion notices do not clutter chat. Queue contents have their own view and a composer preview while pending. Composer supports files, photos, camera capture, paste/drop, upload progress, retry/removal, reload-safe drafts and sent-image inspection. Visual viewport resizing keeps it reachable with the software keyboard; physical device verification remains outstanding. See docs/UI_AUDIT.md for evidence and remaining functional gaps.

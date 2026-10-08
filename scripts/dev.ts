@@ -10,7 +10,9 @@ writeFileSync(
     {
       dataDir: dir,
       origin: 'http://localhost:4080',
-      hosts: [{ id: 'demo', name: 'Demo host', socket: path.join(dir, 'herdr.sock') }],
+      hosts: [
+        { id: 'demo', name: 'Demo host', localFiles: true, socket: path.join(dir, 'herdr.sock') },
+      ],
       bridges: [
         {
           hostId: 'demo',
