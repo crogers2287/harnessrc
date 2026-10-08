@@ -25,6 +25,9 @@ export class Store extends EventEmitter {
     this.db.exec(
       readFileSync(new URL('../../../migrations/002-attachments.sql', import.meta.url), 'utf8'),
     );
+    this.db.exec(
+      readFileSync(new URL('../../../migrations/003-codex-links.sql', import.meta.url), 'utf8'),
+    );
   }
   transaction<T>(fn: () => T): T {
     this.db.exec('BEGIN IMMEDIATE');
@@ -78,8 +81,24 @@ export class Store extends EventEmitter {
       const s = this.session(session.id);
       if (Date.parse(src.timestamp) > Date.parse(s.lastActivity)) s.lastActivity = src.timestamp;
       if (src.kind === 'assistant.message') s.preview = String(out.data.text ?? '').slice(0, 180);
+      if (
+        typeof src.data.model === 'string' &&
+        src.data.model.length <= 160 &&
+        (!s.modelUpdatedAt || Date.parse(src.timestamp) >= Date.parse(s.modelUpdatedAt))
+      ) {
+        s.model = src.data.model;
+        s.modelUpdatedAt = src.timestamp;
+      }
       this.saveSession(s);
       this.emit('event', out);
+    }
+    if (!r.changes && typeof src.data.model === 'string' && src.data.model.length <= 160) {
+      const s = this.session(session.id);
+      if (!s.modelUpdatedAt || Date.parse(src.timestamp) > Date.parse(s.modelUpdatedAt)) {
+        s.model = src.data.model;
+        s.modelUpdatedAt = src.timestamp;
+        this.saveSession(s);
+      }
     }
     return out;
   }

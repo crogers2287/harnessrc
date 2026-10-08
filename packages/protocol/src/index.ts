@@ -63,6 +63,8 @@ export const sessionSchema = z.object({
   id: z.string(),
   hostId: z.string(),
   harness: z.string(),
+  model: z.string().max(160).optional(),
+  modelUpdatedAt: z.string().optional(),
   nativeSessionId: z.string(),
   nativeSessionKind: z.enum(['id', 'path']),
   terminalId: z.string(),

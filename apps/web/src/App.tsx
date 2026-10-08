@@ -114,6 +114,23 @@ export function App() {
     const current = sessions.find((s) => s.id === route.session);
     if (current) setRead((old) => ({ ...old, [current.id]: current.lastActivity }));
   }, [route.session, sessions]);
+  useEffect(() => {
+    const old = sessions.find((s) => s.id === route.session);
+    if (!old?.nativeSessionId.startsWith('unbound:') || old.status !== 'ended') return;
+    const bound = sessions.find(
+      (s) =>
+        s.hostId === old.hostId &&
+        s.terminalId === old.terminalId &&
+        s.connected &&
+        !s.nativeSessionId.startsWith('unbound:'),
+    );
+    if (!bound) return;
+    const next = { ...route, session: bound.id };
+    const url = new URL(window.location.href);
+    url.searchParams.set('session', bound.id);
+    window.history.replaceState({}, '', url);
+    setRoute(next);
+  }, [route, sessions]);
   useNotifications(sessions, !!auth.data);
   if (auth.isPending)
     return (
@@ -228,6 +245,9 @@ export function App() {
                       </div>
                       <div className="session-meta">
                         {agentLabel(s.harness)} <span>on {s.hostId}</span>
+                      </div>
+                      <div className="session-model" title="Last model reported by the harness">
+                        {s.model || 'Model unknown'}
                       </div>
                       <div className="session-cwd" title={s.cwd}>
                         <span>CWD</span> <code>{s.cwd || 'Not reported'}</code>
@@ -585,6 +605,9 @@ function Conversation({
             {agentLabel(session.harness)} on {session.hostId}
             <Status status={session.status} />
           </div>
+          <div className="session-model" title="Last model reported by the harness">
+            {session.model || 'Model unknown'}
+          </div>
           <div className="conversation-cwd" title={session.cwd}>
             <span>CWD</span> <code>{session.cwd || 'Not reported'}</code>
           </div>
@@ -856,9 +879,11 @@ function Conversation({
         <p className="composer-footer" role="status">
           {receiptStatus ||
             notice ||
-            (session.status === 'working'
-              ? 'Follow-ups wait until this turn finishes.'
-              : 'Messages go to your existing agent session.')}
+            (!session.capabilities.queueTask
+              ? 'Chat control is waiting for a verified connection.'
+              : session.status === 'working'
+                ? 'Follow-ups wait until this turn finishes.'
+                : 'Messages go to your existing agent session.')}
         </p>
       </div>
     </>
@@ -1359,6 +1384,7 @@ function SessionDetails({ session: s }: { session: SessionView }) {
       <dl className="details-list">
         {[
           ['Agent', s.harness],
+          ['Model', s.model || 'Model unknown'],
           ['Host', s.hostId],
           ['Workspace', s.workspaceId],
           ['Working directory', s.cwd],

@@ -84,3 +84,23 @@ Configure the optional `tailnet` setting with a distinct HTTPS Tailscale Serve e
 Run `tailscale serve --bg --https=11543 --yes http://127.0.0.1:4081`. Keep this separate from the public NPM upstream on port 4080/11443. Do not enable Funnel or point a public reverse proxy at the private listener. That listener trusts the local Tailscale Serve transport; other local host users must be trusted. It uses the actual peer IP that Serve overwrites into X-Forwarded-For and validates it through `tailscale whois`. A public request to the ordinary gateway cannot authenticate by supplying Tailscale headers.
 
 The web app at the public hostname probes this private HTTPS endpoint and uses it for HTTP and WebSocket traffic when reachable and verified. No pairing key or browser credential storage is needed on the tailnet. Outside the tailnet, it retains the ordinary pairing flow. MagicDNS must resolve the private endpoint; browser local-network permission may be necessary. Device revocation still applies to automatically registered tailnet devices. All verified tailnet nodes receive administrator/control permissions, as requested for this deployment. Tailnet ACLs govern who can reach the private Serve endpoint.
+
+## Existing Codex shared-daemon terminals
+
+For local Codex CLI clients connected to an existing shared daemon, add:
+
+```json
+"codexDaemons": [
+  {"hostId": "fred", "socket": "/tmp/codex-daemon-1000/EXISTING_CONTROL_SOCKET"}
+]
+```
+
+Use the actual running daemon's Unix socket (`codex app-server proxy --help` describes the control socket). It must be a socket owned by the gateway user with mode 0600. This feature never launches another app-server, resumes a thread, or claims approvals. Native `thread/loaded/list`, `thread/read`, and `thread/name/set` must be supported by the installed version.
+
+Relay chooses candidate named threads from the terminal's title, then **proves** the mapping by setting a random temporary native thread name and requiring exactly one matching title echo from Herdr's existing terminal. It restores the name before enabling control. Names alone and CWD are never identity proof. A SQLite journal restores interrupted probes after restart; a concurrent user rename wins. The original terminal remains interactive. You may briefly see “Relay link …” in its title during verification.
+
+Verification occurs on discovery, every 30 seconds, and immediately before each remote dispatch. Process changes, duplicate terminal echoes, missing native title updates, daemon errors, or thread switches fail closed. This requires named threads and a Codex TUI that forwards native name updates to its terminal title. Unsupported clients remain unbound. Conversations come from native structured transcripts; terminal output is not parsed.
+
+Herdr still performs `agent.prompt`. There is no atomic native-thread precondition in Herdr 0.8.0: a local thread switch in the small interval between the final proof and prompt submission remains a limitation. Lost or ambiguous delivery is never automatically repeated. Exact CLI question/approval routing remains separate work.
+
+The session list, chat header, and details show the last model reported by the native harness. Codex uses thread metadata and turn context; Claude uses assistant-response model IDs. A model selected locally but not yet reported by that harness cannot be inferred; it shows the last reported value or “Model unknown.”

@@ -1,3 +1,5 @@
+import { CodexLinks } from './codex-links.ts';
+import { CodexDaemon } from '../../../packages/adapters/src/codex-daemon.ts';
 import { EventEmitter } from 'node:events';
 import { createHash } from 'node:crypto';
 import { matchesTaskReceipt, capabilities, type Session, type Adapter } from '@harnessrc/protocol';
@@ -17,6 +19,7 @@ import { InteractionBroker } from '@harnessrc/interaction-broker';
 import type { Config } from './config.ts';
 export class Runtime extends EventEmitter {
   clients = new Map<string, HerdrClient>();
+  private codexLinks = new Map<string, CodexLinks>();
   adapters = new Map<string, Adapter>();
   queue: TaskQueue;
   attachments: Attachments;
@@ -48,6 +51,11 @@ export class Runtime extends EventEmitter {
         this.emit('change');
       });
     }
+    for (const daemon of config.codexDaemons)
+      this.codexLinks.set(
+        daemon.hostId,
+        new CodexLinks(daemon.hostId, store, new CodexDaemon(daemon.socket)),
+      );
     this.attachments = new Attachments(store, config.dataDir);
     this.queue = new TaskQueue(
       store,
@@ -93,6 +101,18 @@ export class Runtime extends EventEmitter {
       const client = this.clients.get(hostId)!;
       if (!client.host.connected) return;
       const snapshot = await client.snapshot();
+      const linker = this.codexLinks.get(hostId);
+      if (linker) {
+        try {
+          snapshot.agents = await linker.refresh(client, snapshot.agents);
+        } catch (error) {
+          client.host.diagnostic = (error as Error).message;
+          // Fail closed on daemon failures, including stale IDs previously reported to Herdr.
+          snapshot.agents = snapshot.agents.map((a) =>
+            a.agent === 'codex' ? { ...a, agent_session: null } : a,
+          );
+        }
+      }
       const seen = new Set<string>();
       const counts = new Map<string, number>();
       for (const a of snapshot.agents) {
@@ -117,7 +137,15 @@ export class Runtime extends EventEmitter {
           s.lastActivity = old.lastActivity;
           s.preview = old.preview;
           s.queuePaused = old.queuePaused;
+          s.model = old.model;
+          s.modelUpdatedAt = old.modelUpdatedAt;
         }
+        const nativeModel = this.codexLinks.get(hostId)?.model(s.terminalId);
+        if (
+          nativeModel?.model &&
+          (!s.modelUpdatedAt || nativeModel.modelUpdatedAt! >= s.modelUpdatedAt)
+        )
+          Object.assign(s, nativeModel);
         let adapter: Adapter | undefined;
         try {
           const { process_info } = await client.request('pane.process_info', { pane_id: s.paneId });
@@ -198,6 +226,9 @@ export class Runtime extends EventEmitter {
                 (session) => this.assertBinding(session),
                 this.config.hosts.find((h) => h.id === hostId)?.localFiles
                   ? (session, task) => this.attachments.prompt(session, task)
+                  : undefined,
+                s.harness === 'codex' && this.codexLinks.has(hostId)
+                  ? (session) => this.codexLinks.get(hostId)!.assertDelivery(client, session)
                   : undefined,
               );
           }
@@ -322,6 +353,7 @@ export class Runtime extends EventEmitter {
     clearInterval(this.interval);
     for (const c of this.clients.values()) c.stop();
     while (this.tickBusy || this.refreshing.size) await new Promise((r) => setTimeout(r, 10));
+    for (const linker of this.codexLinks.values()) linker.close();
   }
 }
 function processIdentity(info: any): string {

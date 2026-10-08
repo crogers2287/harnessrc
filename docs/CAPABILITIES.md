@@ -14,7 +14,7 @@
 | Attach files/images | Implemented local file references | Implemented local file references | Implemented local file references | Unsupported | Unsupported | Unsupported |
 | Read diffs / subagents | Unsupported capability flags | Unsupported capability flags | Diff event rendering; flags remain off pending complete contract | Unsupported | Unsupported | Unsupported |
 
-Readers import emitted supported record types; they do not manufacture reasoning. OMP branch records retain ancestry but active-branch reconstruction is incomplete. Hermes/OpenCode integration is validated with local database/HTTP fixtures, not real running harnesses. Discoverability depends on Herdr reporting the native session ID; missing IDs show unavailable capabilities.
+Readers import emitted supported record types; they do not manufacture reasoning. OMP branch records retain ancestry but active-branch reconstruction is incomplete. Hermes/OpenCode integration is validated with local database/HTTP fixtures, not real running harnesses. Discoverability uses Herdr native IDs. Configured local shared Codex daemons additionally support verified native-name/title challenges for existing named CLI threads; see DEPLOYMENT.md. Missing or unverifiable IDs show unavailable capabilities.
 
 ## Exact blockers for CLI parity
 

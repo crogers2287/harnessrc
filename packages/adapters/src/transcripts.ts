@@ -11,6 +11,11 @@ export function textContent(content: any): string {
     .map((x) => x.text ?? '')
     .join('\n');
 }
+export function nativeModel(value: unknown): string | undefined {
+  return typeof value === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,159}$/.test(value)
+    ? value
+    : undefined;
+}
 function source(
   record: any,
   sourceId: string,
@@ -22,6 +27,9 @@ function source(
     kind,
     data: {
       ...data,
+      ...(record.type === 'assistant' && nativeModel(record.message?.model)
+        ? { model: nativeModel(record.message.model) }
+        : {}),
       ...(record.promptId ? { nativePromptId: record.promptId } : {}),
       ...(record.isMeta ? { nativeMeta: true } : {}),
     },
@@ -78,6 +86,10 @@ export function normalizeCodex(record: any, index: number): SourceEvent[] {
   const prefix =
     record.id ??
     `rollout:${index}:${createHash('sha256').update(JSON.stringify(record)).digest('hex').slice(0, 16)}`;
+  if (record.type === 'turn_context' && nativeModel(p.model))
+    return [
+      source(record, prefix, 'agent.status', { model: nativeModel(p.model), nativeMeta: true }),
+    ];
   if (record.type === 'response_item') {
     if (p.type === 'message' && ['user', 'assistant'].includes(p.role))
       return [

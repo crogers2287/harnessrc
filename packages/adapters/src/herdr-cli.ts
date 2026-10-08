@@ -23,6 +23,7 @@ export class HerdrCliAdapter implements Adapter {
     private store: Store,
     private assertOwner: (session: Session) => Promise<void>,
     private attachmentPrompt?: (session: Session, task: Task) => string,
+    private verifyDelivery?: (session: Session) => Promise<void>,
   ) {
     this.capabilities.attachFiles = !!attachmentPrompt;
   }
@@ -37,6 +38,8 @@ export class HerdrCliAdapter implements Adapter {
     if (task.attachments.length && !this.attachmentPrompt)
       throw new Error('CLI attachment delivery is unavailable');
     const prompt = this.attachmentPrompt?.(session, task) ?? task.prompt;
+    await this.verifyDelivery?.(session);
+    await this.assertOwner(session);
     // Save the replay boundary before sending. A lost acknowledgement must never cause a retry.
     const baseline = Number(
       this.store.db

@@ -44,6 +44,7 @@ export const configSchema = z.object({
       port: z.number().int().min(1).max(65535),
     })
     .optional(),
+  codexDaemons: z.array(z.object({ hostId: z.string(), socket: z.string() })).default([]),
   bridges: z
     .array(
       z.object({

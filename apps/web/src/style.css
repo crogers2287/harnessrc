@@ -1840,3 +1840,11 @@ code {
   margin: 12px auto;
   object-fit: contain;
 }
+
+.session-model {
+  color: var(--muted);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  margin-top: 3px;
+}
