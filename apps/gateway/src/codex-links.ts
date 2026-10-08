@@ -35,6 +35,7 @@ function identity(info: any) {
  * Every dispatch repeats the proof; periodic checks detect terminal thread switches.
  */
 export class CodexLinks {
+  diagnostic?: string;
   private tail: Promise<unknown> = Promise.resolve();
   private nextDiscovery = 0;
   constructor(
@@ -184,17 +185,20 @@ export class CodexLinks {
                 agent_session_id: thread.id,
               });
               this.save(link);
+              this.diagnostic = undefined;
               this.store.audit('system', 'codex.native-link', null, {
                 host: this.host,
                 terminalId: link.terminalId,
                 threadId: link.threadId,
               });
               break;
-            } catch {
+            } catch (error) {
+              this.diagnostic = (error as Error).message;
               /* A name match is never enough; try the next candidate. */
             }
           }
-        } catch {
+        } catch (error) {
+          this.diagnostic = (error as Error).message;
           /* Keep the session unbound when the native daemon is unavailable. */
         }
       }
@@ -227,6 +231,12 @@ export class CodexLinks {
         throw error;
       }
     });
+  }
+  unavailable(agents: Agent[]): Agent[] {
+    const managed = new Set(this.links().map((link) => link.terminalId));
+    return agents.map((agent) =>
+      managed.has(agent.terminal_id) ? { ...agent, agent_session: null } : agent,
+    );
   }
   model(terminalId: string) {
     const link = this.links().find((l) => l.terminalId === terminalId);

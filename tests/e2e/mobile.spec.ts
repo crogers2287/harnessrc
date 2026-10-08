@@ -223,3 +223,87 @@ test('mobile audit: dense inbox, missing chat binding, and keyboard-sized compos
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: 'docs/screenshots/keyboard-sized-mobile.png' });
 });
+
+test('live chat appends events without refetching history and preserves reading position and drafts', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await pair(page);
+  const { sessions } = await page.evaluate(async () => (await fetch('/api/sessions')).json());
+  const session = {
+    ...sessions[0],
+    status: 'working',
+    model: 'gpt-6-astra',
+    sessionName: 'Streaming acceptance',
+  };
+  const events = Array.from({ length: 30 }, (_, index) => ({
+    id: `stream-${index}`,
+    sourceId: `native-${index}`,
+    sequence: index + 1,
+    sessionId: session.id,
+    nativeSessionId: session.nativeSessionId,
+    source: 'mock',
+    kind: index % 2 ? 'assistant.message' : 'user.message',
+    timestamp: new Date().toISOString(),
+    data: {
+      text:
+        `Conversation message ${index}: ` +
+        'A useful discussion of the requested change. '.repeat(5),
+    },
+  }));
+  let historyRequests = 0;
+  let stream: any;
+  await page.route('**/api/sessions', (route) => route.fulfill({ json: { sessions: [session] } }));
+  await page.route(`**/api/sessions/${session.id}`, (route) =>
+    route.fulfill({ json: { session, tasks: [], interactions: [] } }),
+  );
+  await page.route('**/events?*', (route) => {
+    historyRequests++;
+    return route.fulfill({ json: { events } });
+  });
+  await page.routeWebSocket('**/ws', (socket) => {
+    stream = socket;
+    socket.send(JSON.stringify({ type: 'invalidate', sessions: [session] }));
+  });
+  await page.reload();
+  await page.getByRole('button', { name: /Streaming acceptance/ }).click();
+  await expect(page.locator('.conversation-heading .session-model')).toHaveText('gpt-6-astra');
+  await expect(page.getByRole('status', { name: /is working/ })).toBeAttached();
+  const composer = page.getByLabel('Instruction', { exact: true });
+  await composer.fill('Keep this draft while messages arrive');
+  await page.locator('.conversation-scroll').evaluate((element) => {
+    element.scrollTop = 0;
+    element.dispatchEvent(new Event('scroll'));
+  });
+  await expect(page.getByRole('button', { name: 'Latest messages', exact: true })).toBeVisible();
+  const initialRequests = historyRequests;
+  for (let n = 0; n < 3; n++) {
+    stream.send(
+      JSON.stringify({
+        type: 'event',
+        event: {
+          ...events[0],
+          id: `delta-${n}`,
+          sequence: 31 + n,
+          kind: 'assistant.delta',
+          data: { itemId: 'new-reply', text: ['Hello ', 'from ', 'the live stream.'][n] },
+        },
+      }),
+    );
+    stream.send(JSON.stringify({ type: 'invalidate', sessions: [session] }));
+  }
+  await expect(composer).toHaveValue('Keep this draft while messages arrive');
+  await expect(composer).toBeFocused();
+  await expect
+    .poll(() => page.locator('.conversation-scroll').evaluate((element) => element.scrollTop))
+    .toBeLessThan(10);
+  await page.getByRole('button', { name: 'Latest messages', exact: true }).click();
+  await expect(page.getByText('Hello from the live stream.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('status', { name: /is working/ })).toBeVisible();
+  expect(historyRequests).toBe(initialRequests);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await expect(page.locator('.working-dots i').first()).toHaveCSS('animation-name', 'none');
+  await page.screenshot({ path: 'docs/screenshots/working-mobile.png' });
+  stream.send(JSON.stringify({ type: 'invalidate', sessions: [{ ...session, status: 'idle' }] }));
+  await expect(page.getByRole('status', { name: /is working/ })).toHaveCount(0);
+});

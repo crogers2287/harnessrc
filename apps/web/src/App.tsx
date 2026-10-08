@@ -101,11 +101,26 @@ export function App() {
   }, []);
   useEffect(() => {
     if (!auth.data) return;
-    const channel = new Connection((items) => {
-      query.setQueryData(['sessions'], { sessions: items });
-      void query.invalidateQueries({ queryKey: ['detail'] });
-      void query.invalidateQueries({ queryKey: ['events'] });
-    }, setConnection);
+    const channel = new Connection(
+      (items) => {
+        query.setQueryData(['sessions'], { sessions: items });
+        void query.invalidateQueries({ queryKey: ['detail'] });
+      },
+      (state) => {
+        setConnection(state);
+        // Replay on reconnect; ordinary stream events are appended in place.
+        if (state === 'connected') void query.invalidateQueries({ queryKey: ['events'] });
+      },
+      (event) => {
+        const key = ['events', event.sessionId];
+        if (!query.getQueryData(key)) return;
+        query.setQueryData<{ events: Event[] }>(key, (old) => ({
+          events: [...new Map([...(old?.events ?? []), event].map((e) => [e.id, e])).values()]
+            .sort((a, b) => a.sequence - b.sequence)
+            .slice(-100),
+        }));
+      },
+    );
     channel.start();
     return () => channel.stop();
   }, [auth.data, query]);
@@ -454,6 +469,8 @@ function Conversation({
   const [atBottom, setAtBottom] = useState(true);
   const scroll = useRef<HTMLDivElement>(null);
   const restored = useRef(false);
+  const pinned = useRef(true);
+  const transcript = useRef<HTMLDivElement>(null);
   const submission = useRef<{ prompt: string; key: string; attachments: string[] } | undefined>(
     undefined,
   );
@@ -500,6 +517,16 @@ function Conversation({
       virtual.scrollToIndex(visible.length - 1, { align: 'end' });
     lastCount.current = visible.length;
   }, [visible.length, virtual, session.id, atBottom, route.view]);
+  useEffect(() => {
+    const element = transcript.current;
+    if (!element) return;
+    const observer = new ResizeObserver(() => {
+      if (pinned.current && restored.current && scroll.current)
+        scroll.current.scrollTop = scroll.current.scrollHeight;
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [route.view]);
   const send = useMutation({
     mutationFn: (value: { prompt: string; key: string; attachments: string[] }) =>
       mode === 'steer'
@@ -662,10 +689,10 @@ function Conversation({
         onScroll={() => {
           if (scroll.current) {
             scrollPositions.set(session.id, scroll.current.scrollTop);
-            setAtBottom(
+            pinned.current =
               scroll.current.scrollHeight - scroll.current.scrollTop - scroll.current.clientHeight <
-                160,
-            );
+              100;
+            setAtBottom(pinned.current);
           }
         }}
       >
@@ -703,6 +730,7 @@ function Conversation({
         )}
         <div
           className="transcript"
+          ref={transcript}
           style={{ height: virtual.getTotalSize(), position: 'relative' }}
         >
           {virtual.getVirtualItems().map((row) => (
@@ -722,6 +750,11 @@ function Conversation({
             </div>
           ))}
         </div>
+        {session.capabilities.readConversation &&
+          session.status === 'working' &&
+          connection === 'connected' && (
+            <WorkingIndicator harness={agentLabel(session.harness)} events={merged} />
+          )}
         <div className="interaction-stack">
           {detail.data?.interactions
             .filter((i) => i.status === 'pending' || i.id === route.interaction)
@@ -744,6 +777,7 @@ function Conversation({
           onClick={() => {
             virtual.scrollToIndex(visible.length - 1, { align: 'end' });
             scroll.current?.scrollTo({ top: scroll.current.scrollHeight });
+            pinned.current = true;
             setAtBottom(true);
           }}
         >
@@ -889,6 +923,40 @@ function Conversation({
     </>
   );
 }
+function WorkingIndicator({ harness, events }: { harness: string; events: Event[] }) {
+  const latest = [...events]
+    .reverse()
+    .find(
+      (e) =>
+        !e.data.nativeMeta &&
+        [
+          'tool.invocation',
+          'tool.output',
+          'tool.completion',
+          'assistant.delta',
+          'assistant.message',
+        ].includes(e.kind),
+    );
+  const detail =
+    latest?.kind === 'tool.invocation'
+      ? `Using ${String(latest.data.tool ?? 'a tool')}`
+      : latest?.kind === 'assistant.delta'
+        ? 'Writing a response'
+        : 'Working on your request';
+  return (
+    <div className="working-indicator" role="status" aria-label={`${harness} is working`}>
+      <span className="working-dots" aria-hidden="true">
+        <i />
+        <i />
+        <i />
+      </span>
+      <span>
+        <strong>{harness} is working</strong>
+        <span className="working-detail">{detail}</span>
+      </span>
+    </div>
+  );
+}
 function conversationItems(events: Event[]): Event[] {
   const completed = new Set(
     events.filter((e) => e.kind === 'assistant.message' && e.data.itemId).map((e) => e.data.itemId),
@@ -926,7 +994,7 @@ function conversationItems(events: Event[]): Event[] {
   const grouped: Event[] = [];
   for (const event of output) {
     const previous = grouped[grouped.length - 1];
-    if (event.kind.startsWith('tool.')) {
+    if (event.kind.startsWith('tool.') || event.kind === 'reasoning.summary') {
       if (previous?.data.activityGroup) (previous.data.activities as Event[]).push(event);
       else grouped.push({ ...event, data: { activityGroup: true, activities: [event] } });
     } else grouped.push(event);
@@ -946,7 +1014,9 @@ function EventCard({ event }: { event: Event }) {
         <summary>
           <ChevronRight size={16} aria-hidden="true" />
           <span>
-            {calls.length || activities.length} {calls.length === 1 ? 'action' : 'actions'}
+            {calls.length
+              ? `${calls.length} ${calls.length === 1 ? 'action' : 'actions'}`
+              : 'Agent activity'}
             {names.length ? ` · ${names.slice(0, 3).join(', ')}` : ''}
           </span>
         </summary>

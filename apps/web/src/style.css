@@ -1848,3 +1848,61 @@ code {
   overflow-wrap: anywhere;
   margin-top: 3px;
 }
+
+.working-indicator {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 16px auto 20px;
+  padding: 8px 18px;
+  width: 100%;
+  max-width: 800px;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+.working-indicator strong {
+  color: var(--text);
+  font-weight: 500;
+}
+.working-detail {
+  display: block;
+  margin-top: 3px;
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+}
+.working-dots {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.working-dots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: working-pulse 1.2s ease-in-out infinite;
+}
+.working-dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.working-dots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@keyframes working-pulse {
+  0%,
+  65%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .working-dots i {
+    animation: none;
+    opacity: 1;
+  }
+}

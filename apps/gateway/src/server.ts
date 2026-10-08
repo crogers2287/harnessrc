@@ -359,12 +359,29 @@ export async function createGateway(
       }, 100);
     };
     const authCheck = setInterval(push, 10000);
+    const event = (value: { sessionId: string }) => {
+      try {
+        const device = req.tailnetNode
+          ? auth.tailnetDevice(req.tailnetNode)
+          : auth.authenticate(token);
+        if (!auth.allowed(device, value.sessionId)) return;
+        if (socket.bufferedAmount > 4 * 1024 * 1024) {
+          socket.close(1013, 'Reconnect for durable replay');
+          return;
+        }
+        if (socket.readyState === 1) socket.send(JSON.stringify({ type: 'event', event: value }));
+      } catch {
+        socket.close(4001, 'Authentication expired');
+      }
+    };
+    store.on('event', event);
     store.on('change', changed);
     socket.on('message', () => socket.close(1008, 'Client commands use authenticated HTTP'));
     socket.on('close', () => {
       clearInterval(authCheck);
       clearTimeout(timer);
       store.off('change', changed);
+      store.off('event', event);
     });
     push();
   });

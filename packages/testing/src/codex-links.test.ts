@@ -160,3 +160,16 @@ test('restart recovers an interrupted title probe without overwriting a concurre
     f.store.close();
   }
 });
+
+test('a daemon outage disables only its managed links, preserving independent native bridges', async () => {
+  const f = fixture();
+  try {
+    const [managed] = await f.links.refresh(f.client, [f.agent()]);
+    const bridge = { ...managed, terminal_id: 'independent-bridge' };
+    const result = f.links.unavailable([managed, bridge]);
+    assert.equal(result[0].agent_session, null);
+    assert.deepEqual(result[1].agent_session, bridge.agent_session);
+  } finally {
+    f.store.close();
+  }
+});

@@ -28,3 +28,13 @@ The main phone screen is a conversation: compact back/title/agent/CWD header, re
 Backend coverage includes attachment authorization, session replacement, path traversal, size limits, integrity, durable references, deletion protection, idempotency and actual dispatch contents. Browser coverage includes uploads, photo/file selection, reload recovery, removal, send, accessibility, approval/queue/reconnect, 320–1440px layouts and 200% text. Physical Android/iOS camera, keyboard and background-resume testing is still required.
 
 The full product is not complete: existing CLI rich-question routing, automatic recovery of missing native IDs, Hermes/OpenCode/OMP control, closed-app push, full-history exports and complete file/diff/subagent views remain acceptance gaps. These must be implemented and tested rather than hidden behind a cosmetic “supported” label.
+
+## Conversational updates and native models
+
+- Persistent three-dot activity indicator uses the harness's actual working state, with native tool/writing activity. It disappears when idle or disconnected and respects reduced motion.
+- Conversation events append over authenticated WebSocket messages. Reconnection replays history; ordinary activity does not repeatedly fetch the transcript.
+- Consecutive tool events and native reasoning summaries share one expandable activity group, keeping messages prominent.
+- Live deltas preserve composer focus/drafts and the scroll position of a user reading earlier messages. The Latest messages action returns to the live conversation.
+- Harness-reported models appear in the inbox, chat header, and details. Unknown model metadata is labeled explicitly.
+- Five browser cases pass, including simulated mobile streaming, scroll/focus preservation, model labels, reduced motion, attachments, approval handling, and responsive layouts.
+- Real Fred verification: the previously unbound shared-daemon Codex thread opens with conversation, model, composer and attachment controls. A separate ordinary Codex CLI under Herdr completed two browser-submitted queued tasks serially with one dispatch each.

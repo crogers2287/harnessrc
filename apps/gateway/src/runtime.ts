@@ -105,12 +105,13 @@ export class Runtime extends EventEmitter {
       if (linker) {
         try {
           snapshot.agents = await linker.refresh(client, snapshot.agents);
+          if (linker.diagnostic) client.host.diagnostic = `Codex binding: ${linker.diagnostic}`;
+          else if (client.host.diagnostic?.startsWith('Codex binding:'))
+            client.host.diagnostic = undefined;
         } catch (error) {
           client.host.diagnostic = (error as Error).message;
           // Fail closed on daemon failures, including stale IDs previously reported to Herdr.
-          snapshot.agents = snapshot.agents.map((a) =>
-            a.agent === 'codex' ? { ...a, agent_session: null } : a,
-          );
+          snapshot.agents = linker.unavailable(snapshot.agents);
         }
       }
       const seen = new Set<string>();

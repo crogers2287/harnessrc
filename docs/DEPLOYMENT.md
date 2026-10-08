@@ -104,3 +104,13 @@ Verification occurs on discovery, every 30 seconds, and immediately before each 
 Herdr still performs `agent.prompt`. There is no atomic native-thread precondition in Herdr 0.8.0: a local thread switch in the small interval between the final proof and prompt submission remains a limitation. Lost or ambiguous delivery is never automatically repeated. Exact CLI question/approval routing remains separate work.
 
 The session list, chat header, and details show the last model reported by the native harness. Codex uses thread metadata and turn context; Claude uses assistant-response model IDs. A model selected locally but not yet reported by that harness cannot be inferred; it shows the last reported value or “Model unknown.”
+
+The systemd template uses `PrivateTmp=true`. If Codex's socket is in `/tmp`, expose **only its private directory**, not all host temporary files. For Fred's UID 1000:
+
+```ini
+# ~/.config/systemd/user/relay.service.d/codex-daemon.conf
+[Service]
+BindReadOnlyPaths=/tmp/codex-daemon-1000
+```
+
+Then run `systemctl --user daemon-reload` and restart `relay.service`. Adjust the UID/path to the real daemon socket directory. Keep the socket private (0600); never expose it through the public reverse proxy.

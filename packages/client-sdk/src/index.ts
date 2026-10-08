@@ -1,4 +1,4 @@
-import type { SessionView } from '@harnessrc/protocol';
+import type { SessionView, Event } from '@harnessrc/protocol';
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -56,6 +56,7 @@ export class Connection {
   constructor(
     private update: (sessions: SessionView[]) => void,
     private state: (state: 'connected' | 'reconnecting') => void,
+    private event?: (event: Event) => void,
   ) {}
   private offline = () => {
     this.state('reconnecting');
@@ -88,6 +89,7 @@ export class Connection {
       try {
         const message = JSON.parse(e.data);
         if (message.type === 'invalidate') this.update(message.sessions);
+        if (message.type === 'event') this.event?.(message.event);
       } catch {
         this.socket?.close();
       }
