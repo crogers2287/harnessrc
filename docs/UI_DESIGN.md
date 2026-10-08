@@ -60,3 +60,11 @@ python3 .agents/skills/ui-ux-pro-max/scripts/search.py 'destructive confirmation
 ```
 
 Skill updates are deliberate: inspect the new revision and license, update the repository copies and lock file together, then rerun verification. Never silently track a mutable upstream branch during a build.
+
+## October 8 conversation navigation and creation revision
+
+The primary phone screen is now the most recent conversation (or the last selected one). Sessions live in a compact left-edge swipe drawer, with a visible menu alternative, focus containment, Escape/back dismissal, preserved drafts, and reduced-motion support. Queue is an explicit secondary choice; the default sends when idle and uses native steering only when the adapter advertises it. Busy sessions without steering explain why Send is unavailable.
+
+New session is a focused, scrollable mobile form: permitted host directory, agent, provider, model (including a custom provider model ID), first message, and optional name. It keeps its request identity and draft across reloads. Native start acknowledgement, conversation discovery, and uncertain delivery have separate states. The first message also ensures a native conversation exists; creating an empty terminal is not the product flow.
+
+The existing design dials and semantic colors remain. Mobile controls use 48px minimum hit areas; form controls use 16px text. Local React/Tailwind skill searches informed async errors, visible focus, and touch targets. Browser tests cover a 390px creation flow, accessible field names, saved receipts, edge swipes, focus restoration, and default Send. The existing suite covers phone widths 320–430px, landscape, tablet, desktop, large text, reduced motion, attachments, approvals, queue, and streamed chat. Physical iOS/Android testing remains separate.

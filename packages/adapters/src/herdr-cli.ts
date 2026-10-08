@@ -24,8 +24,10 @@ export class HerdrCliAdapter implements Adapter {
     private assertOwner: (session: Session) => Promise<void>,
     private attachmentPrompt?: (session: Session, task: Task) => string,
     private verifyDelivery?: (session: Session) => Promise<void>,
+    private nativeSteer?: (session: Session, prompt: string) => Promise<void>,
   ) {
     this.capabilities.attachFiles = !!attachmentPrompt;
+    this.capabilities.steerActiveTurn = !!nativeSteer;
   }
   read(session: Session) {
     return this.reader.read(session);
@@ -68,6 +70,11 @@ export class HerdrCliAdapter implements Adapter {
       throw new Error('Submission owner changed; delivery requires reconciliation');
     await this.assertOwner(session);
     return { correlation };
+  }
+  async steer(session: Session, prompt: string) {
+    if (!this.nativeSteer) throw new Error('Native steering is unavailable');
+    await this.assertOwner(session);
+    await this.nativeSteer(session, prompt);
   }
   async reconcile(
     session: Session,

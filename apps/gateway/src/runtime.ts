@@ -130,6 +130,18 @@ export class Runtime extends EventEmitter {
           a,
           snapshot.workspaces.find((w) => w.workspace_id === a.workspace_id)?.label ?? 'Workspace',
         );
+        if (a.name?.startsWith('relay-')) {
+          const launch = this.store.db
+            .prepare(
+              "SELECT body FROM launches WHERE json_extract(receipt,'$.terminalId')=? AND json_extract(receipt,'$.hostId')=?",
+            )
+            .get(s.terminalId, s.hostId);
+          if (launch) {
+            const created = JSON.parse(launch.body as string);
+            if (a.name === `relay-${created.requestId.replaceAll('-', '').slice(0, 24)}`)
+              s.sessionName = created.name;
+          }
+        }
         s.tabName = snapshot.tabs.find((t) => t.tab_id === a.tab_id)?.label;
         s.paneName = snapshot.panes.find((p) => p.pane_id === a.pane_id)?.label;
         seen.add(s.id);
@@ -230,6 +242,9 @@ export class Runtime extends EventEmitter {
                   : undefined,
                 s.harness === 'codex' && this.codexLinks.has(hostId)
                   ? (session) => this.codexLinks.get(hostId)!.assertDelivery(client, session)
+                  : undefined,
+                this.codexLinks.get(hostId)?.hasLink(s)
+                  ? (session, prompt) => this.codexLinks.get(hostId)!.steer(client, session, prompt)
                   : undefined,
               );
           }

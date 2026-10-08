@@ -1,3 +1,5 @@
+import { NewSession } from './NewSession.tsx';
+import { SessionDrawer } from './SessionDrawer.tsx';
 import { useEffect, useRef, useState, useMemo, type FormEvent, type ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -15,6 +17,8 @@ import {
   Layers,
   ListTodo,
   MessageSquare,
+  SquarePen,
+  Menu,
   MoreHorizontal,
   Search,
   Settings,
@@ -77,6 +81,23 @@ export function App() {
   const [route, setRoute] = useState(getRoute);
   const [connection, setConnection] = useState<'connected' | 'reconnecting'>('reconnecting');
   const [search, setSearch] = useState('');
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [mobile, setMobile] = useState(() => matchMedia('(max-width: 767px)').matches);
+  const openDrawer = () => {
+    if (matchMedia('(max-width: 767px)').matches && !history.state?.relayDrawer)
+      history.pushState({ relayDrawer: true }, '', location.href);
+    setDrawerOpen(true);
+  };
+  const closeDrawer = () => {
+    if (history.state?.relayDrawer) history.back();
+    else setDrawerOpen(false);
+  };
+  useEffect(() => {
+    const media = matchMedia('(max-width: 767px)');
+    const changed = () => setMobile(media.matches);
+    media.addEventListener('change', changed);
+    return () => media.removeEventListener('change', changed);
+  }, []);
   const [filter, setFilter] = useState('all');
   const [agentFilter, setAgentFilter] = useState('all');
   const [read, setRead] = useState<Record<string, string>>({});
@@ -91,11 +112,17 @@ export function App() {
     const params = new URLSearchParams(
       Object.entries(next).filter(([, v]) => v !== undefined) as [string, string][],
     );
-    history.pushState({}, '', params.size ? `/?${params}` : '/');
+    if (history.state?.relayDrawer) history.replaceState({}, '', params.size ? `/?${params}` : '/');
+    else history.pushState({}, '', params.size ? `/?${params}` : '/');
     setRoute(next);
+    setDrawerOpen(false);
+    if (next.session) localStorage.setItem('relay-last-session', next.session);
   };
   useEffect(() => {
-    const handler = () => setRoute(getRoute());
+    const handler = () => {
+      setRoute(getRoute());
+      setDrawerOpen(!!history.state?.relayDrawer);
+    };
     window.addEventListener('popstate', handler);
     return () => window.removeEventListener('popstate', handler);
   }, []);
@@ -146,6 +173,25 @@ export function App() {
     window.history.replaceState({}, '', url);
     setRoute(next);
   }, [route, sessions]);
+  useEffect(() => {
+    const open = () => {
+      if (!history.state?.relayDrawer) history.pushState({ relayDrawer: true }, '', location.href);
+      setDrawerOpen(true);
+    };
+    window.addEventListener('relay-open-sessions', open);
+    return () => window.removeEventListener('relay-open-sessions', open);
+  }, []);
+  useEffect(() => {
+    if (route.session || route.view || !sessions.length) return;
+    const live = sessions.filter((s) => s.status !== 'ended');
+    const saved = localStorage.getItem('relay-last-session');
+    const session =
+      live.find((s) => s.id === saved) ??
+      [...live].sort((a, b) => Date.parse(b.lastActivity) - Date.parse(a.lastActivity))[0];
+    if (!session) return;
+    history.replaceState({}, '', `/?session=${session.id}`);
+    setRoute({ session: session.id });
+  }, [sessions, route]);
   useNotifications(sessions, !!auth.data);
   if (auth.isPending)
     return (
@@ -166,7 +212,7 @@ export function App() {
   );
   return (
     <div className={`app ${route.session || route.view ? 'has-detail' : ''}`}>
-      <aside className="sidebar" aria-label="Session inbox">
+      <SessionDrawer open={drawerOpen} close={closeDrawer}>
         <header className="brand">
           <div className="brand-mark">
             <MessageSquare size={23} aria-hidden="true" />
@@ -187,6 +233,12 @@ export function App() {
             {connection === 'connected' ? 'Live updates' : 'Reconnecting'}
           </span>
         </div>
+        {!!auth.data.device.admin && (
+          <button className="new-session-trigger" onClick={() => navigate({ view: 'new' })}>
+            <SquarePen size={20} aria-hidden="true" />
+            New session
+          </button>
+        )}
         <label className="search">
           <Search size={18} aria-hidden="true" />
           <span className="sr-only">Search sessions</span>
@@ -314,9 +366,15 @@ export function App() {
             Settings
           </button>
         </nav>
-      </aside>
-      <main className="main-pane">
-        {route.view === 'settings' ? (
+      </SessionDrawer>
+      <main className="main-pane" inert={drawerOpen && mobile}>
+        {route.view === 'new' ? (
+          <NewSession
+            sessions={sessions}
+            back={() => navigate(selected ? { session: selected.id } : {})}
+            opened={(id) => navigate({ session: id })}
+          />
+        ) : route.view === 'settings' ? (
           <SettingsView admin={!!auth.data.device.admin} back={() => navigate({})} />
         ) : route.view === 'attention' ? (
           <Attention sessions={sessions} navigate={navigate} />
@@ -326,7 +384,7 @@ export function App() {
             session={selected}
             connection={connection}
             route={route}
-            back={() => navigate({})}
+            back={openDrawer}
             navigate={navigate}
           />
         ) : (
@@ -335,6 +393,9 @@ export function App() {
               <MessageSquare size={32} aria-hidden="true" />
             </div>
             <h2>Your work, within reach.</h2>
+            <button className="primary" onClick={openDrawer}>
+              Open sessions
+            </button>
             <p>
               Open a session to follow the conversation, answer a question, or queue what comes
               next.
@@ -463,7 +524,14 @@ function Conversation({
   const [loadingMore, setLoadingMore] = useState(false);
   const [draft, setDraft] = useState(restoreDraft(session.id));
   const attachments = useAttachments(session.id);
-  const [mode, setMode] = useState('queue');
+  const [behavior, setBehavior] = useState('auto');
+  const mode =
+    behavior === 'queue'
+      ? 'queue'
+      : session.status === 'working' && session.capabilities.steerActiveTurn
+        ? 'steer'
+        : 'send';
+  const busyWithoutSteering = mode === 'send' && !['idle', 'done'].includes(session.status);
   const [notice, setNotice] = useState('');
   const [receiptId, setReceiptId] = useState<string>();
   const [atBottom, setAtBottom] = useState(true);
@@ -566,6 +634,7 @@ function Conversation({
     if (
       (!draft.trim() && !attachments.files.length) ||
       send.isPending ||
+      busyWithoutSteering ||
       attachments.busy ||
       attachments.invalid
     )
@@ -623,8 +692,8 @@ function Conversation({
   return (
     <>
       <header className="conversation-header">
-        <IconButton label="Back to sessions" className="mobile-back" onClick={back}>
-          <ArrowLeft size={22} />
+        <IconButton label="Open sessions" className="mobile-back" onClick={back}>
+          <Menu size={22} />
         </IconButton>
         <div className="conversation-heading">
           <h2>{sessionLabel(session)}</h2>
@@ -860,15 +929,11 @@ function Conversation({
                 <label className="sr-only" htmlFor="mode">
                   Instruction behavior
                 </label>
-                <select id="mode" value={mode} onChange={(e) => setMode(e.target.value)}>
-                  <option value="queue">
-                    {session.status === 'idle' || session.status === 'done'
-                      ? 'Send message'
-                      : 'Queue follow-up'}
+                <select id="mode" value={behavior} onChange={(e) => setBehavior(e.target.value)}>
+                  <option value="auto">
+                    {mode === 'steer' ? 'Steer active turn' : 'Send message'}
                   </option>
-                  {session.capabilities.steerActiveTurn &&
-                    session.status === 'working' &&
-                    !attachments.files.length && <option value="steer">Steer active turn</option>}
+                  <option value="queue">Queue for later</option>
                 </select>
               </div>
               <button
@@ -878,19 +943,26 @@ function Conversation({
                   (!draft.trim() && !attachments.files.length) ||
                   attachments.busy ||
                   attachments.invalid ||
+                  busyWithoutSteering ||
                   send.isPending ||
                   !session.connected ||
                   connection !== 'connected'
                 }
-                aria-label={mode === 'steer' ? 'Steer active turn' : 'Queue instruction'}
+                aria-label={
+                  mode === 'steer'
+                    ? 'Steer active turn'
+                    : mode === 'queue'
+                      ? 'Queue instruction'
+                      : 'Send message'
+                }
               >
                 {send.isPending
                   ? 'Saving…'
                   : mode === 'steer'
                     ? 'Steer'
-                    : session.status === 'idle' || session.status === 'done'
-                      ? 'Send'
-                      : 'Queue'}
+                    : mode === 'queue'
+                      ? 'Queue'
+                      : 'Send'}
                 <ArrowUp size={19} aria-hidden="true" />
               </button>
             </div>
@@ -911,13 +983,15 @@ function Conversation({
           </p>
         )}
         <p className="composer-footer" role="status">
-          {receiptStatus ||
-            notice ||
-            (!session.capabilities.queueTask
-              ? 'Chat control is waiting for a verified connection.'
-              : session.status === 'working'
-                ? 'Follow-ups wait until this turn finishes.'
-                : 'Messages go to your existing agent session.')}
+          {busyWithoutSteering
+            ? 'This agent cannot be steered yet. Choose Queue to schedule a follow-up.'
+            : receiptStatus ||
+              notice ||
+              (!session.capabilities.queueTask
+                ? 'Chat control is waiting for a verified connection.'
+                : session.status === 'working'
+                  ? 'Follow-ups wait until this turn finishes.'
+                  : 'Messages go to your existing agent session.')}
         </p>
       </div>
     </>

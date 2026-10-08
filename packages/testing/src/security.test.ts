@@ -191,3 +191,28 @@ test('offline hook falls back to Claude original terminal permission flow', asyn
   await new Promise((resolve) => child.once('exit', resolve));
   assert.deepEqual(JSON.parse(out), {});
 });
+
+test('session creation and host folder browsing require an administrator', async () => {
+  const f = await fixture({ startRuntime: false });
+  try {
+    const { app, auth } = f.gateway;
+    const admin = auth.authenticate(f.headers.cookie.split('=')[1]);
+    const tokens = auth.pair(auth.pairCode(admin), 'Read-only phone');
+    const headers = { ...f.headers, cookie: `rc_access=${tokens.access}` };
+    for (const url of [
+      '/api/launch/profiles',
+      '/api/launch/folders?profileId=fred',
+      '/api/launch/' + randomUUID(),
+    ]) {
+      assert.equal((await app.inject({ url })).statusCode, 401);
+      assert.equal((await app.inject({ url, headers })).statusCode, 403);
+    }
+    assert.equal(
+      (await app.inject({ method: 'POST', url: '/api/launch', headers, payload: {} })).statusCode,
+      403,
+    );
+    assert.equal(f.gateway.store.db.prepare('SELECT COUNT(*) AS n FROM launches').get()!.n, 0);
+  } finally {
+    await f.close();
+  }
+});

@@ -1,3 +1,4 @@
+import { Launcher, launchRequestSchema } from './launch.ts';
 import Fastify, { type FastifyRequest, type FastifyReply } from 'fastify';
 import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
@@ -32,6 +33,13 @@ export async function createGateway(
   mkdirSync(config.dataDir, { recursive: true, mode: 0o700 });
   const store = options.store ?? new Store(path.join(config.dataDir, 'gateway.db'));
   const runtime = new Runtime(store, config);
+  const launcher = new Launcher(
+    store,
+    config.launchProfiles,
+    runtime.clients,
+    new Map(config.codexDaemons.map((d) => [d.hostId, d.socket])),
+  );
+  launcher.recover();
   const tailnet = new TailnetAuth(options.tailnetLookup);
   const auth = new Auth(store, config.dataDir);
   const app = Fastify({ logger: false, bodyLimit: 256 * 1024, trustProxy: false });
@@ -165,6 +173,40 @@ export async function createGateway(
     reply.clearCookie('rc_access', { path: '/' }).clearCookie('rc_refresh', { path: '/api/auth' });
     return { ok: true };
   });
+  const launchAdmin = (req: FastifyRequest) => {
+    if (!req.device.admin)
+      throw Object.assign(new Error('Administrator required to create sessions'), {
+        statusCode: 403,
+      });
+  };
+  app.get('/api/launch/profiles', async (req) => {
+    launchAdmin(req);
+    return { profiles: await launcher.catalog() };
+  });
+  app.get('/api/launch/folders', async (req) => {
+    launchAdmin(req);
+    const { profileId, path: folder } = z
+      .object({ profileId: z.string(), path: z.string().optional() })
+      .parse(req.query);
+    return launcher.folders(profileId, folder);
+  });
+  app.get('/api/launch/:id', async (req) => {
+    launchAdmin(req);
+    const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    const receipt = launcher.receipt(id);
+    if (!receipt) throw Object.assign(new Error('Launch not found'), { statusCode: 404 });
+    return receipt;
+  });
+  app.post(
+    '/api/launch',
+    { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } },
+    async (req) => {
+      launchAdmin(req);
+      const receipt = await launcher.launch(launchRequestSchema.parse(req.body), req.device.id);
+      void runtime.refresh(receipt.hostId);
+      return receipt;
+    },
+  );
   app.get('/api/sessions', async (req) => ({ sessions: sessionViews(req.device) }));
   app.get('/api/hosts', async (req) => ({
     hosts: [...runtime.clients.values()].map((c) =>

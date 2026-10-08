@@ -10,7 +10,12 @@ async function pair(page: any) {
     /* First device in isolated fixture. */
   }
   await page.goto('/');
-  await page.getByRole('heading', { name: /^(Connect to Relay|Sessions)$/ }).waitFor();
+  await page
+    .getByRole('heading', { name: 'Connect to Relay' })
+    .or(page.getByRole('button', { name: 'Open sessions', exact: true }))
+    .or(page.getByRole('heading', { name: 'Sessions', exact: true }))
+    .first()
+    .waitFor();
   if (await page.getByRole('heading', { name: 'Connect to Relay' }).isVisible()) {
     await page.getByLabel('Device name').fill('Browser test');
     await page
@@ -18,10 +23,18 @@ async function pair(page: any) {
       .fill((await readFile(directory + '/pairing-key', 'utf8')).trim());
     await page.getByRole('button', { name: 'Connect device' }).click();
   }
-  await expect(page.getByRole('heading', { name: 'Sessions', exact: true })).toBeVisible();
+  await openSessions(page);
   await writeFile(directory + '/browser-cookies', JSON.stringify(await page.context().cookies()), {
     mode: 0o600,
   });
+}
+
+async function openSessions(page: any) {
+  if ((await page.viewportSize())?.width < 768) {
+    if (!(await page.getByRole('dialog', { name: 'Sessions', exact: true }).isVisible()))
+      await page.getByRole('button', { name: 'Open sessions', exact: true }).click();
+  }
+  await expect(page.getByRole('heading', { name: 'Sessions', exact: true })).toBeVisible();
 }
 test('mobile chat: native approval, serial queued work, reconnect, and settings', async ({
   page,
@@ -40,14 +53,17 @@ test('mobile chat: native approval, serial queued work, reconnect, and settings'
   await page
     .getByLabel('Instruction', { exact: true })
     .fill('Review the code and request approval');
+  await page.getByLabel('Instruction behavior').selectOption('queue');
   await page.getByRole('button', { name: 'Queue instruction', exact: true }).click();
   await expect(
     page.getByRole('heading', { name: 'Run the project’s integration tests?' }),
   ).toBeVisible();
   await page.screenshot({ path: 'docs/screenshots/approval-mobile.png' });
   await page.getByLabel('Instruction', { exact: true }).fill('First followup');
+  await page.getByLabel('Instruction behavior').selectOption('queue');
   await page.getByRole('button', { name: 'Queue instruction', exact: true }).click();
   await page.getByLabel('Instruction', { exact: true }).fill('Second followup');
+  await page.getByLabel('Instruction behavior').selectOption('queue');
   await page.getByRole('button', { name: 'Queue instruction', exact: true }).click();
   await page.getByRole('button', { name: /Task queue,/ }).click();
   await expect(page.getByText('First followup', { exact: true })).toBeVisible();
@@ -79,7 +95,7 @@ test('mobile chat: native approval, serial queued work, reconnect, and settings'
     .withTags(['wcag2a', 'wcag2aa', 'wcag21aa'])
     .analyze();
   expect(accessibility.violations).toEqual([]);
-  await page.getByRole('button', { name: 'Back to sessions' }).click();
+  await openSessions(page);
   await page.getByRole('button', { name: 'Settings', exact: true }).first().click();
   await expect(page.getByRole('heading', { name: 'Notifications', exact: true })).toBeVisible();
   await page.screenshot({ path: 'docs/screenshots/settings-mobile.png' });
@@ -103,6 +119,7 @@ test('responsive inbox supports phone, landscape, tablet, desktop, zoom, and red
     [1440, 1000],
   ]) {
     await page.setViewportSize({ width, height });
+    await openSessions(page);
     await expect(page.getByRole('heading', { name: 'Sessions', exact: true })).toBeVisible();
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
@@ -157,6 +174,7 @@ test('mobile attachments: photo and file previews, draft recovery, removal and d
   await expect(page.getByText(/KB · Ready/)).toHaveCount(2);
   await page.getByRole('button', { name: 'Remove notes.txt', exact: true }).click();
   await expect(page.getByText(/KB · Ready/)).toHaveCount(1);
+  await page.getByLabel('Instruction behavior').selectOption('queue');
   await page.getByRole('button', { name: 'Queue instruction', exact: true }).click();
   await expect(page.getByLabel('Message attachments')).toHaveCount(0);
   await expect(page.getByLabel('Instruction', { exact: true })).toHaveValue('');
@@ -202,7 +220,7 @@ test('mobile audit: dense inbox, missing chat binding, and keyboard-sized compos
     socket.send(JSON.stringify({ type: 'invalidate', sessions: items })),
   );
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Sessions', exact: true })).toBeVisible();
+  await openSessions(page);
   await page.getByLabel('Filter by agent').selectOption('codex');
   await expect(page.locator('.inbox-heading .count')).toHaveText('10');
   await page.screenshot({ path: 'docs/screenshots/inbox-dense-mobile.png' });
@@ -210,14 +228,14 @@ test('mobile audit: dense inbox, missing chat binding, and keyboard-sized compos
   await expect(page.getByRole('heading', { name: 'Chat is not connected' })).toBeVisible();
   await expect(page.getByText('Ready for your next instruction')).toHaveCount(0);
   await page.screenshot({ path: 'docs/screenshots/unbound-mobile.png' });
-  await page.getByRole('button', { name: 'Back to sessions' }).click();
+  await openSessions(page);
   await page.getByRole('button', { name: /Project 3:/ }).click();
   await page.setViewportSize({ width: 390, height: 410 });
   await page
     .getByLabel('Instruction', { exact: true })
     .fill('A draft with the software keyboard open');
   const bounds = await page
-    .getByRole('button', { name: 'Queue instruction', exact: true })
+    .getByRole('button', { name: 'Send message', exact: true })
     .boundingBox();
   expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(410);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -266,6 +284,7 @@ test('live chat appends events without refetching history and preserves reading 
     socket.send(JSON.stringify({ type: 'invalidate', sessions: [session] }));
   });
   await page.reload();
+  await openSessions(page);
   await page.getByRole('button', { name: /Streaming acceptance/ }).click();
   await expect(page.locator('.conversation-heading .session-model')).toHaveText('gpt-6-astra');
   await expect(page.getByRole('status', { name: /is working/ })).toBeAttached();
@@ -306,4 +325,119 @@ test('live chat appends events without refetching history and preserves reading 
   await page.screenshot({ path: 'docs/screenshots/working-mobile.png' });
   stream.send(JSON.stringify({ type: 'invalidate', sessions: [{ ...session, status: 'idle' }] }));
   await expect(page.getByRole('status', { name: /is working/ })).toHaveCount(0);
+});
+
+test('new session chooses Fred folder, agent and custom CFRproxy model; launch receipt survives reload', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await pair(page);
+  await page.route('**/api/launch/profiles', (route) =>
+    route.fulfill({
+      json: {
+        profiles: [
+          {
+            id: 'codex-cfr',
+            hostId: 'fred',
+            harness: 'codex',
+            provider: 'CFRproxy',
+            label: 'Codex',
+            connected: true,
+            models: [{ id: 'fred/model', name: 'Fred model' }],
+            allowCustomModel: true,
+          },
+        ],
+      },
+    }),
+  );
+  await page.route('**/api/launch/folders?*', (route) =>
+    route.fulfill({
+      json: { path: '/home/developer/projects', parent: null, directories: [], truncated: false },
+    }),
+  );
+  let body: any;
+  await page.route('**/api/launch', async (route) => {
+    body = route.request().postDataJSON();
+    await route.fulfill({
+      json: {
+        requestId: body.requestId,
+        hostId: 'fred',
+        terminalId: 'new-term',
+        status: 'started',
+      },
+    });
+  });
+  await page.getByRole('button', { name: 'New session', exact: true }).click();
+  await page.getByRole('button', { name: /Choose a folder/ }).click();
+  await page.getByRole('button', { name: 'Use this folder' }).click();
+  await page.getByRole('combobox', { name: 'Model', exact: true }).selectOption('__custom');
+  await page.getByLabel('Custom model ID').fill('fred/qwen38-27b');
+  await page.getByLabel('Session name').fill('Mobile code review');
+  await page.getByLabel('First message').fill('Review mobile layout');
+  const accessibility = await new AxeBuilder({ page })
+    .withTags(['wcag2a', 'wcag2aa', 'wcag21aa'])
+    .analyze();
+  expect(accessibility.violations).toEqual([]);
+  await page.locator('.new-session-scroll').evaluate((element) => {
+    element.scrollTop = 0;
+  });
+  await page.screenshot({ path: 'docs/screenshots/new-session-mobile.png' });
+  await page.getByRole('button', { name: 'Start session', exact: true }).click();
+  await expect(page.getByText('Agent started. Connecting its conversation…')).toBeVisible();
+  expect(body.cwd).toBe('/home/developer/projects');
+  expect(body.profileId).toBe('codex-cfr');
+  expect(body.model).toBe('fred/qwen38-27b');
+  await page.route('**/api/launch/*', (route) =>
+    route.request().url().endsWith(body.requestId)
+      ? route.fulfill({ json: { requestId: body.requestId, hostId: 'fred', status: 'started' } })
+      : route.fallback(),
+  );
+  await page.reload();
+  await expect(page.getByText('Agent started. Connecting its conversation…')).toBeVisible();
+});
+
+test('mobile opens chat first, defaults to Send, and supports edge swipe drawer without losing draft', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await pair(page);
+  await page.getByRole('button', { name: /Atlas API/ }).click();
+  await expect(page.getByLabel('Instruction behavior')).toHaveValue('auto');
+  await expect(page.getByRole('button', { name: 'Send message', exact: true })).toBeVisible();
+  await page.getByLabel('Instruction', { exact: true }).fill('A draft survives navigation');
+  await page.evaluate(() => {
+    const target = document.body;
+    const touch = (x: number) => new Touch({ identifier: 1, target, clientX: x, clientY: 240 });
+    target.dispatchEvent(
+      new TouchEvent('touchstart', {
+        bubbles: true,
+        touches: [touch(8)],
+        changedTouches: [touch(8)],
+      }),
+    );
+    target.dispatchEvent(
+      new TouchEvent('touchmove', {
+        bubbles: true,
+        cancelable: true,
+        touches: [touch(220)],
+        changedTouches: [touch(220)],
+      }),
+    );
+    target.dispatchEvent(
+      new TouchEvent('touchend', { bubbles: true, touches: [], changedTouches: [touch(220)] }),
+    );
+  });
+  await expect(page.getByRole('dialog', { name: 'Sessions', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Close sessions' })).toBeFocused();
+  await expect.poll(async () => (await page.locator('#session-drawer').boundingBox())?.x).toBe(0);
+  await page.screenshot({ path: 'docs/screenshots/swipe-drawer-mobile.png' });
+  await page.keyboard.press('Escape');
+  await expect(page.getByLabel('Instruction', { exact: true })).toHaveValue(
+    'A draft survives navigation',
+  );
+  await page.reload();
+  await expect(page.getByLabel('Instruction', { exact: true })).toHaveValue(
+    'A draft survives navigation',
+  );
+  await expect(page.getByRole('dialog', { name: 'Sessions', exact: true })).not.toBeVisible();
 });

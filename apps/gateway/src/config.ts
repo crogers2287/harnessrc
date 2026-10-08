@@ -1,3 +1,4 @@
+import { launchProfileSchema } from './launch.ts';
 import { z } from 'zod';
 import { homedir } from 'node:os';
 import path from 'node:path';
@@ -44,6 +45,13 @@ export const configSchema = z.object({
       port: z.number().int().min(1).max(65535),
     })
     .optional(),
+  launchProfiles: z
+    .array(launchProfileSchema)
+    .refine(
+      (profiles) => new Set(profiles.map((p) => p.id)).size === profiles.length,
+      'Launch profile IDs must be unique',
+    )
+    .default([]),
   codexDaemons: z.array(z.object({ hostId: z.string(), socket: z.string() })).default([]),
   bridges: z
     .array(

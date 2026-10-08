@@ -20,5 +20,6 @@
   },
   "bridges": [],
   "opencode": {},
-  "codexDaemons": []
+  "codexDaemons": [],
+  "launchProfiles": []
 }

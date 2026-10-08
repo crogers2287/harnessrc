@@ -232,6 +232,32 @@ export class CodexLinks {
       }
     });
   }
+  hasLink(session: Session) {
+    return this.links().some(
+      (link) =>
+        link.terminalId === session.terminalId &&
+        link.threadId === session.nativeSessionId &&
+        link.process === session.processIdentity,
+    );
+  }
+  async steer(client: HerdrClient, session: Session, prompt: string) {
+    await this.assertDelivery(client, session);
+    await client.assertBinding(session);
+    const result = await this.native.request('thread/turns/list', {
+      threadId: session.nativeSessionId,
+      limit: 1,
+      sortDirection: 'desc',
+      itemsView: 'notLoaded',
+    });
+    const active = result.data?.find((turn: any) => turn.status === 'inProgress');
+    if (!active?.id) throw new Error('The agent is no longer working. Send a new message instead.');
+    await this.native.request('turn/steer', {
+      threadId: session.nativeSessionId,
+      expectedTurnId: active.id,
+      clientUserMessageId: randomUUID(),
+      input: [{ type: 'text', text: prompt }],
+    });
+  }
   unavailable(agents: Agent[]): Agent[] {
     const managed = new Set(this.links().map((link) => link.terminalId));
     return agents.map((agent) =>

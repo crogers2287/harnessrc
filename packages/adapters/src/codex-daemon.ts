@@ -2,7 +2,7 @@ import WebSocket from 'ws';
 import { lstatSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 
-/** Metadata-only connection to an EXISTING daemon. Never starts/resumes a thread or turn. */
+/** Connection to an EXISTING daemon. Never starts/resumes a thread or turn; steering requires an exact active turn. */
 export class CodexDaemon {
   private ws?: WebSocket;
   private connecting?: Promise<void>;
@@ -85,7 +85,16 @@ export class CodexDaemon {
       });
     });
   }
-  async request(method: 'thread/read' | 'thread/loaded/list' | 'thread/name/set', params: unknown) {
+  async request(
+    method:
+      | 'thread/read'
+      | 'thread/start'
+      | 'thread/loaded/list'
+      | 'thread/name/set'
+      | 'thread/turns/list'
+      | 'turn/steer',
+    params: unknown,
+  ) {
     await this.connect();
     return this.send(method, params);
   }

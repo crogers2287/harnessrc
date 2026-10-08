@@ -173,3 +173,33 @@ test('a daemon outage disables only its managed links, preserving independent na
     f.store.close();
   }
 });
+
+test('steer targets the proved native active turn and never falls back to a new turn', async () => {
+  const f = fixture();
+  try {
+    const [agent] = await f.links.refresh(f.client, [f.agent()]);
+    const session = sessionFromAgent('test', agent, 'Project');
+    session.processIdentity = '10:12';
+    const original = f.native.request;
+    const steers: any[] = [];
+    let active = true;
+    f.native.request = async (method, params) => {
+      if (method === 'thread/turns/list')
+        return { data: active ? [{ id: 'turn-current', status: 'inProgress' }] : [] } as any;
+      if (method === 'turn/steer') {
+        steers.push(params);
+        return {};
+      }
+      return original(method, params);
+    };
+    await f.links.steer(f.client, session, 'Also check mobile');
+    assert.equal(steers.length, 1);
+    assert.equal(steers[0].threadId, 'thread-b');
+    assert.equal(steers[0].expectedTurnId, 'turn-current');
+    active = false;
+    await assert.rejects(() => f.links.steer(f.client, session, 'Too late'), /no longer working/);
+    assert.equal(steers.length, 1);
+  } finally {
+    f.store.close();
+  }
+});
