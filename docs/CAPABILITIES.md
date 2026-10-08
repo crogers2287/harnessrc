@@ -11,7 +11,7 @@
 | Approve / reject action | Implemented PermissionRequest hook | Unsupported | Implemented command/file approval | Unsupported | Unsupported | Unsupported |
 | Steer / interrupt | Unsupported | Unsupported | Implemented native protocol | Unsupported | Unsupported | Unsupported |
 | Resume session | Unsupported remote operation | Unsupported remote operation | Bridge resumes only its own saved thread | Unsupported | Unsupported | Unsupported |
-| Attach files | Unsupported | Unsupported | Unsupported | Unsupported | Unsupported | Unsupported |
+| Attach files/images | Implemented local file references | Implemented local file references | Implemented local file references | Unsupported | Unsupported | Unsupported |
 | Read diffs / subagents | Unsupported capability flags | Unsupported capability flags | Diff event rendering; flags remain off pending complete contract | Unsupported | Unsupported | Unsupported |
 
 Readers import emitted supported record types; they do not manufacture reasoning. OMP branch records retain ancestry but active-branch reconstruction is incomplete. Hermes/OpenCode integration is validated with local database/HTTP fixtures, not real running harnesses. Discoverability depends on Herdr reporting the native session ID; missing IDs show unavailable capabilities.
@@ -24,3 +24,5 @@ Readers import emitted supported record types; they do not manufacture reasoning
 4. Hermes, OpenCode, and OMP readers remain partial. Their interactive transports are outstanding, as are physical-device testing and closed-app push infrastructure.
 
 Next priorities: complete native CLI question routing and upstream owner-bound prompt preconditions; add complete file attachment/diff/subagent contracts; validate Hermes/OpenCode/OMP live readers; test physical devices and native push infrastructure. Browser notifications require an open app; no closed-app push claim.
+
+See [attachment delivery](ATTACHMENTS.md) for same-filesystem configuration, limits, permissions and native file-reader behavior. Image picker/upload is implemented; embedded image-block injection into an existing CLI is not claimed.

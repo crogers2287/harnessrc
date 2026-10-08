@@ -6,6 +6,7 @@ export class TaskQueue {
   constructor(
     private store: Store,
     private adapter: (sessionId: string) => Adapter | undefined,
+    private validateAttachments?: (sessionId: string, ids: string[]) => void,
   ) {
     for (const s of store.sessions())
       for (const t of store.tasks(s.id))
@@ -28,12 +29,16 @@ export class TaskQueue {
       )
     )
       throw new Error('CLI messages cannot contain terminal control characters');
+    this.validateAttachments?.(sessionId, value.attachments);
     return this.store.transaction(() => {
       const existing = this.store
         .tasks(sessionId)
         .find((t) => t.idempotencyKey === value.idempotencyKey);
       if (existing) {
-        if (existing.prompt !== value.prompt)
+        if (
+          existing.prompt !== value.prompt ||
+          JSON.stringify(existing.attachments) !== JSON.stringify(value.attachments)
+        )
           throw new Error('Idempotency key reused with different content');
         return existing;
       }

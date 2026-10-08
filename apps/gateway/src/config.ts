@@ -10,9 +10,23 @@ export const configSchema = z.object({
   origin: z.string().url().default('http://localhost:4080'),
   secureCookies: z.boolean().default(false),
   hosts: z
-    .array(z.object({ id: z.string().min(1), name: z.string(), socket: z.string() }))
+    .array(
+      z.object({
+        id: z.string().min(1),
+        name: z.string(),
+        socket: z.string(),
+        localFiles: z.boolean().default(false),
+      }),
+    )
     .min(1)
-    .default([{ id: 'local', name: 'Local', socket: path.join(home, '.config/herdr/herdr.sock') }]),
+    .default([
+      {
+        id: 'local',
+        name: 'Local',
+        localFiles: false,
+        socket: path.join(home, '.config/herdr/herdr.sock'),
+      },
+    ]),
   transcripts: z
     .object({ claude: z.string(), codex: z.string(), omp: z.string(), hermes: z.string() })
     .default({

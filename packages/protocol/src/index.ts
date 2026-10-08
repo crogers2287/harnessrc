@@ -122,7 +122,7 @@ export type Interaction = InteractionInput & {
 export const taskInputSchema = z.object({
   prompt: z.string().trim().min(1).max(32000),
   idempotencyKey: z.string().min(16).max(128),
-  attachments: z.array(z.string()).max(0).default([]),
+  attachments: z.array(z.string().uuid()).max(10).default([]),
 });
 export type Task = {
   id: string;
@@ -180,3 +180,19 @@ export function redact(value: unknown): unknown {
 }
 
 export class DeliveryDeferred extends Error {}
+
+/** Claude's native transcript records bracketed Herdr pastes with a generated envelope. */
+export function matchesNativePrompt(actual: unknown, expected: string): boolean {
+  if (actual === expected) return true;
+  if (typeof actual !== 'string') return false;
+  const paste = actual.match(
+    /^\s*<pasted_content id="([a-zA-Z0-9_-]{1,64})">\n([\s\S]*)\n<\/pasted_content id="\1">\s*$/,
+  );
+  return paste?.[2] === expected;
+}
+
+export function matchesTaskReceipt(actual: unknown, taskId: string, expected: string): boolean {
+  if (matchesNativePrompt(actual, expected)) return true;
+  const marker = `[Relay request ${taskId}]`;
+  return typeof actual === 'string' && expected.includes(marker) && actual.includes(marker);
+}

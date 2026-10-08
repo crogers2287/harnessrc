@@ -57,12 +57,19 @@ export class CodexBridgeAdapter implements Adapter {
     'readDiffs',
   ]);
   private offsets = new Map<string, number>();
-  constructor(private socket: string, private checkBinding?: (session: Session) => Promise<void>) {}
+  constructor(
+    private socket: string,
+    private checkBinding?: (session: Session) => Promise<void>,
+    private attachmentPrompt?: (session: Session, task: Task) => string,
+  ) {}
   private call(session: Session, method: string, params: Record<string, unknown> = {}) {
     return bridgeRequest(this.socket, method, { ...params, sessionId: session.nativeSessionId });
   }
   async read(session: Session): Promise<SourceEvent[]> {
-    const result = await this.call(session, 'snapshot', { eventOffset: this.offsets.get(session.id) ?? 0, limit: 1000 });
+    const result = await this.call(session, 'snapshot', {
+      eventOffset: this.offsets.get(session.id) ?? 0,
+      limit: 1000,
+    });
     if (typeof result.nextOffset === 'number') this.offsets.set(session.id, result.nextOffset);
     return result.events;
   }
@@ -72,7 +79,10 @@ export class CodexBridgeAdapter implements Adapter {
   async send(session: Session, task: Task) {
     if (!this.capabilities.sendMessage) throw new Error('Native send capability unavailable');
     await this.checkBinding?.(session);
-    return this.call(session, 'send', { taskId: task.id, prompt: task.prompt });
+    return this.call(session, 'send', {
+      taskId: task.id,
+      prompt: this.attachmentPrompt?.(session, task) ?? task.prompt,
+    });
   }
   async reconcile(session: Session, task: Task) {
     return (await this.call(session, 'task', { taskId: task.id })).status;
@@ -95,7 +105,7 @@ export function codexRequestInteraction(request: any): InteractionInput | undefi
     turnId: p.turnId,
     expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
     route: 'codex-bridge' as const,
-      metadata: { method: request.method, itemId: p.itemId, command: p.command, cwd: p.cwd },
+    metadata: { method: request.method, itemId: p.itemId, command: p.command, cwd: p.cwd },
     default: undefined,
   };
   if (

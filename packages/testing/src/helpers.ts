@@ -29,7 +29,9 @@ export async function fixture(
       ? { endpoint: 'https://private.example.test', port: 49001 }
       : undefined,
     origin: 'http://localhost:4080',
-    hosts: [{ id: 'test', name: 'Test host', socket: path.join(dir, 'herdr.sock') }],
+    hosts: [
+      { id: 'test', name: 'Test host', localFiles: true, socket: path.join(dir, 'herdr.sock') },
+    ],
     bridges:
       options.harness === 'claude'
         ? []

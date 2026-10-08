@@ -156,3 +156,33 @@ test('native session titles and CWD survive discovery', async () => {
     await f.close();
   }
 });
+
+test('multiline Claude paste envelopes reconcile only the exact submitted content', async () => {
+  const { matchesNativePrompt } = await import('@harnessrc/protocol');
+  const prompt = 'Read the file\n\nAttached files:\n/example/image.png';
+  assert.equal(
+    matchesNativePrompt(
+      `\n\n<pasted_content id="74b3">\n${prompt}\n</pasted_content id="74b3">\n`,
+      prompt,
+    ),
+    true,
+  );
+  assert.equal(
+    matchesNativePrompt(
+      `\n\n<pasted_content id="74b3">\n${prompt}\n</pasted_content id="other">\n`,
+      prompt,
+    ),
+    false,
+  );
+  assert.equal(matchesNativePrompt(`prefix ${prompt}`, prompt), false);
+});
+
+test('native image expansion preserves an exact transport receipt without matching other tasks', async () => {
+  const { matchesTaskReceipt } = await import('@harnessrc/protocol');
+  const id = randomUUID();
+  const sent = `Read image /uploads/photo.png\n[Relay request ${id}]`;
+  const native = `[Image #2]Read image\n[Relay request ${id}]`;
+  assert.equal(matchesTaskReceipt(native, id, sent), true);
+  assert.equal(matchesTaskReceipt(native, randomUUID(), sent), false);
+  assert.equal(matchesTaskReceipt('Read image', id, sent), false);
+});

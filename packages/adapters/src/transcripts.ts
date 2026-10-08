@@ -20,7 +20,11 @@ function source(
   return {
     sourceId,
     kind,
-    data,
+    data: {
+      ...data,
+      ...(record.promptId ? { nativePromptId: record.promptId } : {}),
+      ...(record.isMeta ? { nativeMeta: true } : {}),
+    },
     timestamp: typeof record.timestamp === 'string' ? record.timestamp : new Date(0).toISOString(),
     raw: record,
   };
@@ -56,7 +60,11 @@ export function normalizeClaude(record: any): SourceEvent[] {
       events.push(
         source(record, key, 'tool.output', {
           toolId: block.tool_use_id,
-          text: textContent(block.content) || JSON.stringify(block.content),
+          text:
+            textContent(block.content) ||
+            (Array.isArray(block.content) && block.content.some((b: any) => b.type === 'image')
+              ? '[Image result]'
+              : JSON.stringify(block.content)),
           error: block.is_error ?? false,
         }),
       ); /* Private thinking is deliberately not promoted to a reasoning summary. */

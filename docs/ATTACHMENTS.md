@@ -1,0 +1,17 @@
+# File and image attachments
+
+Relay accepts up to 10 files per instruction, 20 MB per file, with a 1 GB gateway upload quota. Photos, camera capture and general files use the operating system/browser picker; desktop paste and drop are supported. PNG/JPEG/WebP/GIF selections have local previews. Other formats appear as filenames. The camera picker requires testing on the actual phone; browser emulation does not establish device-camera behavior.
+
+Set `hosts[].localFiles: true` only when that host's agents share the gateway's filesystem and user access. Fred uses this mode. It is false by default: a forwarded remote Herdr socket does not make the gateway's local files accessible on another server.
+
+Uploads are opaque IDs bound to the session's native ID and process generation. Metadata is in migration 002, bytes under `<dataDir>/uploads` (0700 directory, 0600 files). The gateway checks read/control permissions, byte limits, filenames, content integrity and session ownership. Files are served as download-only octet streams, not executable HTML/SVG. Filenames do not become filesystem paths. Orphan cleanup/retention automation is not yet implemented; unsubmitted files can be removed from the composer. Saved task attachments are retained to preserve replay and auditability. Back up the database and uploads directory together.
+
+Claude and Codex receive the instruction with an explicit list of uploaded file paths through the existing transport. For CLI sessions this is Herdr `agent.prompt`, with no shell interpolation and no second native writer. Their native file/image tools read those files as needed. This is file-reference delivery, not a claim that binary image blocks are injected into an already-running CLI. Model/file-tool support and permissions still apply. The Codex native bridge receives the same file references when local-files access is enabled.
+
+Draft text and completed upload references survive page reload in browser session storage; upload bytes remain on the gateway. An in-progress upload interrupted by page closure must be selected again. Outside-tailnet paired deployments must configure reverse-proxy request limits of at least 20 MB. Tailnet direct API traffic does not traverse Nginx Proxy Manager.
+
+## Existing Codex registration
+
+`scripts/install-codex-session-hook.py` adds `codex-session-hook.py` beside existing Codex hooks and saves a backup of hooks.json. The hook consumes native SessionStart/UserPromptSubmit/Stop/Interrupt identity and reports it through installed Herdr methods. It checks that the foreground Codex process is an ancestor of the actual hook process, rejects inherited subagent mismatches and refuses replacing a different existing owner on non-start events. It never sends a prompt or reads terminal output. This can recover identities only when the running Codex loads and emits the hook; it cannot retroactively identify a process that emits no native identity. Existing processes may require their next normal launch to load changed hooks. Do not restart user sessions automatically.
+
+The current Fred Codex TUI connects to a shared native daemon. The standalone ancestry hook is intentionally insufficient for that topology and is not a claimed repair for the screenshot's missing identity. Shared-daemon session mapping remains outstanding.

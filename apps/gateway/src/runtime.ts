@@ -1,7 +1,8 @@
 import { EventEmitter } from 'node:events';
 import { createHash } from 'node:crypto';
-import { capabilities, type Session, type Adapter } from '@harnessrc/protocol';
+import { matchesTaskReceipt, capabilities, type Session, type Adapter } from '@harnessrc/protocol';
 import { Store } from '@harnessrc/storage';
+import { Attachments } from '../../../packages/storage/src/attachments.ts';
 import { HerdrClient, sessionFromAgent } from '@harnessrc/herdr';
 import {
   JsonlAdapter,
@@ -18,6 +19,7 @@ export class Runtime extends EventEmitter {
   clients = new Map<string, HerdrClient>();
   adapters = new Map<string, Adapter>();
   queue: TaskQueue;
+  attachments: Attachments;
   broker: InteractionBroker;
   private interval?: NodeJS.Timeout;
   private refreshing = new Set<string>();
@@ -46,7 +48,14 @@ export class Runtime extends EventEmitter {
         this.emit('change');
       });
     }
-    this.queue = new TaskQueue(store, (id) => this.adapters.get(id));
+    this.attachments = new Attachments(store, config.dataDir);
+    this.queue = new TaskQueue(
+      store,
+      (id) => this.adapters.get(id),
+      (id, files) => {
+        for (const file of files) this.attachments.get(store.session(id), file);
+      },
+    );
     this.broker = new InteractionBroker(
       store,
       (id) => this.adapters.get(id),
@@ -124,7 +133,13 @@ export class Runtime extends EventEmitter {
         if (bridge) {
           adapter =
             this.adapters.get(s.id) ??
-            new CodexBridgeAdapter(bridge.socket, (session) => this.assertBinding(session));
+            new CodexBridgeAdapter(
+              bridge.socket,
+              (session) => this.assertBinding(session),
+              this.config.hosts.find((h) => h.id === hostId)?.localFiles
+                ? (session, task) => this.attachments.prompt(session, task)
+                : undefined,
+            );
           try {
             const native = await bridgeRequest(bridge.socket, 'snapshot', {
               sessionId: s.nativeSessionId,
@@ -139,6 +154,9 @@ export class Runtime extends EventEmitter {
                 .filter(([, value]) => value)
                 .map(([key]) => key) as any,
             );
+            adapter.capabilities.attachFiles =
+              !!this.config.hosts.find((h) => h.id === hostId)?.localFiles &&
+              adapter.capabilities.sendMessage;
             s.capabilities = s.processIdentity
               ? adapter.capabilities
               : capabilities(['readConversation', 'streamConversation']);
@@ -165,8 +183,14 @@ export class Runtime extends EventEmitter {
           }
           if (adapter && s.processIdentity && ['claude', 'codex'].includes(s.harness)) {
             if (!(adapter instanceof HerdrCliAdapter))
-              adapter = new HerdrCliAdapter(adapter, client, this.store, (session) =>
-                this.assertBinding(session),
+              adapter = new HerdrCliAdapter(
+                adapter,
+                client,
+                this.store,
+                (session) => this.assertBinding(session),
+                this.config.hosts.find((h) => h.id === hostId)?.localFiles
+                  ? (session, task) => this.attachments.prompt(session, task)
+                  : undefined,
               );
           }
           s.capabilities = adapter?.capabilities ?? capabilities([]);
@@ -228,7 +252,30 @@ export class Runtime extends EventEmitter {
         const adapter = this.adapters.get(s.id);
         if (!adapter) continue;
         try {
-          for (const e of await adapter.read(s)) this.store.event(s, e);
+          for (const e of await adapter.read(s)) {
+            if (e.kind === 'user.message') {
+              const task = this.store
+                .tasks(s.id)
+                .find(
+                  (t) =>
+                    t.attachments.length &&
+                    t.generation === s.generation &&
+                    Date.parse(e.timestamp) >= Date.parse(t.createdAt) &&
+                    matchesTaskReceipt(e.data.text, t.id, this.attachments.prompt(s, t)),
+                );
+              if (task)
+                e.data = {
+                  ...e.data,
+                  text: task.prompt,
+                  attachments: task.attachments.map((id) => {
+                    const a = this.attachments.get(s, id);
+                    return { id, name: a.name, mime: a.mime, size: a.size };
+                  }),
+                  taskId: task.id,
+                };
+            }
+            this.store.event(s, e);
+          }
           if (adapter.interactions) {
             const native = await adapter.interactions(s);
             const ids = new Set(native.map((i) => i.nativeRequestId));

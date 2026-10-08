@@ -6,6 +6,7 @@ import staticPlugin from '@fastify/static';
 import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { z, ZodError } from 'zod';
+import { MAX_ATTACHMENT_BYTES } from '../../../packages/storage/src/attachments.ts';
 import { Store } from '@harnessrc/storage';
 import type { SessionView } from '@harnessrc/protocol';
 import { Auth, type Device } from './auth.ts';
@@ -34,6 +35,11 @@ export async function createGateway(
   const tailnet = new TailnetAuth(options.tailnetLookup);
   const auth = new Auth(store, config.dataDir);
   const app = Fastify({ logger: false, bodyLimit: 256 * 1024, trustProxy: false });
+  app.addContentTypeParser(
+    'application/octet-stream',
+    { parseAs: 'buffer', bodyLimit: MAX_ATTACHMENT_BYTES },
+    (_req, body, done) => done(null, body),
+  );
   await app.register(cookie);
   await app.register(rateLimit, { max: 600, timeWindow: '1 minute' });
   await app.register(websocket, { options: { maxPayload: 65536 } });
@@ -59,7 +65,7 @@ export async function createGateway(
       .header('Referrer-Policy', 'no-referrer')
       .header(
         'Content-Security-Policy',
-        `default-src 'self'; connect-src 'self' ws: wss: ${config.tailnet?.endpoint ?? ''}; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'`,
+        `default-src 'self'; connect-src 'self' ws: wss: ${config.tailnet?.endpoint ?? ''}; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'`,
       );
     const url = req.url.split('?')[0];
     if (!url.startsWith('/api/') && url !== '/ws') return;
@@ -185,6 +191,59 @@ export async function createGateway(
       })
       .parse(req.query);
     return { events: store.events(id, query.after, query.limit, query.before) };
+  });
+  app.get('/api/sessions/:id/attachments', async (req) => {
+    const { id } = req.params as { id: string };
+    check(req, id);
+    return { attachments: runtime.attachments.list(store.session(id)) };
+  });
+  app.post(
+    '/api/sessions/:id/attachments',
+    { bodyLimit: MAX_ATTACHMENT_BYTES, config: { rateLimit: { max: 30, timeWindow: '1 minute' } } },
+    async (req) => {
+      const { id } = req.params as { id: string };
+      check(req, id, true);
+      const session = store.session(id);
+      if (!session.capabilities.attachFiles)
+        throw new Error('File delivery is not connected for this session');
+      const { name, mime } = z
+        .object({
+          name: z.string().min(1).max(200),
+          mime: z
+            .string()
+            .max(100)
+            .regex(/^[\w.+-]+\/[\w.+-]+$/)
+            .default('application/octet-stream'),
+        })
+        .parse(req.query);
+      if (!Buffer.isBuffer(req.body)) throw new Error('Expected binary file content');
+      const attachment = runtime.attachments.add(session, name, mime, req.body);
+      store.audit(req.device.id, 'attachment.upload', id, {
+        attachmentId: attachment.id,
+        size: attachment.size,
+      });
+      return { attachment };
+    },
+  );
+  app.get('/api/sessions/:id/attachments/:file', async (req, reply) => {
+    const { id, file } = req.params as { id: string; file: string };
+    check(req, id);
+    const { row, bytes } = runtime.attachments.read(store.session(id), file);
+    // Downloads never execute uploaded HTML/SVG in the gateway origin.
+    return reply
+      .type('application/octet-stream')
+      .header(
+        'Content-Disposition',
+        `attachment; filename*=UTF-8''${encodeURIComponent(String(row.name))}`,
+      )
+      .send(bytes);
+  });
+  app.delete('/api/sessions/:id/attachments/:file', async (req) => {
+    const { id, file } = req.params as { id: string; file: string };
+    check(req, id, true);
+    runtime.attachments.remove(store.session(id), file);
+    store.audit(req.device.id, 'attachment.remove', id, { attachmentId: file });
+    return { ok: true };
   });
   app.post('/api/sessions/:id/tasks', async (req) => {
     const { id } = req.params as { id: string };

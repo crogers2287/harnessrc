@@ -4,7 +4,7 @@
   "port": 4080,
   "origin": "https://fred.YOUR_TAILNET.ts.net",
   "secureCookies": true,
-  "hosts": [{"id": "fred", "name": "Fred", "socket": "/home/YOUR_USER/.config/herdr/herdr.sock"}],
+  "hosts": [{"id": "fred", "name": "Fred", "localFiles": true, "socket": "/home/YOUR_USER/.config/herdr/herdr.sock"}],
   "transcripts": {
     "claude": "/home/YOUR_USER/.claude/projects",
     "codex": "/home/YOUR_USER/.codex/sessions",

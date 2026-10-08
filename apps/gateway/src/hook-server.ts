@@ -62,7 +62,7 @@ export async function startHookServer(runtime: Runtime, socketPath: string) {
           await runtime.assertBinding(s);
           interaction = runtime.broker.open(s.id, {
             nativeRequestId: request.requestId,
-            type: ['Edit', 'Write', 'MultiEdit'].includes(h.tool_name)
+            type: ['Edit', 'Write', 'MultiEdit', 'Read', 'Glob', 'Grep'].includes(h.tool_name)
               ? 'file-approval'
               : 'command-approval',
             prompt: `Allow ${h.tool_name} once?`,
