@@ -414,8 +414,8 @@ function Conversation({
             method: 'POST',
             body: JSON.stringify({ prompt: value.prompt, idempotencyKey: value.key }),
           }),
-    onSuccess: () => {
-      setDraft('');
+    onSuccess: (_result, submitted) => {
+      setDraft((current) => (current === submitted.prompt ? '' : current));
       submission.current = undefined;
       setNotice(mode === 'steer' ? 'Active turn updated.' : 'Task saved to the queue.');
       void query.invalidateQueries({ queryKey: ['detail', session.id] });

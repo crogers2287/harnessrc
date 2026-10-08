@@ -26,6 +26,12 @@ test('mobile chat: native approval, serial queued work, reconnect, and settings'
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
+  // A slow receipt must not erase a follow-up typed while the previous request is pending.
+  await page.route('**/api/sessions/*/tasks', async (route) => {
+    const response = await route.fetch();
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    await route.fulfill({ response });
+  });
   await pair(page);
   await page.screenshot({ path: 'docs/screenshots/inbox-mobile.png' });
   await page.getByRole('button', { name: /Atlas API/ }).click();
@@ -96,14 +102,12 @@ test('responsive inbox supports phone, landscape, tablet, desktop, zoom, and red
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
     ).toBe(true);
-    const controls = await page
-      .locator('button:visible')
-      .evaluateAll((buttons: any[]) =>
-        buttons.map((b) => ({
-          label: b.getAttribute('aria-label') ?? b.textContent,
-          height: b.getBoundingClientRect().height,
-        })),
-      );
+    const controls = await page.locator('button:visible').evaluateAll((buttons: any[]) =>
+      buttons.map((b) => ({
+        label: b.getAttribute('aria-label') ?? b.textContent,
+        height: b.getBoundingClientRect().height,
+      })),
+    );
     expect(controls.filter((b: any) => b.height < 47)).toEqual([]);
   }
   await page.screenshot({ path: 'docs/screenshots/inbox-desktop.png' });
