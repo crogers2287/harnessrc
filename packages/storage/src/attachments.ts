@@ -96,7 +96,7 @@ export class Attachments {
     unlinkSync(path.join(this.root, String(row.filename)));
     this.store.db.prepare('DELETE FROM attachments WHERE id=?').run(id);
   }
-  prompt(session: Session, task: Task) {
+  prompt(session: Session, task: Pick<Task, 'id' | 'prompt' | 'attachments'>) {
     if (!task.attachments.length) return task.prompt;
     const files = task.attachments.map((id) => {
       const { row } = this.read(session, id);

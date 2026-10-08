@@ -37,6 +37,15 @@ test('binary uploads are authorized, scoped, immutable and survive restart with 
       () => f.gateway.runtime.attachments.get({ ...f.session, id: 'other' }, file.id),
       /owner/,
     );
+    assert.throws(
+      () =>
+        f.gateway.runtime.queue.add(id, {
+          prompt: 'x'.repeat(32000),
+          attachments: [file.id],
+          idempotencyKey: randomUUID(),
+        }),
+      /input limit/,
+    );
     const key = randomUUID();
     const task = f.gateway.runtime.queue.add(id, {
       prompt: 'Read the upload',

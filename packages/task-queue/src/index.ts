@@ -6,7 +6,7 @@ export class TaskQueue {
   constructor(
     private store: Store,
     private adapter: (sessionId: string) => Adapter | undefined,
-    private validateAttachments?: (sessionId: string, ids: string[]) => void,
+    private validateAttachments?: (sessionId: string, ids: string[], prompt: string) => void,
   ) {
     for (const s of store.sessions())
       for (const t of store.tasks(s.id))
@@ -29,7 +29,7 @@ export class TaskQueue {
       )
     )
       throw new Error('CLI messages cannot contain terminal control characters');
-    this.validateAttachments?.(sessionId, value.attachments);
+    this.validateAttachments?.(sessionId, value.attachments, value.prompt);
     return this.store.transaction(() => {
       const existing = this.store
         .tasks(sessionId)

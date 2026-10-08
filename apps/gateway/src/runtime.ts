@@ -52,8 +52,16 @@ export class Runtime extends EventEmitter {
     this.queue = new TaskQueue(
       store,
       (id) => this.adapters.get(id),
-      (id, files) => {
+      (id, files, prompt) => {
         for (const file of files) this.attachments.get(store.session(id), file);
+        if (
+          this.attachments.prompt(store.session(id), {
+            id: '00000000-0000-0000-0000-000000000000',
+            prompt,
+            attachments: files,
+          }).length > 32000
+        )
+          throw new Error('Message and file references exceed the agent input limit');
       },
     );
     this.broker = new InteractionBroker(
