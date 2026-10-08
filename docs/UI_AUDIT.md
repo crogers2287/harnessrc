@@ -42,3 +42,7 @@ The full product is not complete: existing CLI rich-question routing, automatic 
 ## OpenUI and interaction reliability pass
 
 OpenUI Button/IconButton/TextArea primitives now share Relay’s theme. The dark palette is neutral, header text is compact with full session identity available in details, and the composer grows from one row. Exact native question-reply envelopes render their question and answer without leaking internal request IDs. The edge overlay was removed; gestures ignore interactive targets and preserve vertical scrolling/pinch zoom. Repeated real browser touch taps with finger jitter cover menu, close, copy, and attachment controls. Clipboard failures are visible; HTTP deadlines preserve uncertain outgoing messages rather than locking the composer indefinitely.
+
+## Chat composition revision
+
+The previous OpenUI release preserved too much of the old structure. The new composition replaces the four-line permanent header with a title/model disclosure and a compact status/directory strip, combines model/host information in shorter drawer rows, reduces the composer to text plus a reachable action row, and removes its permanent explanatory footer. A distinct neutral user-message surface and circular blue send control separate messages from actions. Both themes were reviewed with realistic chat content. A duplicate textarea focus outline discovered in the dark screenshot was removed in favor of one visible composer focus boundary. Native DSH support remains incomplete; see DSH.md for the implemented transport and actual deployment blockers.

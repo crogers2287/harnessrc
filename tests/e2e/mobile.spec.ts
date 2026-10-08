@@ -286,7 +286,7 @@ test('live chat appends events without refetching history and preserves reading 
   await page.reload();
   await openSessions(page);
   await page.getByRole('button', { name: /Streaming acceptance/ }).click();
-  await expect(page.locator('.conversation-heading .session-model')).toHaveText('gpt-6-astra');
+  await expect(page.locator('.conversation-heading .header-model')).toContainText('gpt-6-astra');
   await expect(page.getByRole('status', { name: /is working/ })).toBeAttached();
   const composer = page.getByLabel('Instruction', { exact: true });
   await composer.fill('Keep this draft while messages arrive');
@@ -592,6 +592,10 @@ test('native question replies read like chat and repeated real touch taps reliab
     await tap('Close sessions');
     await expect(page.getByRole('dialog', { name: 'Sessions', exact: true })).not.toBeVisible();
   }
+  await tap('Show session information');
+  await expect(page.getByRole('region', { name: 'Session information' })).toBeVisible();
+  await tap('Show session information');
+  await expect(page.getByRole('region', { name: 'Session information' })).not.toBeVisible();
   await tap('Copy message');
   await expect(page.getByText('Copied', { exact: true })).toBeVisible();
   await page.getByLabel('Instruction behavior').selectOption('queue');

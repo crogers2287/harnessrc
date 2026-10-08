@@ -2,7 +2,7 @@
 
 Local inspection found Herdr 0.8.0, protocol 19 and Codex CLI 0.161.0. The installed Herdr schema is checked into test fixtures; mock response contracts are validated with AJV. Installed Codex generates ClientRequest/ServerRequest schemas and the bridge detects supported methods. Subsequent Fred checks read real structured transcripts and sent harmless instructions only to dedicated validation sessions. Codex has since updated to 0.162.0; its shared-daemon topology was inspected separately.
 
-Latest local result: **60/60 unit/integration tests and 10/10 browser tests passed**, with TypeScript, lint and production build passing. OpenUI dependency and license review is recorded in OPENUI.md.
+Latest local result: **62/62 unit/integration tests and 10/10 browser tests passed**, with TypeScript, lint and production build passing. OpenUI dependency and license review is recorded in OPENUI.md.
 
 Run `npm run check` for TypeScript, lint, unit/integration contracts and production assets. Run `npm run test:e2e` after installing Playwright Chromium (or set `CHROMIUM_PATH` to an installed Chrome executable). Tests cover partial UTF-8 transcripts, rotation and symlink escapes; native dedup/redaction; queue CRUD/idempotency/order/recovery/uncertain delivery; exact pending questions/approvals/double submission/expiry/replacement; device authorization/rotation/revocation and WebSocket origin; a genuine Claude hook executable's documented output; and a real Codex bridge process against a credential-free JSON-RPC fixture.
 

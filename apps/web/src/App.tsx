@@ -313,11 +313,9 @@ export function App() {
                       <div className="row-title">
                         <strong>{sessionLabel(s)}</strong>
                       </div>
-                      <div className="session-meta">
-                        {agentLabel(s.harness)} <span>on {s.hostId}</span>
-                      </div>
-                      <div className="session-model" title="Last model reported by the harness">
-                        {s.model || 'Model unknown'}
+                      <div className="session-meta compact-session-meta">
+                        <span>{s.model || agentLabel(s.harness)}</span>
+                        <span>{s.hostId}</span>
                       </div>
                       <div className="session-cwd" title={s.cwd}>
                         <span>CWD</span> <code>{s.cwd || 'Not reported'}</code>
@@ -528,6 +526,7 @@ function Conversation({
   const [draft, setDraft] = useState(restoreDraft(session.id));
   const attachments = useAttachments(session.id);
   const [behavior, setBehavior] = useState('auto');
+  const [contextOpen, setContextOpen] = useState(false);
   const mode =
     behavior === 'queue'
       ? 'queue'
@@ -717,17 +716,19 @@ function Conversation({
           <Menu size={22} />
         </IconButton>
         <div className="conversation-heading">
-          <h2 title={sessionLabel(session)}>{sessionLabel(session)}</h2>
-          <div className="session-meta">
-            {agentLabel(session.harness)} on {session.hostId}
-            <Status status={session.status} />
-          </div>
-          <div className="session-model" title="Last model reported by the harness">
-            {session.model || 'Model unknown'}
-          </div>
-          <div className="conversation-cwd" title={session.cwd}>
-            <span>CWD</span> <code>{session.cwd || 'Not reported'}</code>
-          </div>
+          <button
+            className="conversation-title-button"
+            aria-label="Show session information"
+            aria-expanded={contextOpen}
+            aria-controls="conversation-context"
+            onClick={() => setContextOpen(!contextOpen)}
+          >
+            <h2 title={sessionLabel(session)}>{sessionLabel(session)}</h2>
+            <span className="header-model">
+              {agentLabel(session.harness)} · {session.model || 'Model unknown'}{' '}
+              <span aria-hidden="true">⌄</span>
+            </span>
+          </button>
         </div>
         <IconButton
           label={`Task queue, ${session.queuedCount} pending`}
@@ -767,6 +768,28 @@ function Conversation({
           <MoreHorizontal size={23} />
         </IconButton>
       </header>
+      <div className="chat-context-strip">
+        <Status status={session.status} />
+        <span title={session.cwd}>{session.cwd || 'Directory not reported'}</span>
+      </div>
+      {contextOpen && (
+        <section
+          id="conversation-context"
+          className="chat-context-panel"
+          aria-label="Session information"
+        >
+          <dl>
+            <dt>Agent</dt>
+            <dd>{agentLabel(session.harness)}</dd>
+            <dt>Model</dt>
+            <dd>{session.model || 'Model unknown'}</dd>
+            <dt>Host</dt>
+            <dd>{session.hostId}</dd>
+            <dt>Directory</dt>
+            <dd>{session.cwd || 'Not reported'}</dd>
+          </dl>
+        </section>
+      )}
       {connection !== 'connected' && (
         <div className="connection-banner" role="status">
           <WifiOff size={16} aria-hidden="true" />
@@ -983,16 +1006,16 @@ function Conversation({
                       : 'Send message'
                 }
               >
-                {send.isPending
-                  ? send.variables?.mode === 'queue'
-                    ? 'Queuing…'
-                    : 'Sending…'
-                  : mode === 'steer'
-                    ? 'Steer'
-                    : mode === 'queue'
-                      ? 'Queue'
-                      : 'Send'}
-                <ArrowUp size={19} aria-hidden="true" />
+                <span className="sr-only">
+                  {send.isPending
+                    ? 'Sending…'
+                    : mode === 'steer'
+                      ? 'Steer'
+                      : mode === 'queue'
+                        ? 'Queue'
+                        : 'Send'}
+                </span>
+                <ArrowUp size={22} aria-hidden="true" />
               </Button>
             </div>
           </form>
@@ -1023,11 +1046,7 @@ function Conversation({
               notice ||
               (!session.capabilities.queueTask
                 ? 'Chat control is waiting for a verified connection.'
-                : mode === 'steer'
-                  ? 'Messages update the active turn.'
-                  : session.status === 'working'
-                    ? 'Follow-ups wait until this turn finishes.'
-                    : 'Messages go to your existing agent session.')}
+                : '')}
         </p>
       </div>
     </>

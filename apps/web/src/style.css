@@ -2368,3 +2368,222 @@ code {
     bottom: 145px;
   }
 }
+
+/* Chat-first composition: compact navigation, quiet transcript, reachable controls. */
+:root {
+  --chat-user: #eff0f3;
+  --chat-action: #335dc0;
+  --chat-on-action: #ffffff;
+}
+:root[data-theme='dark'] {
+  --chat-user: #303236;
+  --chat-action: #b7caff;
+  --chat-on-action: #172747;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --chat-user: #303236;
+    --chat-action: #b7caff;
+    --chat-on-action: #172747;
+  }
+}
+.conversation-header {
+  border-bottom: 0;
+  padding: 10px 16px 2px;
+  align-items: center;
+}
+.conversation-title-button {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  padding: 4px 8px;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  border-radius: 10px;
+}
+.conversation-title-button:hover {
+  background: var(--bg);
+}
+.conversation-title-button h2 {
+  font-size: 1rem;
+  margin: 0;
+}
+.header-model {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 0.75rem;
+  margin-top: 2px;
+}
+.chat-context-strip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 24px 10px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.6875rem;
+}
+.chat-context-strip > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-context-strip .status {
+  flex-shrink: 0;
+}
+.chat-context-panel {
+  padding: 12px 24px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+.chat-context-panel dl {
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr);
+  gap: 8px;
+  font-size: 0.8125rem;
+  margin: 0;
+}
+.chat-context-panel dt {
+  color: var(--muted);
+}
+.chat-context-panel dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.session-row {
+  margin: 2px 8px;
+  width: calc(100% - 16px);
+  padding: 12px;
+  border: 0;
+  border-radius: 12px;
+  gap: 10px;
+}
+.session-row.selected {
+  background: var(--chat-user);
+  box-shadow: none;
+}
+.session-row .harness-mark {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  background: transparent;
+  font-size: 1rem;
+}
+.session-row .session-summary p {
+  font-size: 0.75rem;
+  margin-block: 5px;
+}
+.session-row .row-title strong {
+  font-size: 0.875rem;
+}
+.compact-session-meta {
+  justify-content: space-between;
+}
+.compact-session-meta > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.session-row .session-cwd {
+  margin-top: 3px;
+  font-size: 0.6875rem;
+}
+.session-row .row-bottom {
+  margin-top: 5px;
+  font-size: 0.6875rem;
+}
+.agent-group-heading {
+  padding: 12px 20px 4px;
+  font-size: 0.75rem;
+  background: transparent;
+  border: 0;
+}
+.user-message {
+  background: var(--chat-user);
+  border-radius: 20px;
+  max-width: 85%;
+  padding: 12px 16px 4px;
+}
+.message-author {
+  font-size: 0.6875rem;
+  margin-bottom: 6px;
+}
+.message-content {
+  line-height: 1.65;
+}
+.composer-area {
+  border-top: 0;
+  background: var(--surface);
+}
+.composer {
+  border-radius: 24px;
+  background: var(--bg);
+  border-color: var(--border);
+  box-shadow: none;
+}
+.composer .send-button {
+  min-width: 48px;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--chat-action);
+  color: var(--chat-on-action);
+}
+.composer-controls {
+  padding-top: 0;
+}
+.composer-mode select {
+  font-size: 0.75rem;
+}
+.composer-footer:empty {
+  display: none;
+}
+@media (max-width: 767px) {
+  .conversation-header {
+    padding: 4px 8px 0;
+  }
+  .conversation-heading {
+    padding: 0;
+  }
+  .conversation-heading h2 {
+    font-size: 0.9375rem;
+  }
+  .chat-context-strip {
+    padding: 0 16px 8px;
+  }
+  .conversation-scroll {
+    padding: 24px 20px 12px;
+  }
+  .user-message {
+    max-width: 90%;
+  }
+  .composer-area {
+    padding: 8px 12px calc(10px + env(safe-area-inset-bottom));
+  }
+  .composer {
+    padding: 8px 10px 6px;
+  }
+  .composer .openui-textarea {
+    min-height: 44px;
+    padding: 8px;
+  }
+  .composer-controls {
+    gap: 4px;
+  }
+  .jump-latest {
+    bottom: 140px;
+  }
+}
+/* One focus boundary for the compound composer, without a second box around typing. */
+.composer .openui-textarea:focus-visible {
+  outline: none;
+}
+.composer:focus-within {
+  box-shadow: 0 0 0 1px var(--focus);
+}
