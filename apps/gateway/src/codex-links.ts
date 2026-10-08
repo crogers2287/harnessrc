@@ -143,6 +143,9 @@ export class CodexLinks {
   async refresh(client: HerdrClient, agents: Agent[]): Promise<Agent[]> {
     return this.exclusive(async () => {
       await this.recover();
+      // Invalidation may have captured our temporary title while a delivery proof held the lock.
+      // Refresh only after that proof has restored the native name.
+      agents = (await client.snapshot()).agents;
       const known = new Map(this.links().map((link) => [link.terminalId, link]));
       const candidates = agents.filter(
         (a) => a.agent === 'codex' && (!a.agent_session || known.has(a.terminal_id)),
@@ -239,6 +242,21 @@ export class CodexLinks {
         link.threadId === session.nativeSessionId &&
         link.process === session.processIdentity,
     );
+  }
+  async turnState(client: HerdrClient, session: Session): Promise<Session['status']> {
+    if (!this.hasLink(session)) throw new Error('Codex binding is not verified');
+    await client.assertBinding(session);
+    const result = await this.native.request('thread/turns/list', {
+      threadId: session.nativeSessionId,
+      limit: 1,
+      sortDirection: 'desc',
+      itemsView: 'notLoaded',
+    });
+    if (!Array.isArray(result.data)) throw new Error('Native turn state is unavailable');
+    if (!result.data.length) return 'idle';
+    if (result.data[0].status === 'inProgress') return 'working';
+    if (['completed', 'failed', 'interrupted'].includes(result.data[0].status)) return 'idle';
+    throw new Error('Native turn state is unavailable');
   }
   async steer(client: HerdrClient, session: Session, prompt: string) {
     await this.assertDelivery(client, session);

@@ -432,6 +432,58 @@ test('mobile opens chat first, defaults to Send, and supports edge swipe drawer 
   await expect(page.getByRole('dialog', { name: 'Sessions', exact: true })).not.toBeVisible();
 });
 
+test('default Send and Steer use native message delivery; only explicit Queue schedules work', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await pair(page);
+  await page.getByRole('button', { name: /Atlas API/ }).click();
+  const draft = page.getByLabel('Instruction', { exact: true });
+  let queueRequests = 0;
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && request.url().endsWith('/tasks')) queueRequests++;
+  });
+  await draft.fill('Keep working for steering UI test');
+  const sent = page.waitForResponse(
+    (response) => response.url().endsWith('/messages') && response.request().method() === 'POST',
+  );
+  await page.getByRole('button', { name: 'Send message', exact: true }).click();
+  expect((await (await sent).json()).mode).toBe('send');
+  await expect(page.getByRole('button', { name: 'Steer active turn', exact: true })).toBeVisible();
+  await draft.fill('Change the current approach');
+  const steered = page.waitForResponse(
+    (response) => response.url().endsWith('/messages') && response.request().method() === 'POST',
+  );
+  await page.getByRole('button', { name: 'Steer active turn', exact: true }).click();
+  expect((await (await steered).json()).mode).toBe('steer');
+  expect(queueRequests).toBe(0);
+  await draft.fill('Explicit later turn');
+  await page.getByLabel('Instruction behavior').selectOption('queue');
+  const queued = page.waitForResponse(
+    (response) => response.url().endsWith('/tasks') && response.request().method() === 'POST',
+  );
+  await page.getByRole('button', { name: 'Queue instruction', exact: true }).click();
+  const queuedResponse = await queued;
+  const body = await queuedResponse.json();
+  expect(body.task.status).toBe('pending');
+  expect(queueRequests).toBe(1);
+  await page.evaluate(async (sessionId) => {
+    await fetch(`/api/sessions/${sessionId}/interrupt`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-RC-Request': '1' },
+      body: JSON.stringify({ confirm: true }),
+    });
+  }, body.task.sessionId);
+  await expect
+    .poll(async () =>
+      page.evaluate(async ({ sessionId, id }) => {
+        const detail = await (await fetch(`/api/sessions/${sessionId}`)).json();
+        return detail.tasks.find((task: any) => task.id === id)?.status;
+      }, body.task),
+    )
+    .toBe('completed');
+});
+
 test('Steer renders immediately, preserves the next draft, and keeps uncertain delivery visible', async ({
   page,
 }) => {
@@ -448,9 +500,9 @@ test('Steer renders immediately, preserves the next draft, and keeps uncertain d
   const held = new Promise<void>((resolve) => {
     release = resolve;
   });
-  await page.route('**/api/sessions/*/steer', async (route) => {
+  await page.route('**/api/sessions/*/messages', async (route) => {
     await held;
-    await route.fulfill({ json: { ok: true } });
+    await route.fulfill({ json: { mode: 'steer' } });
   });
   const draft = page.getByLabel('Instruction', { exact: true });
   await draft.fill('Focus on the mobile navigation');
@@ -464,8 +516,8 @@ test('Steer renders immediately, preserves the next draft, and keeps uncertain d
   release();
   await expect(page.locator('.outgoing-message')).toContainText('Sent');
   await expect(draft).toHaveValue('Next instruction stays here');
-  await page.unroute('**/api/sessions/*/steer');
-  await page.route('**/api/sessions/*/steer', (route) => route.abort());
+  await page.unroute('**/api/sessions/*/messages');
+  await page.route('**/api/sessions/*/messages', (route) => route.abort());
   await page.getByRole('button', { name: 'Steer active turn', exact: true }).click();
   await expect(page.locator('.outgoing-message').last()).toContainText('Delivery not confirmed');
   await expect(page.locator('.outgoing-message').last()).toContainText(

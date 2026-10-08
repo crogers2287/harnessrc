@@ -25,9 +25,16 @@ export class HerdrCliAdapter implements Adapter {
     private attachmentPrompt?: (session: Session, task: Task) => string,
     private verifyDelivery?: (session: Session) => Promise<void>,
     private nativeSteer?: (session: Session, prompt: string) => Promise<void>,
+    private nativeState?: (session: Session) => Promise<Session['status']>,
   ) {
     this.capabilities.attachFiles = !!attachmentPrompt;
     this.capabilities.steerActiveTurn = !!nativeSteer;
+  }
+  async turnState(session: Session): Promise<Session['status']> {
+    await this.assertOwner(session);
+    return this.nativeState
+      ? this.nativeState(session)
+      : (await this.herdr.assertBinding(session)).agent_status;
   }
   read(session: Session) {
     return this.reader.read(session);

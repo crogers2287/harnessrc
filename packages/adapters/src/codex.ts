@@ -65,6 +65,9 @@ export class CodexBridgeAdapter implements Adapter {
   private call(session: Session, method: string, params: Record<string, unknown> = {}) {
     return bridgeRequest(this.socket, method, { ...params, sessionId: session.nativeSessionId });
   }
+  async turnState(session: Session): Promise<Session['status']> {
+    return (await this.call(session, 'snapshot', { includeEvents: false })).status;
+  }
   async read(session: Session): Promise<SourceEvent[]> {
     const result = await this.call(session, 'snapshot', {
       eventOffset: this.offsets.get(session.id) ?? 0,

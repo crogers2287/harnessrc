@@ -127,6 +127,7 @@ export const taskInputSchema = z.object({
   attachments: z.array(z.string().uuid()).max(10).default([]),
 });
 export type Task = {
+  delivery?: 'immediate' | 'queued';
   id: string;
   sessionId: string;
   nativeSessionId: string;
@@ -153,6 +154,7 @@ export type Host = {
   diagnostic?: string;
 };
 export type Adapter = {
+  turnState?: (session: Session) => Promise<Session['status']>;
   capabilities: Capabilities;
   read: (session: Session) => Promise<SourceEvent[]>;
   send?: (session: Session, task: Task) => Promise<{ correlation: string }>;

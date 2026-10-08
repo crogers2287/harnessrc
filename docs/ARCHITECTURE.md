@@ -15,3 +15,11 @@ Tasks have immutable IDs and client idempotency keys, native session/generation,
 The Codex bridge is a standalone process launched inside Herdr. Herdr supervises that process; the bridge owns one documented app-server stdio connection. Its SQLite ledger survives gateway restarts, and the phone owns neither connection. Installed Codex JSON schemas determine native capabilities. Unsupported server requests block without guessed approval. Bridge-process restart can leave previous executions uncertain; operator reconciliation is required.
 
 Only the public offline fallback is cached; authenticated API responses, transcripts and tokens are not placed in service-worker caches. Cookie authentication is shared between HTTP and WebSockets. Browser scrolling uses virtualized event rows, pagination and per-session restoration.
+
+### Immediate message delivery versus scheduled tasks
+
+The default composer uses `POST /api/sessions/:id/messages` with a prompt, attachment IDs, and an idempotency key. The gateway reads current native turn state (the existing Codex daemon, the bridge snapshot, or Herdr for CLI adapters). An active supported turn receives native steering; an idle session receives an immediate owner-checked send. Stale browser status cannot silently select Queue. Unsupported steering, blocked interactions, and a turn ending during delivery produce an error without scheduling a future turn.
+
+Immediate idle sends have durable task receipts for reconciliation, starting at `dispatching`, not `pending`. They do not emit `task.queued`. Busy races fail rather than becoming queued follow-ups. The `message_receipts` table records the chosen delivery result; ambiguous delivery is never automatically retried or rerouted on restart. Existing pending tasks are unaffected. Only the explicit Queue action posts to `/tasks` and adds scheduled work.
+
+Codex discovery obtains its snapshot inside the native-link verification lock, after temporary name restoration. A Herdr invalidation captured during a name challenge must not be interpreted as native-session replacement.

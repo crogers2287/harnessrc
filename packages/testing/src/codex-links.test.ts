@@ -192,14 +192,28 @@ test('steer targets the proved native active turn and never falls back to a new 
       }
       return original(method, params);
     };
+    assert.equal(await f.links.turnState(f.client, session), 'working');
     await f.links.steer(f.client, session, 'Also check mobile');
     assert.equal(steers.length, 1);
     assert.equal(steers[0].threadId, 'thread-b');
     assert.equal(steers[0].expectedTurnId, 'turn-current');
     active = false;
+    assert.equal(await f.links.turnState(f.client, session), 'idle');
     await assert.rejects(() => f.links.steer(f.client, session, 'Too late'), /no longer working/);
     assert.equal(steers.length, 1);
   } finally {
     f.store.close();
+  }
+});
+
+test('refresh ignores an invalidation snapshot captured during a temporary native name proof', async () => {
+  const f = fixture();
+  try {
+    await f.links.refresh(f.client, [f.agent()]);
+    const stale = { ...f.agent(), terminal_title_stripped: 'Relay link stale-snapshot' };
+    const current = await f.links.refresh(f.client, [stale]);
+    assert.equal(current[0].agent_session?.value, 'thread-b');
+  } finally {
+    f.store.db.close();
   }
 });

@@ -16,10 +16,11 @@ export class TaskQueue {
           store.saveTask(t);
         }
   }
-  add(sessionId: string, input: unknown): Task {
+  add(sessionId: string, input: unknown, delivery: 'queued' | 'immediate' = 'queued'): Task {
     const value = taskInputSchema.parse(input);
     const s = this.store.session(sessionId);
-    if (!s.capabilities.queueTask) throw new Error('Queue control is unavailable for this session');
+    if (!(delivery === 'immediate' ? s.capabilities.sendMessage : s.capabilities.queueTask))
+      throw new Error('Message control is unavailable for this session');
     if (value.attachments.length && !s.capabilities.attachFiles)
       throw new Error('Attachments are unavailable for this session');
     if (
@@ -36,6 +37,7 @@ export class TaskQueue {
         .find((t) => t.idempotencyKey === value.idempotencyKey);
       if (existing) {
         if (
+          (existing.delivery ?? 'queued') !== delivery ||
           existing.prompt !== value.prompt ||
           JSON.stringify(existing.attachments) !== JSON.stringify(value.attachments)
         )
@@ -51,19 +53,66 @@ export class TaskQueue {
         attachments: value.attachments,
         createdAt: new Date().toISOString(),
         position: Math.max(0, ...this.store.tasks(sessionId).map((t) => t.position)) + 1,
-        status: 'pending',
-        attempts: 0,
+        delivery,
+        status: delivery === 'immediate' ? 'dispatching' : 'pending',
+        attempts: delivery === 'immediate' ? 1 : 0,
         idempotencyKey: value.idempotencyKey,
       };
       this.store.saveTask(task);
-      this.store.event(s, {
-        sourceId: `task:${task.id}:queued`,
-        kind: 'task.queued',
-        timestamp: task.createdAt,
-        data: { taskId: task.id, text: 'Task queued' },
-      });
+      if (delivery === 'queued')
+        this.store.event(s, {
+          sourceId: `task:${task.id}:queued`,
+          kind: 'task.queued',
+          timestamp: task.createdAt,
+          data: { taskId: task.id, text: 'Task queued' },
+        });
       return task;
     });
+  }
+  async sendNow(sessionId: string, input: unknown): Promise<Task> {
+    const value = taskInputSchema.parse(input);
+    const prior = this.store
+      .tasks(sessionId)
+      .find((task) => task.idempotencyKey === value.idempotencyKey);
+    if (prior) return this.add(sessionId, value, 'immediate'); // Validate the replay; never dispatch again.
+    if (this.busy.has(sessionId))
+      throw new DeliveryDeferred('Another delivery is in progress. Your message was not queued.');
+    const session = this.store.session(sessionId);
+    const adapter = this.adapter(sessionId);
+    if (!session.connected || !adapter?.send) throw new Error('Session is not connected');
+    if (
+      this.store
+        .interactions(sessionId)
+        .some((i) => ['pending', 'responding', 'answered', 'uncertain'].includes(i.status))
+    )
+      throw new DeliveryDeferred(
+        'Answer the pending interaction first. Your message was not queued.',
+      );
+    this.busy.add(sessionId);
+    try {
+      const task = this.add(sessionId, value, 'immediate');
+      try {
+        const result = await adapter.send(session, task);
+        task.status = 'running';
+        task.correlation = result.correlation;
+        this.store.saveTask(task);
+        this.store.event(session, {
+          sourceId: `task:${task.id}:dispatched`,
+          kind: 'task.dispatched',
+          timestamp: new Date().toISOString(),
+          data: { taskId: task.id, correlation: result.correlation, text: 'Message sent' },
+        });
+        return task;
+      } catch (error) {
+        // Immediate messages never become scheduled follow-ups, including races with a new turn.
+        task.status = error instanceof DeliveryDeferred ? 'failed' : 'uncertain';
+        task.error = (error as Error).message;
+        this.store.saveTask(task);
+        throw error;
+      }
+    } finally {
+      this.busy.delete(sessionId);
+    }
   }
   edit(sessionId: string, id: string, prompt: string) {
     const t = this.store.task(id);

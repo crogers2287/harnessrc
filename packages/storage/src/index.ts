@@ -21,6 +21,9 @@ export class Store extends EventEmitter {
     this.db.exec(
       'PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;',
     );
+    this.db.exec(
+      readFileSync(new URL('../../../migrations/006-messages.sql', import.meta.url), 'utf8'),
+    );
     this.db.exec(readFileSync(new URL('../../../migrations/001.sql', import.meta.url), 'utf8'));
     this.db.exec(
       readFileSync(new URL('../../../migrations/005-steering.sql', import.meta.url), 'utf8'),

@@ -600,37 +600,32 @@ function Conversation({
   const outgoing = useOutgoing(session.id, merged);
   const send = useMutation({
     mutationFn: (value: { prompt: string; key: string; attachments: string[]; mode: string }) =>
-      value.mode === 'steer'
-        ? api(`/api/sessions/${session.id}/steer`, {
-            method: 'POST',
-            body: JSON.stringify({ prompt: value.prompt, idempotencyKey: value.key }),
-          })
-        : api(`/api/sessions/${session.id}/tasks`, {
-            method: 'POST',
-            body: JSON.stringify({
-              prompt: value.prompt,
-              idempotencyKey: value.key,
-              attachments: value.attachments,
-            }),
-          }),
+      api(`/api/sessions/${session.id}/${value.mode === 'queue' ? 'tasks' : 'messages'}`, {
+        method: 'POST',
+        body: JSON.stringify({
+          prompt: value.prompt,
+          idempotencyKey: value.key,
+          attachments: value.attachments,
+        }),
+      }),
     onSuccess: (_result, submitted) => {
       setReceiptId(_result?.task?.id);
-      if (submitted.mode !== 'steer')
+      if (submitted.mode === 'queue')
         setDraft((current) => (current === submitted.prompt ? '' : current));
       else outgoing.finish(submitted.key, 'confirmed');
       attachments.clear(submitted.attachments);
       submission.current = undefined;
       setNotice(
-        submitted.mode === 'steer'
+        _result?.mode === 'steer'
           ? 'Active turn updated.'
-          : session.status === 'idle' || session.status === 'done'
-            ? 'Message saved. Sending to your agent…'
-            : 'Follow-up saved. It will run when your agent is ready.',
+          : submitted.mode === 'queue'
+            ? 'Queued for a later turn.'
+            : 'Message sent.',
       );
       void query.invalidateQueries({ queryKey: ['detail', session.id] });
     },
     onError: (_error, submitted) => {
-      if (submitted.mode === 'steer') {
+      if (submitted.mode !== 'queue') {
         outgoing.finish(submitted.key, 'uncertain');
         setNotice('Delivery was not confirmed. Your message is preserved above.');
       } else
@@ -649,12 +644,6 @@ function Conversation({
       attachments.invalid
     )
       return;
-    if (mode === 'steer' && attachments.files.length) {
-      setNotice(
-        'This agent accepts text-only steering. Choose Queue to send attached files in the next turn.',
-      );
-      return;
-    }
     const ids = attachments.files.flatMap((f) => (f.id ? [f.id] : []));
     const prompt = draft || 'Please review the attached files.';
     if (
@@ -663,7 +652,7 @@ function Conversation({
       submission.current?.mode !== mode
     )
       submission.current = { prompt, key: crypto.randomUUID(), attachments: ids, mode };
-    if (mode === 'steer') {
+    if (mode !== 'queue') {
       setReceiptId(undefined);
       setNotice('');
       outgoing.begin(submission.current.key, prompt);

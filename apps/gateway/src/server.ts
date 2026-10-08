@@ -1,3 +1,4 @@
+import { sendMessage } from './messages.ts';
 import { randomUUID } from 'node:crypto';
 import { deliverSteer } from './steering.ts';
 import { Launcher, launchRequestSchema } from './launch.ts';
@@ -288,6 +289,11 @@ export async function createGateway(
     runtime.attachments.remove(store.session(id), file);
     store.audit(req.device.id, 'attachment.remove', id, { attachmentId: file });
     return { ok: true };
+  });
+  app.post('/api/sessions/:id/messages', async (req) => {
+    const { id } = req.params as { id: string };
+    check(req, id, true);
+    return sendMessage(runtime, id, req.device.id, req.body);
   });
   app.post('/api/sessions/:id/tasks', async (req) => {
     const { id } = req.params as { id: string };
