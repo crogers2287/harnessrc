@@ -158,7 +158,25 @@ export class CodexLinks {
         if (valid) valid = (await this.owner(client, agent)) === prior!.process;
         if (valid && Date.now() - prior!.verifiedAt < 30000) continue;
         this.forget(agent.terminal_id);
-        if (!discoveryDue && !valid) continue;
+        if (valid) {
+          // Revalidate the already-proven thread directly. Scanning every loaded
+          // conversation every 30 seconds stalls interactive sends behind discovery.
+          try {
+            const link = await this.prove(client, agent, prior!.threadId);
+            await client.request('pane.report_agent_session', {
+              pane_id: agent.pane_id,
+              source: 'herdr:codex',
+              agent: 'codex',
+              agent_session_id: link.threadId,
+            });
+            this.save(link);
+            this.diagnostic = undefined;
+          } catch (error) {
+            this.diagnostic = (error as Error).message;
+          }
+          continue;
+        }
+        if (!discoveryDue) continue;
         try {
           if (!threads) {
             threads = [];
@@ -168,12 +186,23 @@ export class CodexLinks {
                 limit: 100,
                 cursor,
               });
-              for (const id of loaded.data) {
-                const { thread } = await this.native.request('thread/read', {
-                  threadId: id,
-                  includeTurns: false,
-                });
-                if (!thread.parentThreadId && typeof thread.name === 'string') threads.push(thread);
+              for (let offset = 0; offset < loaded.data.length; offset += 4) {
+                const batch = await Promise.all(
+                  loaded.data
+                    .slice(offset, offset + 4)
+                    .map(
+                      async (id: string) =>
+                        (
+                          await this.native.request('thread/read', {
+                            threadId: id,
+                            includeTurns: false,
+                          })
+                        ).thread,
+                    ),
+                );
+                for (const thread of batch)
+                  if (!thread.parentThreadId && typeof thread.name === 'string')
+                    threads.push(thread);
               }
               cursor = loaded.nextCursor ?? undefined;
             } while (cursor && threads.length < 1000);

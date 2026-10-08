@@ -28,6 +28,7 @@ export async function api<T = any>(url: string, init: RequestInit = {}): Promise
   const send = () =>
     fetch(transportOrigin + url, {
       ...init,
+      signal: init.signal ?? AbortSignal.timeout(20000),
       credentials: transportOrigin ? 'omit' : 'same-origin',
       headers: {
         ...(init.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
@@ -39,6 +40,7 @@ export async function api<T = any>(url: string, init: RequestInit = {}): Promise
   if (response.status === 401 && !['/api/auth/pair', '/api/auth/refresh'].includes(url)) {
     const refresh = await fetch(transportOrigin + '/api/auth/refresh', {
       method: 'POST',
+      signal: AbortSignal.timeout(10000),
       credentials: transportOrigin ? 'omit' : 'same-origin',
       headers: { 'X-RC-Request': '1' },
     });

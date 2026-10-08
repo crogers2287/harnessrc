@@ -526,3 +526,86 @@ test('Steer renders immediately, preserves the next draft, and keeps uncertain d
   await page.reload();
   await expect(page.locator('.outgoing-message').last()).toContainText('Delivery not confirmed');
 });
+
+test('native question replies read like chat and repeated real touch taps reliably open controls', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  await pair(page);
+  const { sessions } = await page.evaluate(async () => (await fetch('/api/sessions')).json());
+  const session = sessions.find((s: any) => s.project === 'Atlas API') ?? sessions[0];
+  const text =
+    '<send_user_message_question_reply>\n' +
+    JSON.stringify([
+      {
+        questionItemId: 'native-request',
+        question: 'Which session is still queuing?',
+        answer: 'this one lol',
+      },
+    ]) +
+    '\n</send_user_message_question_reply>';
+  await page.route('**/events?*', (route) =>
+    route.fulfill({
+      json: {
+        events: [
+          {
+            id: 'question-reply',
+            sourceId: 'native-reply',
+            sequence: 9999999,
+            sessionId: session.id,
+            nativeSessionId: session.nativeSessionId,
+            source: 'codex',
+            kind: 'user.message',
+            timestamp: new Date().toISOString(),
+            data: { text },
+          },
+        ],
+      },
+    }),
+  );
+  await page.reload();
+  await openSessions(page);
+  await page.getByRole('button', { name: /Atlas API/ }).click();
+  await expect(page.getByText('this one lol', { exact: true })).toBeVisible();
+  await expect(page.getByText('Which session is still queuing?', { exact: true })).toBeVisible();
+  await expect(page.getByText(/<send_user_message_question_reply>/)).toHaveCount(0);
+  const touch = await page.context().newCDPSession(page);
+  await touch.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+  const tap = async (label: string) => {
+    const button = page.getByRole('button', { name: label, exact: true });
+    await button.scrollIntoViewIfNeeded();
+    const box = (await button.boundingBox())!;
+    const x = box.x + 5,
+      y = box.y + box.height / 2;
+    // Hit near the left of the target and introduce realistic finger jitter.
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+    await touch.send('Input.dispatchTouchEvent', {
+      type: 'touchMove',
+      touchPoints: [{ x: x + 3, y: y + 2 }],
+    });
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  };
+  for (let i = 0; i < 5; i++) {
+    await tap('Open sessions');
+    await expect(page.getByRole('dialog', { name: 'Sessions', exact: true })).toBeVisible();
+    await tap('Close sessions');
+    await expect(page.getByRole('dialog', { name: 'Sessions', exact: true })).not.toBeVisible();
+  }
+  await tap('Copy message');
+  await expect(page.getByText('Copied', { exact: true })).toBeVisible();
+  await page.getByLabel('Instruction behavior').selectOption('queue');
+  await tap('Add files or images');
+  await expect(page.getByRole('button', { name: 'Camera', exact: true })).toBeVisible();
+  await tap('Add files or images');
+  await page.getByLabel('Instruction behavior').selectOption('auto');
+  await page.getByLabel('Instruction', { exact: true }).fill('Refine the mobile layout');
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.screenshot({ path: 'docs/screenshots/conversation-refined-dark-mobile.png' });
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.screenshot({ path: 'docs/screenshots/conversation-refined-light-mobile.png' });
+  const issues = await new AxeBuilder({ page })
+    .withTags(['wcag2a', 'wcag2aa', 'wcag21aa'])
+    .analyze();
+  expect(issues.violations).toEqual([]);
+});

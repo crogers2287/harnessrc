@@ -217,3 +217,27 @@ test('refresh ignores an invalidation snapshot captured during a temporary nativ
     f.store.db.close();
   }
 });
+
+test('periodic verification proves the known owner without scanning unrelated loaded threads', async () => {
+  const f = fixture();
+  try {
+    await f.links.refresh(f.client, [f.agent()]);
+    const row = f.store.db.prepare('SELECT body FROM codex_terminal_links').get()!;
+    const link = JSON.parse(row.body as string);
+    link.verifiedAt = 0;
+    f.store.db.prepare('UPDATE codex_terminal_links SET body=?').run(JSON.stringify(link));
+    const original = f.native.request;
+    let scans = 0;
+    f.native.request = async (method, params) => {
+      if (method === 'thread/loaded/list') scans++;
+      return original(method, params);
+    };
+    const before = f.writes.length;
+    const current = await f.links.refresh(f.client, [f.agent()]);
+    assert.equal(current[0].agent_session?.value, 'thread-b');
+    assert.ok(f.writes.length > before, 'fresh nonce proof still occurs');
+    assert.equal(scans, 0);
+  } finally {
+    f.store.close();
+  }
+});

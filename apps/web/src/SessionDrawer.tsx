@@ -32,6 +32,11 @@ export function SessionDrawer({
     let start: { x: number; y: number; width: number; moved: boolean } | undefined;
     const begin = (event: TouchEvent) => {
       if (event.touches.length !== 1) return;
+      if (
+        event.target instanceof Element &&
+        event.target.closest('button, a, input, textarea, select, summary, [role=button]')
+      )
+        return;
       const touch = event.touches[0];
       if (!open && touch.clientX > 56) return;
       start = {
@@ -81,7 +86,6 @@ export function SessionDrawer({
   const visible = open || drag !== undefined;
   return (
     <>
-      {mobile && !open && <div className="drawer-edge" aria-hidden="true" />}
       {mobile && visible && (
         <button
           className="drawer-backdrop"

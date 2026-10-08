@@ -2,6 +2,10 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { App } from './App.tsx';
+import '@openuidev/react-ui/defaults.css';
+import '@openuidev/react-ui/styles/button.css';
+import '@openuidev/react-ui/styles/iconButton.css';
+import '@openuidev/react-ui/styles/textArea.css';
 import './style.css';
 import { selectTransport } from '@harnessrc/client-sdk';
 

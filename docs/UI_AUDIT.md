@@ -19,7 +19,7 @@ Private real-session screenshots are stored outside Git at `~/.gstack/projects/h
 
 ## Interaction contract
 
-The main phone screen is a conversation: compact back/title/agent/CWD header, readable messages, collapsed activity, exact question/approval cards, and a bottom composer. Attach opens Photos / Camera / Files. Files show filename, thumbnail where safe, progress, error/retry, and Remove. Send persists the instruction and attachments atomically in the task queue before clearing the draft. Busy agents get Queue follow-up; Steer appears only for native support and cannot silently discard attachments. The queue is reachable from the header; approval responses target their native request and never become generic chat turns.
+The main phone screen is a conversation: compact back/title/agent/CWD header, readable messages, collapsed activity, exact question/approval cards, and a bottom composer. Attach opens Photos / Camera / Files. Files show filename, thumbnail where safe, progress, error/retry, and Remove. Default Send/Steer uses live native turn state and immediate delivery receipts; only an explicit Queue action schedules work. Steer appears only for native support and cannot silently discard attachments. The queue is reachable from the header; approval responses target their native request and never become generic chat turns.
 
 48 CSS-pixel touch targets; 16px input text; both themes; visible focus; no gesture-only critical actions; browser back and deep links; reduced motion. PWA file/camera pickers deliberately use browser/platform pickers, not React Native dependencies. Camera availability and capture behavior depend on browser and OS.
 
@@ -38,3 +38,7 @@ The full product is not complete: existing CLI rich-question routing, automatic 
 - Harness-reported models appear in the inbox, chat header, and details. Unknown model metadata is labeled explicitly.
 - Five browser cases pass, including simulated mobile streaming, scroll/focus preservation, model labels, reduced motion, attachments, approval handling, and responsive layouts.
 - Real Fred verification: the previously unbound shared-daemon Codex thread opens with conversation, model, composer and attachment controls. A separate ordinary Codex CLI under Herdr completed two browser-submitted queued tasks serially with one dispatch each.
+
+## OpenUI and interaction reliability pass
+
+OpenUI Button/IconButton/TextArea primitives now share Relay’s theme. The dark palette is neutral, header text is compact with full session identity available in details, and the composer grows from one row. Exact native question-reply envelopes render their question and answer without leaking internal request IDs. The edge overlay was removed; gestures ignore interactive targets and preserve vertical scrolling/pinch zoom. Repeated real browser touch taps with finger jitter cover menu, close, copy, and attachment controls. Clipboard failures are visible; HTTP deadlines preserve uncertain outgoing messages rather than locking the composer indefinitely.

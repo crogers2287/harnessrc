@@ -2172,16 +2172,199 @@ code {
 }
 
 @media (max-width: 767px) {
-  .drawer-edge {
-    position: fixed;
-    left: 0;
-    top: 80px;
-    bottom: 180px;
-    width: 24px;
-    z-index: 40;
-    touch-action: pan-y;
-  }
   .sidebar {
-    touch-action: pan-y;
+    touch-action: pan-y pinch-zoom;
+  }
+}
+
+/* OpenUI primitives share Relay's theme and Android-sized touch targets. */
+:root {
+  --openui-interactive-accent-default: var(--accent);
+  --openui-interactive-accent-hover: var(--accent);
+  --openui-interactive-accent-pressed: var(--accent);
+  --openui-interactive-accent-disabled: var(--soft);
+  --openui-text-accent-primary: var(--on-accent);
+  --openui-text-neutral-primary: var(--text);
+  --openui-text-neutral-secondary: var(--muted);
+  --openui-border-default: var(--border);
+  --openui-border-interactive: var(--border);
+  --openui-border-interactive-emphasis: var(--focus);
+  --openui-border-accent: transparent;
+  --openui-highlight-subtle: var(--surface);
+}
+:root[data-theme='dark'] {
+  --bg: #16191c;
+  --surface: #1c2024;
+  --soft: #2a3135;
+  --border: #363e44;
+  --text: #ecf0f2;
+  --muted: #aab5bd;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg: #16191c;
+    --surface: #1c2024;
+    --soft: #2a3135;
+    --border: #363e44;
+    --text: #ecf0f2;
+    --muted: #aab5bd;
+  }
+}
+.openui-icon-button.icon-button {
+  min-width: 48px;
+  min-height: 48px;
+  border-radius: 12px;
+  color: var(--muted);
+  background: transparent;
+}
+.openui-icon-button.icon-button:hover,
+.openui-icon-button.icon-button:active {
+  background: var(--soft);
+  color: var(--text);
+}
+.openui-icon-button-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.openui-icon-button-icon svg {
+  width: 22px;
+  height: 22px;
+}
+.openui-button-base.send-button {
+  min-height: 48px;
+  border-radius: 24px;
+  padding-inline: 18px;
+  box-shadow: none;
+}
+.openui-button-base.send-button:disabled {
+  color: var(--muted);
+  background: var(--soft);
+}
+.composer {
+  border-radius: 24px;
+  box-shadow: none;
+}
+.composer .openui-textarea {
+  min-height: 52px;
+  padding: 14px 18px 8px;
+  line-height: 1.5;
+  font: inherit;
+}
+.composer .openui-textarea:focus {
+  box-shadow: none;
+}
+.composer:focus-within {
+  border-color: var(--focus);
+}
+.composer-controls {
+  padding: 0 8px 8px;
+}
+.composer-area {
+  border-top: 0;
+  padding-top: 8px;
+}
+.composer-mode {
+  padding-inline-start: 0;
+}
+.composer-mode > svg {
+  display: none;
+}
+.reply-context {
+  border-left: 3px solid var(--accent);
+  padding: 4px 12px;
+  margin-bottom: 12px;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+.reply-context > span {
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.reply-context p {
+  margin-top: 4px;
+}
+.user-message {
+  border-radius: 22px 22px 6px 22px;
+}
+.user-message .message-author {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.user-message .message-actions {
+  margin-top: 6px;
+}
+.message-actions {
+  font-size: 0.6875rem;
+}
+.activity-group {
+  color: var(--muted);
+}
+.conversation-scroll {
+  touch-action: pan-y pinch-zoom;
+}
+@media (max-width: 767px) {
+  .conversation-header {
+    padding: 8px;
+    align-items: flex-start;
+  }
+  .conversation-header > .icon-button {
+    margin-top: 0;
+  }
+  .conversation-heading {
+    padding-block: 4px;
+  }
+  .conversation-heading h2 {
+    display: block;
+    white-space: nowrap;
+    font-size: 0.9375rem;
+    line-height: 1.5;
+  }
+  .conversation-heading .session-meta {
+    font-size: 0.6875rem;
+    margin-top: 3px;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .conversation-heading .session-model {
+    font-size: 0.6875rem;
+    margin-top: 2px;
+  }
+  .conversation-cwd {
+    margin-top: 2px;
+    max-height: none;
+    overflow: hidden;
+    font-size: 0.6875rem;
+  }
+  .conversation-cwd code {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    word-break: normal;
+  }
+  .conversation-scroll {
+    padding: 20px 16px 12px;
+  }
+  .message {
+    padding-inline: 0;
+  }
+  .user-message {
+    padding: 14px 16px 6px;
+    max-width: 94%;
+  }
+  .composer-area {
+    padding: 6px 10px calc(6px + env(safe-area-inset-bottom));
+  }
+  .composer textarea {
+    min-height: 52px;
+  }
+  .composer-footer {
+    padding-top: 5px;
+  }
+  .jump-latest {
+    bottom: 145px;
   }
 }

@@ -200,3 +200,5 @@ export function matchesTaskReceipt(actual: unknown, taskId: string, expected: st
   const marker = `[Relay request ${taskId}]`;
   return typeof actual === 'string' && expected.includes(marker) && actual.includes(marker);
 }
+
+export { presentUserMessage, toolLabel } from './presentation.ts';

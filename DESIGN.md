@@ -8,13 +8,13 @@ Variance 3/10; motion 2/10; density 4/10. System sans-serif preserves browser/na
 
 | Semantic role | Light | Dark |
 | --- | --- | --- |
-| Background | #f5f7f8 | #111b1d |
-| Surface | #ffffff | #182629 |
-| Primary text | #15272c | #e6eff0 |
-| Secondary text | #53676e | #a0b2b8 |
+| Background | #f5f7f8 | #16191c |
+| Surface | #ffffff | #1c2024 |
+| Primary text | #15272c | #ecf0f2 |
+| Secondary text | #53676e | #aab5bd |
 | Accent | #246b60 | #85ccbe |
 | Text on accent | #ffffff | #10201c |
-| Border | #d9e2e5 | #34484e |
+| Border | #d9e2e5 | #363e44 |
 | Warning text | #815616 | #efd093 |
 | Danger text | #a93436 | #ffa2a4 |
 
@@ -29,3 +29,5 @@ Verification evidence belongs in docs/VALIDATION.md; do not confuse browser-emul
 ## Chat-first revision, 8 October 2026
 
 Phone inbox uses a Sessions header and a compact pair of activity/agent filters. The Relay brand remains in the desktop sidebar. Names may occupy two lines; CWD remains visible and timestamps share the status line. Tool activity is grouped; internal queue/dispatch/completion notices do not clutter chat. Queue contents have their own view and a composer preview while pending. Composer supports files, photos, camera capture, paste/drop, upload progress, retry/removal, reload-safe drafts and sent-image inspection. Visual viewport resizing keeps it reachable with the software keyboard; physical device verification remains outstanding. See docs/UI_AUDIT.md for evidence and remaining functional gaps.
+
+The October 8 OpenUI pass uses a compact chat header, a one-row expanding composer, neutral dark surfaces with accent reserved for controls, and reply context instead of native transport envelopes. OpenUI standalone primitives share Relay’s state and ownership rules; see docs/OPENUI.md. Horizontal drawer gestures never intercept a button or form field, and no transparent hit layer covers the conversation.

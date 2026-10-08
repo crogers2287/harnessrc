@@ -1,3 +1,6 @@
+import { IconButton as OpenUIIconButton } from '@openuidev/react-ui/IconButton';
+export { Button } from '@openuidev/react-ui/Button';
+export { TextArea } from '@openuidev/react-ui/TextArea';
 import type { ReactNode, ButtonHTMLAttributes } from 'react';
 export function Status({ status }: { status: string }) {
   return (
@@ -13,14 +16,16 @@ export function IconButton({
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & { label: string; children: ReactNode }) {
   return (
-    <button
+    <OpenUIIconButton
+      variant="tertiary"
+      size="large"
+      type="button"
+      icon={children}
       {...props}
       className={`icon-button ${props.className ?? ''}`}
       aria-label={label}
       title={label}
-    >
-      {children}
-    </button>
+    />
   );
 }
 export function Empty({ title, children }: { title: string; children: ReactNode }) {

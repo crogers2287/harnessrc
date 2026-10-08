@@ -1,3 +1,5 @@
+import { Button, TextArea } from '@harnessrc/ui';
+import { presentUserMessage, toolLabel } from '@harnessrc/protocol';
 import { OutgoingMessages, useOutgoing } from './outgoing.tsx';
 import { NewSession } from './NewSession.tsx';
 import { SessionDrawer } from './SessionDrawer.tsx';
@@ -715,7 +717,7 @@ function Conversation({
           <Menu size={22} />
         </IconButton>
         <div className="conversation-heading">
-          <h2>{sessionLabel(session)}</h2>
+          <h2 title={sessionLabel(session)}>{sessionLabel(session)}</h2>
           <div className="session-meta">
             {agentLabel(session.harness)} on {session.hostId}
             <Status status={session.status} />
@@ -923,10 +925,10 @@ function Conversation({
             <label className="sr-only" htmlFor="composer">
               Instruction
             </label>
-            <textarea
+            <TextArea
               id="composer"
               ref={composer}
-              rows={2}
+              rows={1}
               onInput={(e) => {
                 e.currentTarget.style.height = 'auto';
                 e.currentTarget.style.height = `${Math.min(e.currentTarget.scrollHeight, 160)}px`;
@@ -961,7 +963,8 @@ function Conversation({
                   <option value="queue">Queue for later</option>
                 </select>
               </div>
-              <button
+              <Button
+                size="large"
                 className="send-button"
                 type="submit"
                 disabled={
@@ -970,8 +973,7 @@ function Conversation({
                   attachments.invalid ||
                   busyWithoutSteering ||
                   send.isPending ||
-                  !session.connected ||
-                  connection !== 'connected'
+                  !session.connected
                 }
                 aria-label={
                   mode === 'steer'
@@ -991,7 +993,7 @@ function Conversation({
                       ? 'Queue'
                       : 'Send'}
                 <ArrowUp size={19} aria-hidden="true" />
-              </button>
+              </Button>
             </div>
           </form>
         ) : (
@@ -1111,12 +1113,16 @@ function conversationItems(events: Event[]): Event[] {
 }
 function EventCard({ event }: { event: Event }) {
   const data = event.data;
-  const text = String(data.text ?? '');
+  const nativeText = String(data.text ?? '');
+  const presentation =
+    event.kind === 'user.message' ? presentUserMessage(nativeText) : { text: nativeText };
+  const text = presentation.text;
+  const [copyError, setCopyError] = useState('');
   const [copied, setCopied] = useState(false);
   if (data.activityGroup) {
     const activities = data.activities as Event[];
     const calls = activities.filter((e) => e.kind === 'tool.invocation');
-    const names = [...new Set(calls.map((e) => String(e.data.tool ?? 'Tool')))];
+    const names = [...new Set(calls.map((e) => toolLabel(String(e.data.tool ?? 'Tool'))))];
     return (
       <details className="activity-group">
         <summary>
@@ -1144,6 +1150,12 @@ function EventCard({ event }: { event: Event }) {
           {event.kind === 'assistant.delta' && <span className="streaming-label">Writing…</span>}
         </div>
         <div className="message-content">
+          {presentation.replies?.map((reply, index) => (
+            <div className="reply-context" key={index}>
+              <span>Replying to</span>
+              <p>{reply.question}</p>
+            </div>
+          ))}
           <Mark text={text} />
           {Array.isArray(data.attachments) && (
             <div className="sent-attachments">
@@ -1158,15 +1170,20 @@ function EventCard({ event }: { event: Event }) {
             type="button"
             aria-label="Copy message"
             onClick={() =>
-              void navigator.clipboard.writeText(text).then(() => {
-                setCopied(true);
-                setTimeout(() => setCopied(false), 2000);
-              })
+              void navigator.clipboard
+                .writeText(text)
+                .then(() => {
+                  setCopyError('');
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 2000);
+                })
+                .catch(() => setCopyError('Copy unavailable. Select the message text to copy it.'))
             }
           >
             <Copy size={15} />
             {copied ? 'Copied' : 'Copy'}
           </button>
+          {copyError && <span role="status">{copyError}</span>}
           <time dateTime={event.timestamp}>
             {new Date(event.timestamp).toLocaleTimeString([], {
               hour: 'numeric',
@@ -1205,6 +1222,12 @@ function EventCard({ event }: { event: Event }) {
       <div className="tool-wrap">
         <details className="tool-card">
           <summary>Reasoning summary</summary>
+          {presentation.replies?.map((reply, index) => (
+            <div className="reply-context" key={index}>
+              <span>Replying to</span>
+              <p>{reply.question}</p>
+            </div>
+          ))}
           <Mark text={text} />
         </details>
       </div>
