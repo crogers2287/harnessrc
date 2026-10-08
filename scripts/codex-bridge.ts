@@ -111,13 +111,13 @@ async function report() {
   try {
     await herdr.request('pane.report_agent_session', {
       pane_id: paneId,
-      source: 'relay-native',
+      source: 'herdr:codex',
       agent: 'codex',
       agent_session_id: state.sessionId,
     });
     await herdr.request('pane.report_agent', {
       pane_id: paneId,
-      source: 'relay-native',
+      source: 'herdr:codex',
       agent: 'codex',
       agent_session_id: state.sessionId,
       state: state.status === 'idle' ? 'idle' : state.status === 'blocked' ? 'blocked' : 'working',
