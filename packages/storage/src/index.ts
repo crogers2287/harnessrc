@@ -23,6 +23,9 @@ export class Store extends EventEmitter {
     );
     this.db.exec(readFileSync(new URL('../../../migrations/001.sql', import.meta.url), 'utf8'));
     this.db.exec(
+      readFileSync(new URL('../../../migrations/005-steering.sql', import.meta.url), 'utf8'),
+    );
+    this.db.exec(
       readFileSync(new URL('../../../migrations/004-launches.sql', import.meta.url), 'utf8'),
     );
     this.db.exec(

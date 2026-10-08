@@ -33,7 +33,7 @@ export function SessionDrawer({
     const begin = (event: TouchEvent) => {
       if (event.touches.length !== 1) return;
       const touch = event.touches[0];
-      if (!open && touch.clientX > 28) return;
+      if (!open && touch.clientX > 56) return;
       start = {
         x: touch.clientX,
         y: touch.clientY,
@@ -45,13 +45,13 @@ export function SessionDrawer({
       if (!start || event.touches.length !== 1) return;
       const dx = event.touches[0].clientX - start.x;
       const dy = event.touches[0].clientY - start.y;
-      if (!start.moved && Math.abs(dy) > Math.abs(dx) + 8) {
+      if (!start.moved && Math.abs(dy) > 14 && Math.abs(dy) > Math.abs(dx) * 1.4) {
         start = undefined;
         return;
       }
       if (Math.abs(dx) < 10 && !start.moved) return;
       start.moved = true;
-      event.preventDefault();
+      if (event.cancelable) event.preventDefault();
       setDrag(Math.min(start.width, Math.max(0, (open ? start.width : 0) + dx)));
     };
     const end = (event: TouchEvent) => {
@@ -81,6 +81,7 @@ export function SessionDrawer({
   const visible = open || drag !== undefined;
   return (
     <>
+      {mobile && !open && <div className="drawer-edge" aria-hidden="true" />}
       {mobile && visible && (
         <button
           className="drawer-backdrop"

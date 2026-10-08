@@ -405,28 +405,18 @@ test('mobile opens chat first, defaults to Send, and supports edge swipe drawer 
   await expect(page.getByLabel('Instruction behavior')).toHaveValue('auto');
   await expect(page.getByRole('button', { name: 'Send message', exact: true })).toBeVisible();
   await page.getByLabel('Instruction', { exact: true }).fill('A draft survives navigation');
-  await page.evaluate(() => {
-    const target = document.body;
-    const touch = (x: number) => new Touch({ identifier: 1, target, clientX: x, clientY: 240 });
-    target.dispatchEvent(
-      new TouchEvent('touchstart', {
-        bubbles: true,
-        touches: [touch(8)],
-        changedTouches: [touch(8)],
-      }),
-    );
-    target.dispatchEvent(
-      new TouchEvent('touchmove', {
-        bubbles: true,
-        cancelable: true,
-        touches: [touch(220)],
-        changedTouches: [touch(220)],
-      }),
-    );
-    target.dispatchEvent(
-      new TouchEvent('touchend', { bubbles: true, touches: [], changedTouches: [touch(220)] }),
-    );
+  const touch = await page.context().newCDPSession(page);
+  await touch.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+  await touch.send('Input.dispatchTouchEvent', {
+    type: 'touchStart',
+    touchPoints: [{ x: 12, y: 260 }],
   });
+  for (const x of [24, 48, 90, 150, 220])
+    await touch.send('Input.dispatchTouchEvent', {
+      type: 'touchMove',
+      touchPoints: [{ x, y: 260 }],
+    });
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   await expect(page.getByRole('dialog', { name: 'Sessions', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Close sessions' })).toBeFocused();
   await expect.poll(async () => (await page.locator('#session-drawer').boundingBox())?.x).toBe(0);
@@ -440,4 +430,47 @@ test('mobile opens chat first, defaults to Send, and supports edge swipe drawer 
     'A draft survives navigation',
   );
   await expect(page.getByRole('dialog', { name: 'Sessions', exact: true })).not.toBeVisible();
+});
+
+test('Steer renders immediately, preserves the next draft, and keeps uncertain delivery visible', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await pair(page);
+  await page.getByRole('button', { name: /Atlas API/ }).click();
+  // Keep a mock turn working while testing slow and interrupted delivery feedback.
+  await page.getByLabel('Instruction', { exact: true }).fill('Keep working for steering UI test');
+  await page.getByLabel('Instruction behavior').selectOption('queue');
+  await page.getByRole('button', { name: 'Queue instruction', exact: true }).click();
+  await page.getByLabel('Instruction behavior').selectOption('auto');
+  await expect(page.getByRole('button', { name: 'Steer active turn', exact: true })).toBeVisible();
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route('**/api/sessions/*/steer', async (route) => {
+    await held;
+    await route.fulfill({ json: { ok: true } });
+  });
+  const draft = page.getByLabel('Instruction', { exact: true });
+  await draft.fill('Focus on the mobile navigation');
+  await page.getByRole('button', { name: 'Steer active turn', exact: true }).click();
+  await expect(page.locator('.outgoing-message')).toContainText('Focus on the mobile navigation');
+  await expect(page.locator('.outgoing-message')).toContainText('Sending…');
+  await expect(draft).toHaveValue('');
+  await expect(draft).toBeFocused();
+  await page.screenshot({ path: 'docs/screenshots/steer-sending-mobile.png' });
+  await draft.fill('Next instruction stays here');
+  release();
+  await expect(page.locator('.outgoing-message')).toContainText('Sent');
+  await expect(draft).toHaveValue('Next instruction stays here');
+  await page.unroute('**/api/sessions/*/steer');
+  await page.route('**/api/sessions/*/steer', (route) => route.abort());
+  await page.getByRole('button', { name: 'Steer active turn', exact: true }).click();
+  await expect(page.locator('.outgoing-message').last()).toContainText('Delivery not confirmed');
+  await expect(page.locator('.outgoing-message').last()).toContainText(
+    'Next instruction stays here',
+  );
+  await page.reload();
+  await expect(page.locator('.outgoing-message').last()).toContainText('Delivery not confirmed');
 });

@@ -2170,3 +2170,18 @@ code {
   padding: 8px 12px;
   color: var(--accent);
 }
+
+@media (max-width: 767px) {
+  .drawer-edge {
+    position: fixed;
+    left: 0;
+    top: 80px;
+    bottom: 180px;
+    width: 24px;
+    z-index: 40;
+    touch-action: pan-y;
+  }
+  .sidebar {
+    touch-action: pan-y;
+  }
+}

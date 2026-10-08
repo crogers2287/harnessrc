@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+import { deliverSteer } from './steering.ts';
 import { Launcher, launchRequestSchema } from './launch.ts';
 import Fastify, { type FastifyRequest, type FastifyReply } from 'fastify';
 import cookie from '@fastify/cookie';
@@ -331,13 +333,23 @@ export async function createGateway(
     const { id } = req.params as { id: string };
     check(req, id, true);
     const s = store.session(id);
-    const { prompt } = z.object({ prompt: z.string().trim().min(1).max(32000) }).parse(req.body);
+    const { prompt, idempotencyKey } = z
+      .object({ prompt: z.string().trim().min(1).max(32000), idempotencyKey: z.uuid().optional() })
+      .parse(req.body);
     if (!s.capabilities.steerActiveTurn || !runtime.adapters.get(id)?.steer)
       throw new Error('Native steering unavailable');
-    await runtime.assertBinding(s);
-    await runtime.adapters.get(id)!.steer!(s, prompt);
-    store.audit(req.device.id, 'turn.steer', id, {});
-    return { ok: true };
+    return deliverSteer(
+      store,
+      idempotencyKey ?? randomUUID(),
+      req.device.id,
+      id,
+      prompt,
+      async () => {
+        await runtime.assertBinding(s);
+        await runtime.adapters.get(id)!.steer!(s, prompt);
+        store.audit(req.device.id, 'turn.steer', id, {});
+      },
+    );
   });
   app.post('/api/sessions/:id/interrupt', async (req) => {
     const { id } = req.params as { id: string };

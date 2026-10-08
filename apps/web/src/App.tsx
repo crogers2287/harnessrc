@@ -1,3 +1,4 @@
+import { OutgoingMessages, useOutgoing } from './outgoing.tsx';
 import { NewSession } from './NewSession.tsx';
 import { SessionDrawer } from './SessionDrawer.tsx';
 import { useEffect, useRef, useState, useMemo, type FormEvent, type ReactNode } from 'react';
@@ -536,12 +537,13 @@ function Conversation({
   const [receiptId, setReceiptId] = useState<string>();
   const [atBottom, setAtBottom] = useState(true);
   const scroll = useRef<HTMLDivElement>(null);
+  const composer = useRef<HTMLTextAreaElement>(null);
   const restored = useRef(false);
   const pinned = useRef(true);
   const transcript = useRef<HTMLDivElement>(null);
-  const submission = useRef<{ prompt: string; key: string; attachments: string[] } | undefined>(
-    undefined,
-  );
+  const submission = useRef<
+    { prompt: string; key: string; attachments: string[]; mode: string } | undefined
+  >(undefined);
   const lastCount = useRef(0);
   const merged = useMemo(() => {
     const all = new Map([...history, ...(events.data?.events ?? [])].map((e) => [e.id, e]));
@@ -595,12 +597,13 @@ function Conversation({
     observer.observe(element);
     return () => observer.disconnect();
   }, [route.view]);
+  const outgoing = useOutgoing(session.id, merged);
   const send = useMutation({
-    mutationFn: (value: { prompt: string; key: string; attachments: string[] }) =>
-      mode === 'steer'
+    mutationFn: (value: { prompt: string; key: string; attachments: string[]; mode: string }) =>
+      value.mode === 'steer'
         ? api(`/api/sessions/${session.id}/steer`, {
             method: 'POST',
-            body: JSON.stringify({ prompt: value.prompt }),
+            body: JSON.stringify({ prompt: value.prompt, idempotencyKey: value.key }),
           })
         : api(`/api/sessions/${session.id}/tasks`, {
             method: 'POST',
@@ -612,11 +615,13 @@ function Conversation({
           }),
     onSuccess: (_result, submitted) => {
       setReceiptId(_result?.task?.id);
-      setDraft((current) => (current === submitted.prompt ? '' : current));
+      if (submitted.mode !== 'steer')
+        setDraft((current) => (current === submitted.prompt ? '' : current));
+      else outgoing.finish(submitted.key, 'confirmed');
       attachments.clear(submitted.attachments);
       submission.current = undefined;
       setNotice(
-        mode === 'steer'
+        submitted.mode === 'steer'
           ? 'Active turn updated.'
           : session.status === 'idle' || session.status === 'done'
             ? 'Message saved. Sending to your agent…'
@@ -624,10 +629,15 @@ function Conversation({
       );
       void query.invalidateQueries({ queryKey: ['detail', session.id] });
     },
-    onError: () =>
-      setNotice(
-        'Your draft is preserved. Check the queue before retrying if delivery is uncertain.',
-      ),
+    onError: (_error, submitted) => {
+      if (submitted.mode === 'steer') {
+        outgoing.finish(submitted.key, 'uncertain');
+        setNotice('Delivery was not confirmed. Your message is preserved above.');
+      } else
+        setNotice(
+          'Your draft is preserved. Check the queue before retrying if delivery is uncertain.',
+        );
+    },
   });
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -639,13 +649,33 @@ function Conversation({
       attachments.invalid
     )
       return;
+    if (mode === 'steer' && attachments.files.length) {
+      setNotice(
+        'This agent accepts text-only steering. Choose Queue to send attached files in the next turn.',
+      );
+      return;
+    }
     const ids = attachments.files.flatMap((f) => (f.id ? [f.id] : []));
     const prompt = draft || 'Please review the attached files.';
     if (
       submission.current?.prompt !== prompt ||
-      JSON.stringify(submission.current?.attachments) !== JSON.stringify(ids)
+      JSON.stringify(submission.current?.attachments) !== JSON.stringify(ids) ||
+      submission.current?.mode !== mode
     )
-      submission.current = { prompt, key: crypto.randomUUID(), attachments: ids };
+      submission.current = { prompt, key: crypto.randomUUID(), attachments: ids, mode };
+    if (mode === 'steer') {
+      setReceiptId(undefined);
+      setNotice('');
+      outgoing.begin(submission.current.key, prompt);
+      setDraft('');
+      composer.current?.focus({ preventScroll: true });
+      if (composer.current) composer.current.style.height = 'auto';
+      pinned.current = true;
+      setAtBottom(true);
+      requestAnimationFrame(() =>
+        scroll.current?.scrollTo({ top: scroll.current.scrollHeight, behavior: 'instant' }),
+      );
+    }
     send.mutate(submission.current);
   };
   const pending = detail.data?.interactions.filter((i) => i.status === 'pending') ?? [];
@@ -819,6 +849,11 @@ function Conversation({
             </div>
           ))}
         </div>
+        <OutgoingMessages
+          items={outgoing.items}
+          restore={(text) => setDraft((current) => (current ? `${current}\n${text}` : text))}
+          dismiss={outgoing.dismiss}
+        />
         {session.capabilities.readConversation &&
           session.status === 'working' &&
           connection === 'connected' && (
@@ -901,6 +936,7 @@ function Conversation({
             </label>
             <textarea
               id="composer"
+              ref={composer}
               rows={2}
               onInput={(e) => {
                 e.currentTarget.style.height = 'auto';
@@ -957,7 +993,9 @@ function Conversation({
                 }
               >
                 {send.isPending
-                  ? 'Saving…'
+                  ? send.variables?.mode === 'queue'
+                    ? 'Queuing…'
+                    : 'Sending…'
                   : mode === 'steer'
                     ? 'Steer'
                     : mode === 'queue'
@@ -985,13 +1023,20 @@ function Conversation({
         <p className="composer-footer" role="status">
           {busyWithoutSteering
             ? 'This agent cannot be steered yet. Choose Queue to schedule a follow-up.'
-            : receiptStatus ||
+            : (send.isPending
+                ? send.variables?.mode === 'steer'
+                  ? 'Sending to the active turn…'
+                  : 'Sending your instruction…'
+                : '') ||
+              receiptStatus ||
               notice ||
               (!session.capabilities.queueTask
                 ? 'Chat control is waiting for a verified connection.'
-                : session.status === 'working'
-                  ? 'Follow-ups wait until this turn finishes.'
-                  : 'Messages go to your existing agent session.')}
+                : mode === 'steer'
+                  ? 'Messages update the active turn.'
+                  : session.status === 'working'
+                    ? 'Follow-ups wait until this turn finishes.'
+                    : 'Messages go to your existing agent session.')}
         </p>
       </div>
     </>

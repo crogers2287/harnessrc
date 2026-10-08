@@ -209,6 +209,7 @@ export class MockHarness {
           { tool: 'Read', toolId: `tool-${turn}`, output: 'Loaded src/api.ts' },
           turn,
         );
+        if (p.prompt === 'Keep working for steering UI test') return;
         if (/approval|question/i.test(p.prompt)) {
           this.status = 'blocked';
           this.pending.push({
