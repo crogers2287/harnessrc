@@ -69,6 +69,9 @@ export const sessionSchema = z.object({
   paneId: z.string(),
   workspaceId: z.string(),
   project: z.string(),
+  sessionName: z.string().optional(),
+  tabName: z.string().optional(),
+  paneName: z.string().optional(),
   cwd: z.string(),
   status: z.enum(['idle', 'working', 'blocked', 'done', 'unknown', 'offline', 'ended']),
   ownership: z.enum(['herdr-cli', 'gateway-native', 'observed']),
@@ -175,3 +178,5 @@ export function redact(value: unknown): unknown {
     );
   return value;
 }
+
+export class DeliveryDeferred extends Error {}

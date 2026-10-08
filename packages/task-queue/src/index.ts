@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { type Adapter, type Task, taskInputSchema } from '@harnessrc/protocol';
+import { DeliveryDeferred, type Adapter, type Task, taskInputSchema } from '@harnessrc/protocol';
 import { Store } from '@harnessrc/storage';
 export class TaskQueue {
   private busy = new Set<string>();
@@ -164,7 +164,7 @@ export class TaskQueue {
           data: { taskId: task.id, correlation: result.correlation, text: 'Task dispatched' },
         });
       } catch (e) {
-        task.status = 'uncertain';
+        task.status = e instanceof DeliveryDeferred ? 'pending' : 'uncertain';
         task.error = (e as Error).message;
         this.store.saveTask(
           task,

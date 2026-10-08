@@ -1,4 +1,5 @@
 import { defineConfig } from '@playwright/test';
+const testOrigin = `http://localhost:${process.env.RC_E2E_PORT || '4080'}`;
 export default defineConfig({
   testDir: 'tests/e2e',
   timeout: 30000,
@@ -6,7 +7,7 @@ export default defineConfig({
   workers: 1,
   retries: 0,
   use: {
-    baseURL: 'http://localhost:4080',
+    baseURL: testOrigin,
     browserName: 'chromium',
     launchOptions: {
       executablePath: process.env.CHROMIUM_PATH || undefined,
@@ -16,7 +17,7 @@ export default defineConfig({
   },
   webServer: {
     command: 'node --import tsx scripts/e2e-server.ts',
-    url: 'http://localhost:4080/health',
+    url: `${testOrigin}/health`,
     reuseExistingServer: false,
     timeout: 30000,
   },

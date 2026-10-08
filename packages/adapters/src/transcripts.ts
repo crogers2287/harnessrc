@@ -61,6 +61,8 @@ export function normalizeClaude(record: any): SourceEvent[] {
         }),
       ); /* Private thinking is deliberately not promoted to a reasoning summary. */
   }
+  if (record.type === 'assistant' && record.message?.stop_reason === 'end_turn')
+    events.push(source(record, `${id}:completed`, 'turn.completed', { turnId: id }));
   return events;
 }
 export function normalizeCodex(record: any, index: number): SourceEvent[] {

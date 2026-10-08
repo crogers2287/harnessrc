@@ -5,6 +5,7 @@ import { Store } from '@harnessrc/storage';
 import { HerdrClient, sessionFromAgent } from '@harnessrc/herdr';
 import {
   JsonlAdapter,
+  HerdrCliAdapter,
   HermesAdapter,
   OpenCodeAdapter,
   CodexBridgeAdapter,
@@ -91,6 +92,8 @@ export class Runtime extends EventEmitter {
           a,
           snapshot.workspaces.find((w) => w.workspace_id === a.workspace_id)?.label ?? 'Workspace',
         );
+        s.tabName = snapshot.tabs.find((t) => t.tab_id === a.tab_id)?.label;
+        s.paneName = snapshot.panes.find((p) => p.pane_id === a.pane_id)?.label;
         seen.add(s.id);
         const old = this.store.sessions().find((x) => x.id === s.id);
         if (old) {
@@ -154,10 +157,16 @@ export class Runtime extends EventEmitter {
               );
             }
           }
+          if (adapter && s.processIdentity && ['claude', 'codex'].includes(s.harness)) {
+            if (!(adapter instanceof HerdrCliAdapter))
+              adapter = new HerdrCliAdapter(adapter, client, this.store, (session) =>
+                this.assertBinding(session),
+              );
+          }
           s.capabilities = adapter?.capabilities ?? capabilities([]);
           s.ownership = 'herdr-cli';
           s.diagnostic =
-            'Native transcript observation. CLI turn control is unavailable; installed Claude permission hooks can answer exact approvals.';
+            'Messages are delivered to the existing CLI through Herdr. Follow-ups wait for native turn completion. Exact Claude permission hooks handle approvals.';
           if (
             s.harness === 'claude' &&
             this.store

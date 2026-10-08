@@ -6,7 +6,7 @@
 |---|---|---|---|---|---|---|
 | Read conversation | Implemented JSONL | Implemented JSONL | Implemented native events | Partial SQLite reader | Partial HTTP reader | Partial JSONL reader |
 | Stream conversation | Poll appended JSONL | Poll appended JSONL | Native events, gateway polling | Poll database | Poll API | Poll JSONL |
-| Send / queue future turns | Unsupported | Unsupported | Implemented | Unsupported | Unsupported | Unsupported |
+| Send / queue future turns | Implemented Herdr prompt + native completion | Implemented Herdr prompt + native completion | Implemented | Unsupported | Unsupported | Unsupported |
 | Answer native questions | Unsupported | Unsupported | Implemented requestUserInput | Unsupported | Unsupported | Unsupported |
 | Approve / reject action | Implemented PermissionRequest hook | Unsupported | Implemented command/file approval | Unsupported | Unsupported | Unsupported |
 | Steer / interrupt | Unsupported | Unsupported | Implemented native protocol | Unsupported | Unsupported | Unsupported |
@@ -18,9 +18,9 @@ Readers import emitted supported record types; they do not manufacture reasoning
 
 ## Exact blockers for CLI parity
 
-1. Installed Herdr 0.8.0 `agent.prompt` targets a pane/name without a native-session/process compare-and-set precondition. A check followed by a pane write can race replacement. CLI turn writes and queue dispatch therefore remain disabled. Herdr must provide atomic owner-bound structured dispatch, or the CLI must expose a documented safe writer attachment.
-2. Claude PermissionRequest supports tool permission decisions. It does not expose a documented universal remote response route for AskUserQuestion, plan approval, steering, or arbitrary idle input. Hooks must already be configured in the original Claude process; observation does not require a plugin.
-3. Existing Codex CLI threads cannot safely gain a second app-server writer. The supported bridge starts a distinct native session owned by its existing Herdr process. CLI-owned interactive parity needs a documented shared connection/ownership protocol.
-4. Live credentials, Fred deployment, and genuine agent acceptance are not performed. Installed binaries and generated schemas were inspected locally; no private session transcript or live production prompt was accessed.
+1. Existing CLI messages use Herdr's documented `agent.prompt`, after native identity and foreground-process checks. Herdr checks the live foreground agent, refuses blocked agents, and submits text plus Enter in order. The response owner is revalidated. There is no second app-server writer. Herdr 0.8.0 lacks an atomic native-ID precondition: a replacement between the checks and submission can still make delivery uncertain. Such tasks are never automatically resent. Upstream owner-bound dispatch remains a hardening priority.
+2. Claude PermissionRequest supports exact tool permission decisions when the running CLI has loaded the hook. A native user message followed by an assistant `end_turn` record completes a queued task. Arbitrary AskUserQuestion, plan approval, and CLI steering still need documented native response routes; they are not advertised as supported.
+3. Codex CLI dispatch follows the existing process through Herdr and reconciles canonical user messages plus native `task_complete` events. Rich requestUserInput and command/file approval responses currently require the gateway-owned native bridge; do not attach another app-server writer to a CLI-owned thread.
+4. Hermes, OpenCode, and OMP readers remain partial. Their interactive transports are outstanding, as are physical-device testing and closed-app push infrastructure.
 
-Next priorities: run the Fred acceptance sequence; implement a safe native owner-bound CLI transport if upstream supports it; add complete file attachment/diff/subagent contracts; validate Hermes/OpenCode/OMP live readers; test physical devices and native push infrastructure. Browser notifications require an open app; no closed-app push claim.
+Next priorities: complete native CLI question routing and upstream owner-bound prompt preconditions; add complete file attachment/diff/subagent contracts; validate Hermes/OpenCode/OMP live readers; test physical devices and native push infrastructure. Browser notifications require an open app; no closed-app push claim.

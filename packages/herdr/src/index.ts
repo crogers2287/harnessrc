@@ -23,6 +23,9 @@ export const agentSchema = z.object({
   foreground_cwd: z.string().nullable().optional(),
   interactive_ready: z.boolean().optional(),
   name: z.string().nullable().optional(),
+  title: z.string().nullable().optional(),
+  terminal_title_stripped: z.string().nullable().optional(),
+  tab_id: z.string().optional(),
   revision: z.number().optional(),
 });
 export type Agent = z.infer<typeof agentSchema>;
@@ -157,13 +160,15 @@ export class HerdrClient extends EventEmitter {
       if (!this.stopped) this.retry = setTimeout(() => this.subscribe(), 2000);
     });
   }
-  async snapshot(): Promise<{ agents: Agent[]; workspaces: any[] }> {
+  async snapshot(): Promise<{ agents: Agent[]; workspaces: any[]; tabs: any[]; panes: any[] }> {
     const r = await this.request('session.snapshot');
     const snapshot = z
       .object({
         version: z.string(),
         protocol: z.number(),
         agents: z.array(agentSchema),
+        tabs: z.array(z.object({ tab_id: z.string(), label: z.string() })).default([]),
+        panes: z.array(z.object({ pane_id: z.string(), label: z.string().optional() })).default([]),
         workspaces: z.array(z.object({ workspace_id: z.string(), label: z.string() })),
       })
       .parse(r.snapshot);
@@ -190,8 +195,8 @@ export class HerdrClient extends EventEmitter {
 }
 export function sessionFromAgent(hostId: string, agent: Agent, project: string): Session {
   const harness = (
-    agent.agent_session?.agent ??
     agent.agent ??
+    agent.agent_session?.agent ??
     agent.display_agent ??
     'unknown'
   ).toLowerCase();
@@ -210,6 +215,7 @@ export function sessionFromAgent(hostId: string, agent: Agent, project: string):
     paneId: agent.pane_id,
     workspaceId: agent.workspace_id,
     project,
+    sessionName: agent.name ?? agent.title ?? agent.terminal_title_stripped ?? undefined,
     cwd: agent.foreground_cwd ?? agent.cwd ?? '',
     status: agent.agent_status,
     ownership: 'observed',

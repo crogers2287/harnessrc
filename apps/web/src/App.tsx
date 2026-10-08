@@ -31,6 +31,11 @@ import { Status, IconButton, Empty } from '@harnessrc/ui';
 type Detail = { session: SessionView; interactions: Interaction[]; tasks: Task[] };
 type Route = { session?: string; view?: string; interaction?: string };
 const getRoute = (): Route => Object.fromEntries(new URLSearchParams(location.search));
+const agentLabel = (harness: string) =>
+  ({ claude: 'Claude Code', codex: 'Codex', hermes: 'Hermes', opencode: 'OpenCode', omp: 'OMP' })[
+    harness
+  ] ?? harness;
+const sessionLabel = (s: SessionView) => s.sessionName || s.tabName || s.project;
 const scrollPositions = new Map<string, number>();
 const drafts = new Map<string, string>();
 function when(value: string) {
@@ -53,6 +58,7 @@ export function App() {
   const [connection, setConnection] = useState<'connected' | 'reconnecting'>('reconnecting');
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
+  const [agentFilter, setAgentFilter] = useState('all');
   const [read, setRead] = useState<Record<string, string>>({});
   const auth = useQuery({ queryKey: ['me'], queryFn: () => api('/api/auth/me') });
   const inbox = useQuery<{ sessions: SessionView[] }>({
@@ -99,8 +105,10 @@ export function App() {
   const selected = sessions.find((s) => s.id === route.session);
   const shown = sessions.filter(
     (s) =>
+      s.status !== 'ended' &&
+      (agentFilter === 'all' || s.harness === agentFilter) &&
       (filter === 'all' || (filter === 'attention' && s.pendingCount > 0) || s.status === filter) &&
-      `${s.project} ${s.harness} ${s.hostId} ${s.status}`
+      `${s.project} ${s.sessionName ?? ''} ${s.tabName ?? ''} ${s.cwd} ${s.harness} ${s.hostId} ${s.status}`
         .toLowerCase()
         .includes(search.toLowerCase()),
   );
@@ -121,7 +129,7 @@ export function App() {
         </header>
         <div className="inbox-heading">
           <h2>Sessions</h2>
-          <span className="count">{sessions.length}</span>
+          <span className="count">{sessions.filter((s) => s.status !== 'ended').length}</span>
           <span className="host-health">
             <span
               className={connection === 'connected' ? 'online' : 'offline'}
@@ -135,7 +143,7 @@ export function App() {
           <span className="sr-only">Search sessions</span>
           <input
             type="search"
-            placeholder="Project, agent, host…"
+            placeholder="Session, agent, directory, host…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -151,46 +159,84 @@ export function App() {
             </button>
           ))}
         </div>
+        <label className="agent-filter">
+          Agent
+          <select
+            aria-label="Filter by agent"
+            value={agentFilter}
+            onChange={(e) => setAgentFilter(e.target.value)}
+          >
+            <option value="all">All agents</option>
+            {[...new Set(sessions.filter((s) => s.status !== 'ended').map((s) => s.harness))]
+              .sort()
+              .map((h) => (
+                <option key={h} value={h}>
+                  {agentLabel(h)}
+                </option>
+              ))}
+          </select>
+        </label>
         <div className="session-list">
-          {shown.map((s) => (
-            <button
-              className={`session-row ${selected?.id === s.id ? 'selected' : ''}`}
-              key={s.id}
-              onClick={() => navigate({ session: s.id })}
+          {[...new Set(shown.map((s) => s.harness))].sort().map((harness) => (
+            <section
+              className="agent-group"
+              key={harness}
+              aria-label={`${agentLabel(harness)} sessions`}
             >
-              <div className={`harness-mark ${s.harness}`} aria-hidden="true">
-                {s.harness === 'claude'
-                  ? 'C'
-                  : s.harness === 'codex'
-                    ? '⌘'
-                    : s.harness.slice(0, 1).toUpperCase()}
-              </div>
-              <div className="session-summary">
-                <div className="row-title">
-                  <strong>{s.project}</strong>
-                  <time dateTime={s.lastActivity}>{when(s.lastActivity)}</time>
-                </div>
-                <div className="session-meta">
-                  {s.harness} <span>on {s.hostId}</span>
-                </div>
-                <p>{s.preview || s.diagnostic || 'Waiting for conversation'}</p>
-                <div className="row-bottom">
-                  <Status status={s.status} />
-                  {s.pendingCount > 0 && (
-                    <span className="attention-count">
-                      <CircleHelp size={14} aria-hidden="true" />
-                      {s.pendingCount} waiting
-                    </span>
-                  )}
-                  {s.queuedCount > 0 && (
-                    <span className="queued-count">{s.queuedCount} queued</span>
-                  )}
-                </div>
-              </div>
-              {read[s.id] !== s.lastActivity && (
-                <span className="unread" aria-label="Unread activity" />
-              )}
-            </button>
+              <h3 className="agent-group-heading">
+                {agentLabel(harness)}{' '}
+                <span>{shown.filter((s) => s.harness === harness).length}</span>
+              </h3>
+              {shown
+                .filter((s) => s.harness === harness)
+                .map((s) => (
+                  <button
+                    className={`session-row ${selected?.id === s.id ? 'selected' : ''}`}
+                    key={s.id}
+                    onClick={() => navigate({ session: s.id })}
+                  >
+                    <div className={`harness-mark ${s.harness}`} aria-hidden="true">
+                      {s.harness === 'claude'
+                        ? 'C'
+                        : s.harness === 'codex'
+                          ? '⌘'
+                          : s.harness.slice(0, 1).toUpperCase()}
+                    </div>
+                    <div className="session-summary">
+                      <div className="row-title">
+                        <strong>{sessionLabel(s)}</strong>
+                        <time dateTime={s.lastActivity}>{when(s.lastActivity)}</time>
+                      </div>
+                      <div className="session-meta">
+                        {agentLabel(s.harness)} <span>on {s.hostId}</span>
+                      </div>
+                      <div className="session-cwd" title={s.cwd}>
+                        <span>CWD</span> <code>{s.cwd || 'Not reported'}</code>
+                      </div>
+                      <div className="session-location">
+                        {s.project}
+                        {s.paneName ? ` · ${s.paneName}` : ''}
+                      </div>
+                      <p>{s.preview || s.diagnostic || 'Waiting for conversation'}</p>
+                      <div className="row-bottom">
+                        <Status status={s.status} />
+                        {s.pendingCount > 0 && (
+                          <span className="attention-count">
+                            <CircleHelp size={14} aria-hidden="true" />
+                            {s.pendingCount} waiting
+                          </span>
+                        )}
+                        {s.queuedCount > 0 && (
+                          <span className="queued-count">{s.queuedCount} queued</span>
+                        )}
+                      </div>
+                    </div>
+                    {read[s.id] !== s.lastActivity && (
+                      <span className="unread" aria-label="Unread activity" />
+                    )}
+                  </button>
+                ))}
+            </section>
           ))}
           {shown.length === 0 && (
             <Empty title={sessions.length ? 'No matching sessions' : 'No sessions yet'}>
@@ -417,7 +463,13 @@ function Conversation({
     onSuccess: (_result, submitted) => {
       setDraft((current) => (current === submitted.prompt ? '' : current));
       submission.current = undefined;
-      setNotice(mode === 'steer' ? 'Active turn updated.' : 'Task saved to the queue.');
+      setNotice(
+        mode === 'steer'
+          ? 'Active turn updated.'
+          : session.status === 'idle' || session.status === 'done'
+            ? 'Message saved. Sending to your agent…'
+            : 'Follow-up saved. It will run when your agent is ready.',
+      );
       void query.invalidateQueries({ queryKey: ['detail', session.id] });
     },
     onError: () =>
@@ -468,10 +520,13 @@ function Conversation({
           <ArrowLeft size={22} />
         </IconButton>
         <div className="conversation-heading">
-          <h2>{session.project}</h2>
+          <h2>{sessionLabel(session)}</h2>
           <div className="session-meta">
-            {session.harness} on {session.hostId}
+            {agentLabel(session.harness)} on {session.hostId}
             <Status status={session.status} />
+          </div>
+          <div className="conversation-cwd" title={session.cwd}>
+            <span>CWD</span> <code>{session.cwd || 'Not reported'}</code>
           </div>
         </div>
         <IconButton
@@ -611,7 +666,11 @@ function Conversation({
                   Instruction behavior
                 </label>
                 <select id="mode" value={mode} onChange={(e) => setMode(e.target.value)}>
-                  <option value="queue">Queue next turn</option>
+                  <option value="queue">
+                    {session.status === 'idle' || session.status === 'done'
+                      ? 'Send message'
+                      : 'Queue follow-up'}
+                  </option>
                   {session.capabilities.steerActiveTurn && session.status === 'working' && (
                     <option value="steer">Steer active turn</option>
                   )}
@@ -628,7 +687,13 @@ function Conversation({
                 }
                 aria-label={mode === 'steer' ? 'Steer active turn' : 'Queue instruction'}
               >
-                {send.isPending ? 'Saving…' : mode === 'steer' ? 'Steer' : 'Queue'}
+                {send.isPending
+                  ? 'Saving…'
+                  : mode === 'steer'
+                    ? 'Steer'
+                    : session.status === 'idle' || session.status === 'done'
+                      ? 'Send'
+                      : 'Queue'}
                 <ArrowUp size={19} aria-hidden="true" />
               </button>
             </div>
@@ -637,7 +702,8 @@ function Conversation({
           <div className="readonly-note">
             <Info size={18} aria-hidden="true" />
             <span>
-              Conversation view. Turn control is unavailable for this session.
+              {session.diagnostic ||
+                'Waiting for a verified agent connection before sending messages.'}
               {pending.length > 0 ? ' Pending approvals can be answered above.' : ''}
             </span>
           </div>

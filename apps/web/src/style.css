@@ -1417,3 +1417,66 @@ code {
     animation: none !important;
   }
 }
+
+.agent-filter {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 20px 12px;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+.agent-filter select {
+  flex: 1;
+  min-height: 48px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 0 12px;
+  font: inherit;
+}
+.agent-group-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 12px 24px;
+  font-size: 0.875rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.agent-group-heading span {
+  color: var(--muted);
+  font-weight: normal;
+}
+.session-cwd,
+.conversation-cwd {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  margin-top: 6px;
+}
+.session-cwd span,
+.conversation-cwd span {
+  flex-shrink: 0;
+  font-size: 0.625rem;
+  letter-spacing: 0.04em;
+}
+.session-cwd code,
+.conversation-cwd code {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  color: var(--text);
+}
+.session-location {
+  color: var(--muted);
+  font-size: 0.75rem;
+  margin-top: 4px;
+}
+.conversation-cwd {
+  max-height: 3.2em;
+  overflow-y: auto;
+}

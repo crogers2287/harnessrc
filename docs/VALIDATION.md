@@ -23,10 +23,10 @@ Diagnostics print version, available required methods, private socket ownership 
 
 ## Manual live acceptance, still unverified
 
-1. Start an ordinary Claude/Codex CLI in Herdr. Pair the phone, verify automatic discovery, correct native ID, ordered structured history, and simultaneous original terminal usability. Existing CLI sending is deliberately unavailable; confirm the UI reflects this.
+1. Start an ordinary Claude/Codex CLI in Herdr. Pair the phone, verify automatic discovery, correct native ID, ordered structured history, and simultaneous original terminal usability. Send a harmless instruction from the composer and verify it appears in the original native transcript. Queue two follow-ups and verify native completion releases them in order.
 2. Install the Claude hook and trigger a real supported tool permission. Verify the exact pending card, allow/deny, original process continuation and terminal fallback when the gateway is unavailable. Generic Claude questions are outside this adapter's supported scope.
 3. Launch/register the Codex bridge under Herdr. Submit a real native turn, inspect streaming, trigger requestUserInput or a tool approval, answer its specific card, and verify it continues without a second user turn. Queue two followups while busy and verify serial execution.
 4. Disconnect the phone, reconnect, restart only the gateway, and verify no duplicate messages, no repeated task sends, persistent queue and pending interaction state. Replace the native process and verify old controls/tasks cannot target its replacement.
 5. Test Android Chrome and iOS Safari/PWA installation, software keyboard, safe areas, focus, text scaling and foreground notifications. Closed-app native push is not implemented.
 
-Full original 16-step acceptance for an existing CLI-owned session is blocked on safe writer attachment/Herdr atomic dispatch, documented in CAPABILITIES.md. Mock-backed Phase 1 and the supported native bridge pathway are executable now; live interactive parity must not be inferred from fixture results.
+CLI chat and queue transport is implemented; complete native question/approval parity remains limited as documented in CAPABILITIES.md. Mock-backed Phase 1 and the supported native bridge pathway are executable now; live interactive parity must not be inferred from fixture results.
