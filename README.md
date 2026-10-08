@@ -1,0 +1,40 @@
+# Relay — conversational remote over Herdr
+
+A self-hosted React PWA and Fastify gateway for persistent coding agents. Herdr owns processes, panes, workspaces, and lifecycle; Relay stores structured conversations, exact native interactions, and queued work. Original terminal sessions remain usable.
+
+**Phase 1 implementation with mock-backed validation.** Existing Claude/Codex CLI sessions are discovered and observed. Claude's documented PermissionRequest hook resolves actual permission decisions. A separate sole-writer Codex bridge, launched under Herdr, supports native turns, questions, approvals, steering, and durable queued work. It never attaches a second writer to an existing CLI thread. Live Fred acceptance and physical Android/iOS verification remain outstanding. See the [capability matrix](docs/CAPABILITIES.md).
+
+## Run the credential-free demo
+
+Requires Node 22.20+ and npm.
+
+```sh
+npm ci
+npm run dev
+```
+
+Open http://localhost:4080. Enter the pairing key from `.data/demo/pairing-key` locally. Send “review the API, ask a question” or “make a change requiring approval”, then queue more work. Disconnect/reconnect the browser or restart the gateway while the separate mock harness remains running.
+
+```sh
+npm run check
+npx playwright install chromium
+npm run test:e2e
+python3 scripts/verify-design-skills.py
+npm run package
+```
+
+`npm run dev` builds missing assets; after UI edits run `npm run build`. It is a persistent demo runner, not a hot-reloading development server. Packaging produces `artifacts/relay-0.1.0.tar.gz`, including built browser assets and migration files. Install with `npm ci --omit=dev`; Node's SQLite API is currently experimental.
+
+## What is included
+
+- Live session discovery, native transcript imports, ordered durable replay, reconnects, and process replacement checks.
+- Exact interaction responses, validation, expiry, duplicate submission protection, and fail-closed uncertain delivery.
+- Per-session SQLite queues with edit, reorder, cancel, pause, restart recovery, serial dispatch and task idempotency.
+- Device pairing/revocation, short-lived cookies, read/control grants, authorization, audit records, redaction and private local sockets.
+- Mobile inbox, virtualized chat, tool/diff cards, interaction cards, queue, host/device settings, light/dark themes, installable PWA and foreground browser notifications.
+
+[Ubuntu/Fred installation](docs/DEPLOYMENT.md) · [Architecture and protocol](docs/ARCHITECTURE.md) · [Security](docs/SECURITY.md) · [Integration validation](docs/VALIDATION.md) · [Research and licenses](docs/RESEARCH.md) · [UI design workflow](docs/UI_DESIGN.md)
+
+![Mobile permission review](docs/screenshots/approval-mobile.png)
+
+Monorepo: `apps/web`, `apps/gateway`, `packages/{protocol,herdr,adapters,interaction-broker,task-queue,client-sdk,ui,storage,testing}`. No terminal emulator, terminal scraping, private Claude Remote Control API, external broker, or duplicated Herdr supervision.

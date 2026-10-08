@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PermissionRequest": [
+      {
+        "matcher": "Bash|Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "RC_HOOK_SOCKET=\"$HOME/.local/state/relay/hooks.sock\" /usr/bin/node --import /home/YOUR_USER/harnessrc/node_modules/tsx/dist/loader.mjs /home/YOUR_USER/harnessrc/scripts/claude-permission-hook.ts",
+            "timeout": 600
+          }
+        ]
+      }
+    ]
+  }
+}

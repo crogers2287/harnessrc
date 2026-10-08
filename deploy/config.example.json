@@ -1,0 +1,16 @@
+{
+  "dataDir": "/home/YOUR_USER/.local/state/relay",
+  "listen": "127.0.0.1",
+  "port": 4080,
+  "origin": "https://fred.YOUR_TAILNET.ts.net",
+  "secureCookies": true,
+  "hosts": [{"id": "fred", "name": "Fred", "socket": "/home/YOUR_USER/.config/herdr/herdr.sock"}],
+  "transcripts": {
+    "claude": "/home/YOUR_USER/.claude/projects",
+    "codex": "/home/YOUR_USER/.codex/sessions",
+    "omp": "/home/YOUR_USER/.omp/agent/sessions",
+    "hermes": "/home/YOUR_USER/.hermes/state.db"
+  },
+  "bridges": [],
+  "opencode": {}
+}

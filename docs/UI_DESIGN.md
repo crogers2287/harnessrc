@@ -1,6 +1,6 @@
 # Mobile UI design requirements
 
-The UI has not yet been implemented. This records the user's requested skill selection while the main build is paused. Apply these requirements when implementation resumes; do not treat this document as evidence of completed UI or device testing.
+The React PWA now implements this workflow. See root DESIGN.md and docs/screenshots for the resulting tokens and interface. Playwright checks responsive layout, touch targets, reconnects and accessibility; physical iOS/Android testing remains outstanding.
 
 ## Selected skills and scope
 
