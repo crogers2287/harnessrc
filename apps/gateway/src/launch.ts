@@ -13,6 +13,10 @@ export const launchProfileSchema = z.object({
   harness: z.enum(['claude', 'codex', 'pi', 'omp', 'opencode', 'hermes']),
   provider: z.string().default('Harness default'),
   modelsEndpoint: z.string().url().optional(),
+  defaultModel: z
+    .string()
+    .regex(/^[a-zA-Z0-9][a-zA-Z0-9._:/@+-]*$/)
+    .optional(),
   codexProvider: z.string().optional(),
   workspaceId: z.string(),
   roots: z.array(z.string()).min(1),
@@ -96,6 +100,7 @@ export class Launcher {
         provider: p.provider,
         models: await this.models(p),
         allowCustomModel: p.allowCustomModel,
+        defaultModel: p.defaultModel,
         connected: this.clients.get(p.hostId)?.host.connected ?? false,
       })),
     );
@@ -174,6 +179,7 @@ export class Launcher {
       model: input.model,
     });
     try {
+      const selectedModel = input.model || p.defaultModel;
       const socket = this.codexSockets.get(p.hostId);
       if (p.harness === 'codex' && socket) {
         // Allocate a NEW native thread only. Its first and only interactive CLI is
@@ -182,7 +188,7 @@ export class Launcher {
         try {
           const { thread } = await native.request('thread/start', {
             cwd: resolved,
-            model: input.model || undefined,
+            model: selectedModel,
             modelProvider: p.codexProvider,
             ephemeral: false,
           });
@@ -219,7 +225,7 @@ export class Launcher {
                   ? ['resume', receipt.nativeSessionId, '--remote', `unix://${socket}`]
                   : []),
                 ...p.args,
-                ...(input.model ? [p.modelFlag, input.model] : []),
+                ...(selectedModel ? [p.modelFlag, selectedModel] : []),
               ],
               timeout_ms: 30000,
             },

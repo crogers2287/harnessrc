@@ -25,6 +25,8 @@ Add `launchProfiles` to the gateway JSON configuration. IDs are unique. `workspa
 }
 ```
 
+`defaultModel` optionally names the provider model to use when the form selects Default. Set it for proxy profiles so an unrelated account default is never passed to a different provider.
+
 `local_models` must already be a correctly configured native Codex provider. The optional endpoint reads an OpenAI-style `data[].id` catalogue with a three-second timeout and 60-second cache. It only advertises upstream identifiers; a listed model may still fail upstream or be unsuitable for coding. Configure a curated static `models: [{"id":"…","name":"…"}]` list by omitting the endpoint. `allowCustomModel` enables literal model IDs, not arbitrary CLI flags or provider URLs.
 
 Claude profiles can supply native `--settings` arguments for provider routing. Credentials belong on the host. The optional `environment` map maps a child environment variable name to an existing gateway environment variable **name**, never a browser-supplied value. Neither launch commands nor environment values are returned to clients or added to launch audit records. Interactive shell aliases can override environment variables; verify the actual native provider route. Do not add an unverified profile simply to make a harness appear supported.
@@ -38,3 +40,5 @@ With a configured `codexDaemons` socket, a **new** Codex thread is allocated and
 Migration `004-launches.sql` records a launch request before mutation. Repeating an ID returns its original receipt; changing its payload is rejected. Gateway restart turns unfinished launches into **uncertain**. Lost native or Herdr replies are not blindly retried. A tab or unused native thread may remain after a failed launch; inspect sessions before deliberately starting another. The form preserves the request for recovery. It does not silently replay the first message after a crash.
 
 Fred validation: native Codex, Codex through CFRproxy, and Claude Code through CFRproxy were launched in a chosen CWD and returned exact test replies with their selected models in native transcripts. Browser creation, swipe navigation, uploads, approvals, queue, reconnect, and streaming are covered by Playwright. OMP/Pi and DSH native integration are separate outstanding work; the launcher does not claim interactive support for them merely because Herdr can start a binary.
+
+Live native steering was also verified on Fred: an existing Codex turn received `turn/steer` with its `expectedTurnId` and produced the changed final reply without a new turn.

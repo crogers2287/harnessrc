@@ -257,6 +257,7 @@ test('new Codex threads are named before their first Herdr CLI owner starts; rep
     workspaceId: 'w1',
     roots: [tmpdir()],
     codexProvider: 'local_models',
+    defaultModel: 'codex/gpt-6.1-sol',
     allowCustomModel: true,
   });
   const launcher = new Launcher(
@@ -270,7 +271,7 @@ test('new Codex threads are named before their first Herdr CLI owner starts; rep
     profileId: 'codex',
     cwd: tmpdir(),
     name: 'Native launch',
-    model: 'codex/gpt-6.1-sol',
+    model: '',
     prompt: 'Hello',
   };
   try {
@@ -280,6 +281,7 @@ test('new Codex threads are named before their first Herdr CLI owner starts; rep
       ['thread/start', 'thread/name/set'],
     );
     assert.equal(nativeCalls[0].params.modelProvider, 'local_models');
+    assert.equal(nativeCalls[0].params.model, 'codex/gpt-6.1-sol');
     assert.equal(nativeCalls[1].params.threadId, nativeId);
     assert.deepEqual(start.args, [
       'resume',

@@ -9,12 +9,13 @@
 | Send / queue future turns | Implemented Herdr prompt + native completion | Implemented Herdr prompt + native completion | Implemented | Unsupported | Unsupported | Unsupported |
 | Answer native questions | Unsupported | Unsupported | Implemented requestUserInput | Unsupported | Unsupported | Unsupported |
 | Approve / reject action | Implemented PermissionRequest hook | Unsupported | Implemented command/file approval | Unsupported | Unsupported | Unsupported |
-| Steer / interrupt | Unsupported | Unsupported | Implemented native protocol | Unsupported | Unsupported | Unsupported |
+| Steer active turn | Unsupported | Implemented for proved shared-daemon bindings | Implemented native protocol | Unsupported | Unsupported | Unsupported |
+| Interrupt turn | Unsupported | Unsupported | Implemented native protocol | Unsupported | Unsupported | Unsupported |
 | Resume session | Unsupported remote operation | Unsupported remote operation | Bridge resumes only its own saved thread | Unsupported | Unsupported | Unsupported |
 | Attach files/images | Implemented local file references | Implemented local file references | Implemented local file references | Unsupported | Unsupported | Unsupported |
 | Read diffs / subagents | Unsupported capability flags | Unsupported capability flags | Diff event rendering; flags remain off pending complete contract | Unsupported | Unsupported | Unsupported |
 
-Readers import emitted supported record types; they do not manufacture reasoning. OMP branch records retain ancestry but active-branch reconstruction is incomplete. Hermes/OpenCode integration is validated with local database/HTTP fixtures, not real running harnesses. Discoverability uses Herdr native IDs. Configured local shared Codex daemons additionally support verified native-name/title challenges for existing named CLI threads; see DEPLOYMENT.md. Missing or unverifiable IDs show unavailable capabilities.
+Readers import emitted supported record types; they do not manufacture reasoning. OMP branch records retain ancestry but active-branch reconstruction is incomplete. Hermes/OpenCode integration is validated with local database/HTTP fixtures, not real running harnesses. Discoverability uses Herdr native IDs. Configured local shared Codex daemons additionally support verified native-name/title challenges for existing named CLI threads; see DEPLOYMENT.md. Missing or unverifiable IDs show unavailable capabilities. New Claude/Codex sessions support host-folder selection and configured model/provider profiles, including CFRproxy (see SESSION_CREATION.md). Pi and DSH native adapters and model switching on running sessions are not implemented yet.
 
 ## Exact blockers for CLI parity
 

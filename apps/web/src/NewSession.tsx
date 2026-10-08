@@ -13,6 +13,7 @@ type Profile = {
   connected: boolean;
   models: { id: string; name: string }[];
   allowCustomModel: boolean;
+  defaultModel?: string;
 };
 type Folders = {
   path: string;
@@ -327,7 +328,9 @@ export function NewSession({
                       }));
                     }}
                   >
-                    <option value="">Agent default</option>
+                    <option value="">
+                      {profile.defaultModel ? `Default: ${profile.defaultModel}` : 'Agent default'}
+                    </option>
                     {profile.models.map((m) => (
                       <option key={m.id} value={m.id}>
                         {m.name}
