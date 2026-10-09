@@ -1651,11 +1651,13 @@ function SessionDetails({ session: s }: { session: SessionView }) {
           ['Connection', s.connected ? 'Connected' : 'Disconnected'],
           [
             'Control mode',
-            s.ownership === 'gateway-native'
-              ? 'Native bridge'
-              : s.ownership === 'herdr-cli'
-                ? 'Existing Herdr session'
-                : 'Observation',
+            s.harness === 'dsh'
+              ? 'Existing DSH web session'
+              : s.ownership === 'gateway-native'
+                ? 'Native bridge'
+                : s.ownership === 'herdr-cli'
+                  ? 'Existing Herdr session'
+                  : 'Observation',
           ],
           ['Native session', s.nativeSessionId],
         ].map(([label, value]) => (

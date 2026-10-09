@@ -46,7 +46,12 @@ export function DshModel({ session }: { session: SessionView }) {
           <label>
             Model
             <select
-              value={choice || (current ? JSON.stringify(current) : '')}
+              value={
+                choice ||
+                (current
+                  ? JSON.stringify({ provider: current.provider, model: current.model })
+                  : '')
+              }
               onChange={(e) => setChoice(e.target.value)}
               disabled={mutation.isPending}
             >
