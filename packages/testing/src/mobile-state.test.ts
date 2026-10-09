@@ -84,3 +84,21 @@ test('live/history agent filters combine multiword model search, directory, host
   );
   assert.equal(filterSessions(sessions, { ...defaultFilters, agent: 'claude' }).length, 0);
 });
+
+test('native slash-command echoes remove their optimistic copy with timestamp safeguards', () => {
+  const item: Outgoing = { key: 'x', prompt: '/loop', started: at, state: 'confirmed' };
+  const event = {
+    sourceId: 'slash-echo',
+    id: 'echo',
+    sequence: 1,
+    sessionId: 's',
+    nativeSessionId: 'n',
+    source: 'claude',
+    kind: 'user.message',
+    timestamp: at,
+    data: { text: '<command-message>loop</command-message><command-name>/loop</command-name>' },
+  } as Event;
+  assert.equal(hasNativeEcho(item, [event]), true);
+  assert.equal(hasNativeEcho({ ...item, prompt: '/help' }, [event]), false);
+  assert.equal(hasNativeEcho(item, [{ ...event, timestamp: '2026-10-08T00:00:00Z' }]), false);
+});

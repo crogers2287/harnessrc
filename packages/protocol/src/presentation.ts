@@ -6,11 +6,23 @@ export type MessagePresentation = {
   activity?: { title: string; summary: string; details: { label: string; value: string }[] };
 };
 export function presentUserMessage(text: string): MessagePresentation {
-  const command = text.match(
-    /^\s*<command-name>([^<>]+)<\/command-name>\s*<command-message>[^<>]*<\/command-message>\s*(?:<command-args>([\s\S]*?)<\/command-args>\s*)?$/,
+  const fields: Record<string, string> = {};
+  let validCommand = true;
+  const remainder = text.replace(
+    /<command-(name|message|args)>([\s\S]*?)<\/command-\1>/g,
+    (_, key: string, value: string) => {
+      if (key in fields) validCommand = false;
+      fields[key] = value.trim();
+      return '';
+    },
   );
-  if (command && /^\/[\w:-]+$/.test(command[1].trim()))
-    return { text: command[2]?.trim() ?? '', command: command[1].trim() };
+  if (
+    validCommand &&
+    !remainder.trim() &&
+    'message' in fields &&
+    /^\/[\w:-]+$/.test(fields.name ?? '')
+  )
+    return { text: fields.args ?? '', command: fields.name };
   const result = text.match(
     /^\s*<local-command-(stdout|stderr)>([\s\S]*?)<\/local-command-\1>\s*$/,
   );

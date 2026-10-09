@@ -124,3 +124,28 @@ test('dictation requires session control, returns cleaned text without creating 
     await new Promise<void>((r) => server.close(() => r()));
   }
 });
+
+test('slow cleanup falls back promptly to usable transcription', async () => {
+  const server = createServer((req, res) => {
+    req.resume();
+    if (req.url === '/asr') res.end(JSON.stringify({ text: 'Keep my draft.' }));
+    // Cleanup deliberately never responds: the deadline must release the draft.
+  });
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${(server.address() as any).port}`;
+  try {
+    const voice = new VoiceService({
+      transcriptionUrl: base + '/asr',
+      model: 'test',
+      cleanup: { endpoint: base + '/clean', model: 'test', timeoutMs: 100 },
+    });
+    const started = Date.now();
+    const result = await voice.transcribe(Buffer.from('audio'), 'audio/webm');
+    assert.equal(result.text, 'Keep my draft.');
+    assert.equal(result.cleaned, false);
+    assert.ok(Date.now() - started < 2000);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+});

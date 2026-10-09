@@ -11,7 +11,12 @@ export const voiceConfigSchema = z.object({
   model: z.string().default('qwen3-asr-1.7b'),
   authorizationEnv: z.string().optional(),
   cleanup: z
-    .object({ endpoint, model: z.string(), authorizationEnv: z.string().optional() })
+    .object({
+      endpoint,
+      model: z.string(),
+      authorizationEnv: z.string().optional(),
+      timeoutMs: z.number().int().min(100).max(10000).optional(),
+    })
     .optional(),
 });
 export type VoiceConfig = z.infer<typeof voiceConfigSchema>;
@@ -78,7 +83,7 @@ export class VoiceService {
           const response = await fetch(config.cleanup.endpoint, {
             method: 'POST',
             redirect: 'error',
-            signal: AbortSignal.timeout(30000),
+            signal: AbortSignal.timeout(config.cleanup.timeoutMs ?? 3000),
             headers: {
               'Content-Type': 'application/json',
               ...headers(config.cleanup.authorizationEnv),

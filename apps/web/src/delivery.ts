@@ -1,4 +1,4 @@
-import type { Event } from '@harnessrc/protocol';
+import { presentUserMessage, type Event } from '@harnessrc/protocol';
 export type Outgoing = {
   key: string;
   nativeRequestId?: string;
@@ -23,7 +23,11 @@ export function hasNativeEcho(item: Outgoing, events: Event[]): boolean {
     )
       return true;
     if (Date.parse(e.timestamp) < Date.parse(item.started) - 1000) return false;
-    if (String(e.data.text ?? '').trim() !== item.prompt.trim()) return false;
+    const presentation = presentUserMessage(String(e.data.text ?? ''));
+    const echo = presentation.command
+      ? `${presentation.command} ${presentation.text}`.trim()
+      : String(e.data.text ?? '').trim();
+    if (echo !== item.prompt.trim()) return false;
     const expected = (item.attachments ?? []).map((f) => f.id).sort();
     const actual = Array.isArray(e.data.attachments)
       ? e.data.attachments.map((f: any) => f.id).sort()

@@ -85,3 +85,18 @@ test('Claude goal check-ins and usage diagnostics stay in collapsible activity, 
   assert.ok(stats.activity?.details.some((d) => d.label === 'Usage' && d.value.includes('102726')));
   assert.ok(stats.activity?.details.every((d) => !d.value.includes('<agent_count>')));
 });
+
+test('Claude reverse-order command envelopes normalize without hiding literal XML', () => {
+  const text = '<command-message>loop</command-message> <command-name>/loop</command-name>';
+  assert.deepEqual(presentUserMessage(text), { command: '/loop', text: '' });
+  assert.deepEqual(presentUserMessage(text + '<command-args>Check tests</command-args>'), {
+    command: '/loop',
+    text: 'Check tests',
+  });
+  for (const value of [
+    text + ' extra',
+    text + '<command-name>/other</command-name>',
+    '```xml\n' + text + '\n```',
+  ])
+    assert.deepEqual(presentUserMessage(value), { text: value });
+});
