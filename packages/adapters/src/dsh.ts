@@ -23,7 +23,8 @@ export class DshClient {
       throw new Error('Remote DSH endpoints require HTTPS');
   }
   async call(method: string, args: Record<string, unknown>) {
-    if (!/^session\/[a-zA-Z]+$/.test(method)) throw new Error('Invalid DSH method');
+    if (!/^session\/[a-zA-Z]+$/.test(method) && method !== 'agentPresets/list')
+      throw new Error('Invalid DSH method');
     const rpcId = randomUUID();
     const cookie = await this.credential();
     if (!cookie || /[\r\n]/.test(cookie)) throw new Error('DSH authentication is not configured');

@@ -14,6 +14,9 @@ type Profile = {
   models: { id: string; name: string }[];
   allowCustomModel: boolean;
   defaultModel?: string;
+  agentPresets?: { id: string; name: string; description?: string; unavailable: boolean }[];
+  defaultAgentPreset?: string;
+  presetError?: string;
 };
 type Folders = {
   path: string;
@@ -35,6 +38,7 @@ type Draft = {
   name: string;
   model: string;
   prompt: string;
+  agentPreset?: string;
 };
 const labels: Record<string, string> = {
   claude: 'Claude Code',
@@ -157,6 +161,10 @@ export function NewSession({
       ...d,
       profileId: value.id,
       model: '',
+      agentPreset:
+        value.hostId === profile?.hostId && value.harness === profile?.harness
+          ? d.agentPreset
+          : undefined,
       cwd: value.hostId === profile?.hostId ? d.cwd : '',
     }));
     setCustom(false);
@@ -206,6 +214,38 @@ export function NewSession({
                     ))}
                   </select>
                 </label>
+                {profile.harness === 'dsh' && (
+                  <label>
+                    DSH agent
+                    <select
+                      aria-label="DSH agent"
+                      value={draft.agentPreset ?? ''}
+                      onChange={(e) =>
+                        setDraft((d) => ({ ...d, agentPreset: e.target.value || undefined }))
+                      }
+                      disabled={!!profile.presetError}
+                    >
+                      <option value="">
+                        {profile.defaultAgentPreset
+                          ? `Default: ${profile.defaultAgentPreset}`
+                          : 'DSH default'}
+                      </option>
+                      {(profile.agentPresets ?? []).map((preset) => (
+                        <option key={preset.id} value={preset.id} disabled={preset.unavailable}>
+                          {preset.name}
+                          {preset.unavailable ? ' (unavailable)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <small>
+                      {profile.presetError ||
+                        profile.agentPresets?.find(
+                          (p) => p.id === (draft.agentPreset ?? profile.defaultAgentPreset),
+                        )?.description ||
+                        'Choose the agent’s tools and instructions for this session.'}
+                    </small>
+                  </label>
+                )}
                 {[
                   ...new Set(
                     list.filter((p) => p.harness === profile.harness).map((p) => p.hostId),

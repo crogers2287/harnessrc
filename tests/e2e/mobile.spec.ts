@@ -957,6 +957,14 @@ test('DSH is selectable without discovering a separate host and launches the cho
           },
           {
             id: 'dsh-cfrproxy',
+            defaultAgentPreset: 'standard',
+            agentPresets: [
+              { id: 'standard', name: 'standard', unavailable: false },
+              { id: 'haxor', name: 'haxor', unavailable: false },
+              { id: 'ash', name: 'ash', unavailable: false },
+              { id: 'minimal', name: 'minimal', unavailable: false },
+              { id: 'broken', name: 'broken', unavailable: true },
+            ],
             hostId: 'fred-dsh',
             harness: 'dsh',
             provider: 'CFRproxy',
@@ -991,6 +999,12 @@ test('DSH is selectable without discovering a separate host and launches the cho
   });
   await page.getByRole('button', { name: 'New session', exact: true }).click();
   await page.getByRole('combobox', { name: 'Agent', exact: true }).selectOption('dsh');
+  await page.getByLabel('DSH agent', { exact: true }).selectOption('haxor');
+  await expect(
+    page.getByRole('option', { name: 'broken (unavailable)', exact: true }),
+  ).toHaveJSProperty('disabled', true);
+  await page.reload();
+  await expect(page.getByLabel('DSH agent', { exact: true })).toHaveValue('haxor');
   await expect(page.getByRole('combobox', { name: 'Provider', exact: true })).toContainText(
     'CFRproxy',
   );
@@ -1006,6 +1020,7 @@ test('DSH is selectable without discovering a separate host and launches the cho
   await expect(page.getByText('Agent started. Connecting its conversation…')).toBeVisible();
   expect(launched).toMatchObject({
     profileId: 'dsh-cfrproxy',
+    agentPreset: 'haxor',
     cwd: '/home/developer/project',
     model: 'gpt-6-astra',
     prompt: 'Review the mobile interface',

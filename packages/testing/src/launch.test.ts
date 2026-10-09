@@ -299,3 +299,89 @@ test('new Codex threads are named before their first Herdr CLI owner starts; rep
     store.close();
   }
 });
+
+test('DSH launch discovers presets, validates selection before mutation and preserves it on replay', async () => {
+  const store = new Store(':memory:');
+  const calls: { method: string; args: any }[] = [];
+  const host: any = {
+    connected: true,
+    native: {
+      call: async (method: string, args: any) => {
+        calls.push({ method, args });
+        if (method === 'agentPresets/list')
+          return {
+            presets: [
+              { id: 'standard', isDefault: true },
+              { id: 'haxor', name: 'Haxor' },
+              { id: 'ash' },
+              { id: 'minimal' },
+              { id: 'broken', broken: 'Missing tools' },
+            ],
+          };
+        return {};
+      },
+      models: async () => ({ groups: [] }),
+      prompt: async () => {},
+    },
+  };
+  const profile = launchProfileSchema.parse({
+    id: 'dsh',
+    hostId: 'fred-dsh',
+    label: 'DSH',
+    harness: 'dsh',
+    workspaceId: 'dsh',
+    roots: [tmpdir()],
+  });
+  const launcher = new Launcher(
+    store,
+    [profile],
+    new Map(),
+    new Map(),
+    new Map([['fred-dsh', host]]),
+  );
+  const input = {
+    requestId: randomUUID(),
+    profileId: 'dsh',
+    cwd: tmpdir(),
+    name: 'Chosen agent',
+    model: '',
+    prompt: 'Hello',
+    agentPreset: 'haxor',
+  };
+  try {
+    const [catalog] = await launcher.catalog();
+    assert.ok('defaultAgentPreset' in catalog && 'agentPresets' in catalog);
+    assert.equal(catalog.defaultAgentPreset, 'standard');
+    assert.equal(catalog.agentPresets?.find((p) => p.id === 'broken')?.unavailable, true);
+    for (const agentPreset of ['missing', 'broken']) {
+      await assert.rejects(
+        launcher.launch({ ...input, agentPreset }, 'device'),
+        /available DSH agent/,
+      );
+      assert.equal(launcher.receipt(input.requestId), undefined);
+    }
+    assert.equal(
+      calls.some((c) => c.method === 'session/create'),
+      false,
+    );
+    assert.equal((await launcher.launch(input, 'device')).status, 'started');
+    assert.equal(
+      calls.find((c) => c.method === 'session/create')?.args.request.agentPreset,
+      'haxor',
+    );
+    await launcher.launch(input, 'device');
+    assert.equal(calls.filter((c) => c.method === 'session/create').length, 1);
+    await assert.rejects(
+      launcher.launch({ ...input, agentPreset: 'ash' }, 'device'),
+      /different settings/,
+    );
+    const { agentPreset: _preset, ...defaultInput } = input;
+    await launcher.launch({ ...defaultInput, requestId: randomUUID() }, 'device');
+    assert.equal(
+      calls.filter((c) => c.method === 'session/create').at(-1)?.args.request.agentPreset,
+      undefined,
+    );
+  } finally {
+    store.close();
+  }
+});

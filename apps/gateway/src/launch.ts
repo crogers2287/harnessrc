@@ -38,6 +38,7 @@ export const launchRequestSchema = z
     cwd: z.string().min(1).max(4096),
     name: z.string().trim().min(1).max(80),
     model: z.string().max(160).default(''),
+    agentPreset: z.string().min(1).max(160).optional(),
     prompt: z.string().trim().min(1).max(32000),
   })
   .strict();
@@ -105,12 +106,46 @@ export class Launcher {
         models: await this.models(p),
         allowCustomModel: p.allowCustomModel,
         defaultModel: p.defaultModel,
+        ...(p.harness === 'dsh' ? await this.presets(p) : {}),
         connected:
           this.dshHosts.get(p.hostId)?.connected ??
           this.clients.get(p.hostId)?.host.connected ??
           false,
       })),
     );
+  }
+  async presets(p: LaunchProfile) {
+    try {
+      const host = this.dshHosts.get(p.hostId);
+      if (!host?.connected) throw new Error('Disconnected');
+      const { presets } = z
+        .object({
+          presets: z.array(
+            z.object({
+              id: z.string(),
+              name: z.string().optional(),
+              description: z.string().optional(),
+              isDefault: z.boolean().optional(),
+              broken: z.string().optional(),
+            }),
+          ),
+        })
+        .parse(await host.native.call('agentPresets/list', {}));
+      return {
+        agentPresets: presets.map((p) => ({
+          id: p.id,
+          name: p.name || p.id,
+          description: p.description,
+          unavailable: !!p.broken,
+        })),
+        defaultAgentPreset: p.dshPreset ?? presets.find((p) => p.isDefault)?.id,
+      };
+    } catch {
+      return {
+        agentPresets: [],
+        presetError: 'DSH agent list is unavailable. Reconnect to DSH and try again.',
+      };
+    }
   }
   private modelCache = new Map<string, { at: number; models: { id: string; name: string }[] }>();
   async models(p: LaunchProfile) {
@@ -165,6 +200,15 @@ export class Launcher {
       return JSON.parse(existing.receipt as string);
     }
     const p = this.profile(input.profileId);
+    const selectedPreset = input.agentPreset ?? p.dshPreset;
+    if (input.agentPreset && p.harness !== 'dsh') throw new Error('Agent presets require DSH');
+    if (p.harness === 'dsh' && selectedPreset) {
+      const catalog = await this.presets(p);
+      if (
+        !catalog.agentPresets.some((preset) => preset.id === selectedPreset && !preset.unavailable)
+      )
+        throw new Error('Choose an available DSH agent');
+    }
     const client = this.clients.get(p.hostId);
     const dsh = this.dshHosts.get(p.hostId);
     if (!(p.harness === 'dsh' ? dsh?.connected : client?.host.connected))
@@ -201,6 +245,7 @@ export class Launcher {
       profileId: p.id,
       cwd: resolved,
       model: input.model,
+      agentPreset: selectedPreset,
     });
     try {
       const selectedModel = input.model || p.defaultModel;
@@ -211,7 +256,7 @@ export class Launcher {
           request: {
             sessionId: nativeId,
             cwd: resolved,
-            ...(p.dshPreset ? { agentPreset: p.dshPreset } : {}),
+            ...(selectedPreset ? { agentPreset: selectedPreset } : {}),
           },
         });
         receipt.nativeSessionId = nativeId;
