@@ -1,3 +1,4 @@
+import { ClaudeSteering } from './claude-steering.ts';
 import { DshHost } from './dsh-host.ts';
 import { CodexLinks } from './codex-links.ts';
 import { CodexDaemon } from '../../../packages/adapters/src/codex-daemon.ts';
@@ -19,6 +20,7 @@ import { TaskQueue } from '@harnessrc/task-queue';
 import { InteractionBroker } from '@harnessrc/interaction-broker';
 import type { Config } from './config.ts';
 export class Runtime extends EventEmitter {
+  claudeSteering = new ClaudeSteering(this);
   dshHosts = new Map<string, DshHost>();
   clients = new Map<string, HerdrClient>();
   private codexLinks = new Map<string, CodexLinks>();
@@ -251,16 +253,24 @@ export class Runtime extends EventEmitter {
                 s.harness === 'codex' && this.codexLinks.has(hostId)
                   ? (session) => this.codexLinks.get(hostId)!.assertDelivery(client, session)
                   : undefined,
-                this.codexLinks.get(hostId)?.hasLink(s)
-                  ? (session, prompt, images) =>
-                      this.codexLinks.get(hostId)!.steer(client, session, prompt, images)
-                  : undefined,
+                s.harness === 'claude'
+                  ? (session, prompt, _images, input) =>
+                      this.claudeSteering.submit(session, prompt, input)
+                  : this.codexLinks.get(hostId)?.hasLink(s)
+                    ? (session, prompt, images) =>
+                        this.codexLinks.get(hostId)!.steer(client, session, prompt, images)
+                    : undefined,
                 this.codexLinks.get(hostId)?.hasLink(s)
                   ? (session) => this.codexLinks.get(hostId)!.turnState(client, session)
                   : undefined,
               );
           }
           s.capabilities = adapter?.capabilities ?? capabilities([]);
+          if (s.harness === 'claude')
+            s.capabilities = {
+              ...s.capabilities,
+              steerActiveTurn: this.claudeSteering.available(s),
+            };
           s.ownership = 'herdr-cli';
           s.diagnostic =
             'Messages are delivered to the existing CLI through Herdr. Follow-ups wait for native turn completion. Exact Claude permission hooks handle approvals.';

@@ -665,7 +665,9 @@ function Conversation({
           submitted.key,
           'confirmed',
           _result?.task?.id,
-          session.harness === 'dsh' && _result?.mode === 'steer' ? 'next-step' : undefined,
+          ['dsh', 'claude'].includes(session.harness) && _result?.mode === 'steer'
+            ? 'next-step'
+            : undefined,
         );
       attachments.clear(submitted.attachments);
       submission.current = undefined;
@@ -673,7 +675,9 @@ function Conversation({
         _result?.mode === 'steer'
           ? session.harness === 'dsh'
             ? 'Steering accepted. DSH will apply it at the next step.'
-            : 'Active turn updated.'
+            : session.harness === 'claude'
+              ? 'Steering accepted. Waiting for Claude’s next tool step.'
+              : 'Active turn updated.'
           : submitted.mode === 'queue'
             ? 'Queued for a later turn.'
             : 'Message sent.',

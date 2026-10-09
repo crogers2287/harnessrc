@@ -24,7 +24,12 @@ export class HerdrCliAdapter implements Adapter {
     private assertOwner: (session: Session) => Promise<void>,
     private attachmentPrompt?: (session: Session, task: Task) => string,
     private verifyDelivery?: (session: Session) => Promise<void>,
-    private nativeSteer?: (session: Session, prompt: string, images?: string[]) => Promise<void>,
+    private nativeSteer?: (
+      session: Session,
+      prompt: string,
+      images?: string[],
+      input?: Pick<Task, 'id' | 'prompt' | 'attachments'>,
+    ) => Promise<void>,
     private nativeState?: (session: Session) => Promise<Session['status']>,
   ) {
     this.capabilities.attachFiles = !!attachmentPrompt;
@@ -78,10 +83,15 @@ export class HerdrCliAdapter implements Adapter {
     await this.assertOwner(session);
     return { correlation };
   }
-  async steer(session: Session, prompt: string, images?: string[]) {
+  async steer(
+    session: Session,
+    prompt: string,
+    images?: string[],
+    input?: Pick<Task, 'id' | 'prompt' | 'attachments'>,
+  ) {
     if (!this.nativeSteer) throw new Error('Native steering is unavailable');
     await this.assertOwner(session);
-    await this.nativeSteer(session, prompt, images);
+    await this.nativeSteer(session, prompt, images, input);
   }
   async reconcile(
     session: Session,
