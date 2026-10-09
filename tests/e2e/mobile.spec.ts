@@ -1632,13 +1632,26 @@ test('native image references render OpenUI previews with full-size view and dow
     await r.fulfill({
       json: {
         events: [
+          ...Array.from({ length: 30 }, (_, i) => ({
+            id: `media-history-${i}`,
+            sourceId: `media-history-${i}`,
+            sessionId,
+            nativeSessionId: 'native',
+            source: 'dsh',
+            sequence: i + 1,
+            kind: 'assistant.message',
+            timestamp: new Date().toISOString(),
+            data: {
+              text: `Earlier reply ${i}. The image viewer must outlive this virtualized history.`,
+            },
+          })),
           {
             id: 'f9c8b6c5-a983-4878-a9c4-122837a11cd3',
             sourceId: 'native-picture',
             sessionId,
             nativeSessionId: 'native',
             source: 'dsh',
-            sequence: 1,
+            sequence: 100,
             kind: 'assistant.message',
             timestamp: new Date().toISOString(),
             data: {
@@ -1659,6 +1672,11 @@ test('native image references render OpenUI previews with full-size view and dow
       .evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0),
   ).toBe(true);
   await preview.click();
+  await expect(page.getByRole('dialog', { name: 'Preview Portrait from Comfy' })).toBeVisible();
+  await page.locator('.conversation-scroll').evaluate((el) => {
+    el.scrollTop = 0;
+  });
+  await expect(preview).toHaveCount(0);
   await expect(page.getByRole('dialog', { name: 'Preview Portrait from Comfy' })).toBeVisible();
   const downloaded = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Download image', exact: true }).click();

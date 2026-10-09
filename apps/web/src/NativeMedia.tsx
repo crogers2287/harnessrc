@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Image } from '@openuidev/react-ui/Image';
 import { Button } from '@harnessrc/ui';
@@ -6,10 +6,62 @@ import { Download, X } from 'lucide-react';
 import { nativeFiles, type Event } from '@harnessrc/protocol';
 import { downloadNativeFile } from '@harnessrc/client-sdk';
 
+type Preview = { blob: Blob; title: string; name: string };
+const PreviewContext = createContext<(preview: Preview) => void>(() => {});
+/** The viewer outlives virtualized message rows and owns its own object URL. */
+export function MediaPreviewProvider({ children }: { children: ReactNode }) {
+  const [selected, setSelected] = useState<Preview & { url: string }>();
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    if (!selected) return;
+    dialog.current?.showModal();
+    return () => URL.revokeObjectURL(selected.url);
+  }, [selected]);
+  return (
+    <PreviewContext.Provider
+      value={(value) => setSelected({ ...value, url: URL.createObjectURL(value.blob) })}
+    >
+      {children}
+      {selected && (
+        <dialog
+          ref={dialog}
+          className="image-preview"
+          aria-label={`Preview ${selected.title}`}
+          onClose={() => setSelected(undefined)}
+        >
+          <header>
+            <strong>{selected.title}</strong>
+            <button
+              type="button"
+              className="icon-button"
+              aria-label="Close image preview"
+              onClick={() => dialog.current?.close()}
+            >
+              <X size={22} />
+            </button>
+          </header>
+          <img src={selected.url} alt={selected.title} />
+          <Button
+            variant="primary"
+            onClick={() => {
+              const link = document.createElement('a');
+              link.href = selected.url;
+              link.download = selected.name;
+              link.click();
+            }}
+          >
+            Download image
+          </Button>
+        </dialog>
+      )}
+    </PreviewContext.Provider>
+  );
+}
+
 export function NativeMedia({ event, index }: { event: Event; index: number }) {
   const file = nativeFiles(event)[index];
   const [url, setUrl] = useState('');
-  const dialog = useRef<HTMLDialogElement>(null);
+  const showPreview = useContext(PreviewContext);
   const image = /\.(png|jpe?g|webp|gif|avif)$/i.test(file?.path ?? '');
   const query = useQuery({
     queryKey: ['native-media', event.sessionId, event.id, index],
@@ -45,7 +97,7 @@ export function NativeMedia({ event, index }: { event: Event; index: number }) {
             type="button"
             className="native-media-preview"
             aria-label={`View ${title}`}
-            onClick={() => dialog.current?.showModal()}
+            onClick={() => query.data && showPreview({ blob: query.data, title, name })}
           >
             <Image src={url} alt={title} scale="fit" aspectRatio="4:3" />
           </button>
@@ -69,24 +121,6 @@ export function NativeMedia({ event, index }: { event: Event; index: number }) {
         <Button variant="secondary" onClick={() => void download()} disabled={query.isFetching}>
           <Download size={18} /> Download
         </Button>
-      )}
-      {url && image && (
-        <dialog ref={dialog} className="image-preview" aria-label={`Preview ${title}`}>
-          <header>
-            <strong>{title}</strong>
-            <button
-              className="icon-button"
-              aria-label="Close image preview"
-              onClick={() => dialog.current?.close()}
-            >
-              <X size={22} />
-            </button>
-          </header>
-          <img src={url} alt={title} />
-          <Button variant="primary" onClick={() => void download()}>
-            Download image
-          </Button>
-        </dialog>
       )}
     </section>
   );

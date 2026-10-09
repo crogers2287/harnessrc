@@ -1,4 +1,4 @@
-import { NativeMedia, NativeMediaGallery } from './NativeMedia.tsx';
+import { NativeMedia, NativeMediaGallery, MediaPreviewProvider } from './NativeMedia.tsx';
 import { nativeFiles } from '@harnessrc/protocol';
 import { notifyEvent } from './notifications.ts';
 import { DshQuestions } from './DshQuestions.tsx';
@@ -812,7 +812,7 @@ function Conversation({
       </>
     );
   return (
-    <>
+    <MediaPreviewProvider>
       <header className="conversation-header">
         <IconButton label="Open sessions" className="mobile-back" onClick={back}>
           <Menu size={22} />
@@ -1178,7 +1178,7 @@ function Conversation({
                   : '')}
         </p>
       </div>
-    </>
+    </MediaPreviewProvider>
   );
 }
 function WorkingIndicator({ harness, events }: { harness: string; events: Event[] }) {
