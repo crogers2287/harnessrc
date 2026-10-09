@@ -127,3 +127,145 @@ test('DSH pending waterfall replays, validates exact answers, claims once, and n
     await f.close();
   }
 });
+
+test('timed DSH questions hold beyond their deadline and release only after native acceptance', async () => {
+  let accepted = false,
+    released = false,
+    claims = 0;
+  let finish!: () => void;
+  const reply = new Promise<void>((r) => {
+    finish = r;
+  });
+  const server = createServer(async (req, res) => {
+    let raw = '';
+    for await (const chunk of req) raw += chunk;
+    const body = JSON.parse(raw);
+    await reply;
+    accepted = true;
+    res.end(
+      JSON.stringify({
+        type: 'server-response',
+        rpcId: body.rpcId,
+        result: { ok: true, value: {} },
+      }),
+    );
+  });
+  const wss = new WebSocketServer({ server });
+  const timers: NodeJS.Timeout[] = [];
+  let generations = 0;
+  wss.on('connection', (ws) => {
+    let held = false;
+    ws.on('message', (bytes) => {
+      const msg = JSON.parse(bytes.toString());
+      if (msg.endpoint === '$events') {
+        generations++;
+        ws.send(
+          JSON.stringify({
+            type: 'item',
+            streamId: 'questions',
+            value: { type: 'ready', clientId: `client-${generations}` },
+          }),
+        );
+        const frame = {
+          type: 'waterfall',
+          event: 'user-questions/request',
+          eventId: 'timed',
+          agentId: 'native-session',
+          request: {
+            questions: [{ id: 'choice', question: 'Choose', options: [{ label: 'Yes' }] }],
+            wait: { callId: 'tool-call', timed: true },
+          },
+        };
+        // Duplicate replay must not open multiple claims.
+        for (let i = 0; i < 2; i++)
+          ws.send(JSON.stringify({ type: 'item', streamId: 'questions', value: frame }));
+        timers.push(
+          setTimeout(() => {
+            if (!held && ws.readyState === 1)
+              ws.send(
+                JSON.stringify({
+                  type: 'item',
+                  streamId: 'questions',
+                  value: { type: 'cancel', eventId: 'timed' },
+                }),
+              );
+          }, 100),
+        );
+      } else if (msg.type === 'open') {
+        assert.equal(msg.endpoint, 'userQuestions/attachWait');
+        assert.deepEqual(msg.payload.args, { agentId: 'native-session', callId: 'tool-call' });
+        held = true;
+        claims++;
+        ws.send(
+          JSON.stringify({ type: 'item', streamId: msg.streamId, value: { remainingMs: 100 } }),
+        );
+      } else if (msg.type === 'cancel') {
+        assert.equal(accepted, true, 'claim must survive pending HTTP acknowledgement');
+        held = false;
+        released = true;
+        ws.send(JSON.stringify({ type: 'end', streamId: msg.streamId }));
+      }
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+  const endpoint = `http://127.0.0.1:${(server.address() as any).port}`;
+  const questions = new DshQuestions(
+    endpoint,
+    async () => 'fixture',
+    new DshClient(endpoint, async () => 'fixture'),
+  );
+  try {
+    await questions.start();
+    await eventually(() => claims === 1);
+    await new Promise((r) => setTimeout(r, 180));
+    assert.equal(questions.hasPending('native-session'), true);
+    assert.equal(questions.interactions('native-session')[0].expiresAt, '9999-12-31T23:59:59.999Z');
+    // Native replay after gateway transport loss reacquires exactly one hold.
+    for (const ws of wss.clients) ws.close();
+    await eventually(() => claims === 2);
+    const answer = questions.respond('native-session', 'timed', {
+      answers: [{ id: 'choice', selected: ['Yes'] }],
+    });
+    await new Promise((r) => setTimeout(r, 180));
+    assert.equal(released, false);
+    finish();
+    await answer;
+    await eventually(() => released);
+    assert.equal(questions.hasPending('native-session'), false);
+    // Ending the hold stream must not reset the host-wide event channel.
+    assert.deepEqual(questions.interactions('native-session'), []);
+    assert.equal(generations, 2);
+  } finally {
+    finish();
+    questions.close();
+    timers.forEach(clearTimeout);
+    for (const ws of wss.clients) ws.terminate();
+    await new Promise<void>((r) => wss.close(() => r()));
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+});
+
+test('native absence retires an uncertain DSH card without retrying its answer', async () => {
+  const f = await fixture({ startRuntime: false });
+  try {
+    const i = f.gateway.runtime.broker.open(f.session.id, {
+      nativeRequestId: 'ended-question',
+      type: 'free-text',
+      prompt: 'Ended',
+      choices: [],
+      responseSchema: { type: 'object' },
+      expiresAt: '9999-12-31T23:59:59.999Z',
+      route: 'dsh-native',
+      metadata: {},
+    });
+    i.status = 'uncertain';
+    f.gateway.store.saveInteraction(i);
+    const adapter = f.gateway.runtime.adapters.get(f.session.id)!;
+    adapter.interactions = async () => [];
+    await f.gateway.runtime.tick();
+    assert.equal(f.gateway.store.interaction(i.id).status, 'stale');
+    assert.equal(f.mock.prompts.length, 0);
+  } finally {
+    await f.close();
+  }
+});

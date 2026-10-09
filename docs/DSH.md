@@ -34,7 +34,7 @@ Validate with `systemctl --user is-active dsh-w6800`, the native web model picke
 
 ## Limits
 
-DSH native question/approval replies, interruption, attachments and reasoning controls are not yet connected to Relay. Those capabilities remain disabled; pending questions block dispatch and must be answered in DSH. The existing DSH web host owns its lifecycle, independently of phone connections. Optional host plugins can still report their own configuration errors. Relay does not claim full DSH parity.
+DSH native question replies are connected through the bridge below. Command approvals, interruption, attachments and reasoning controls remain unsupported. Pending live questions block task dispatch. The existing DSH web host owns its lifecycle, independently of phone connections. Optional host plugins can still report their own configuration errors. Relay does not claim full DSH parity.
 
 Protocol verified against Fred's installed MIT-licensed source: `packages/api/session-controller`, `packages/client/connection`, and compact assistant stream definitions in `packages/llm/llm`. No third-party implementation code was copied.
 
@@ -51,3 +51,13 @@ The implementation follows the installed DSH gateway's `stream-protocol.ts`, `op
 The native `agentPreset` projection is displayed in session rows, the conversation header, and details (for example `haxor`).
 
 Live Fred validation (2026-10-09): Relay recovered the existing haxor question batch through the native event stream without answering it. A separate haxor test session asked an actual `ask_user_question` with Alpha/Beta, received Alpha from Relay's mobile card, and continued with `Received: Alpha`. No `messages`, `tasks`, or `steer` request was used to answer it. The DSH host was not restarted.
+
+### Waiting without a phone deadline
+
+Relay holds each timed native question with `userQuestions/attachWait` on the host's authenticated WebSocket, using the exact `agentId` and `callId` from its forwarded request. It does not run the native web UI's countdown. The claim lasts until the native question settles; closing or backgrounding Relay on a phone does not release it. Answer acknowledgement precedes claim release. Ending an individual claim stream does not close the host-wide question channel. Replayed requests reacquire their holds without duplicate claims.
+
+This suspends DSH's unattended timer while the Relay gateway connection stays up; it does not rewrite DSH's own policy. A gateway/DSH connection loss can release the last hold and let an already-passed native deadline expire. Another native UI can still explicitly time out, cancel, or answer the question. DSH's timed tool also supports `timeout: -1` for indefinite native questions, but changing its tool/profile defaults requires separate native configuration and does not retroactively reopen an expired call.
+
+Relay retires uncertain DSH cards once a healthy native question subscription confirms the request no longer exists. It never retries an uncertain answer or invents a successful response. Questions that already timed out cannot be reopened as the original blocking tool call; native continued-question replies remain a separate unsupported pathway.
+
+Regression verification covers a held deadline, duplicate replay, reconnection/reclaim, acknowledgement-before-release, claim-stream completion, and retiring an uncertain card without another prompt. Fred's running server accepted the exact attachWait stream argument shape; the installed native TimedQuestionWait was separately verified to remain live beyond its deadline while held.

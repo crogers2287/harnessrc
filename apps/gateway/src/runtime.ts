@@ -387,7 +387,8 @@ export class Runtime extends EventEmitter {
               .filter(
                 (i) =>
                   i.route !== 'claude-hook' &&
-                  i.status === 'pending' &&
+                  (i.status === 'pending' ||
+                    (i.route === 'dsh-native' && i.status === 'uncertain')) &&
                   !ids.has(i.nativeRequestId),
               )) {
               old.status = 'stale';

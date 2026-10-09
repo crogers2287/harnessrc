@@ -13,7 +13,10 @@ export const dshQuestionSchema = z.object({
 const frameSchema = z.object({
   eventId: z.string(),
   agentId: z.string(),
-  request: z.object({ questions: z.array(dshQuestionSchema).min(1) }),
+  request: z.object({
+    questions: z.array(dshQuestionSchema).min(1),
+    wait: z.object({ callId: z.string(), timed: z.boolean().optional() }).optional(),
+  }),
 });
 type Frame = z.infer<typeof frameSchema>;
 export const dshAnswerSchema = z
@@ -70,6 +73,12 @@ export class DshQuestions {
       ws.on('message', (bytes) => {
         try {
           const envelope = JSON.parse(bytes.toString());
+          // Claim streams end normally when their question settles. Only the
+          // host-wide event stream controls connection/replay lifetime.
+          if (envelope.streamId?.startsWith('wait:')) {
+            if (envelope.type === 'error') ws.close();
+            return;
+          }
           if (envelope.type === 'error' || envelope.type === 'end') {
             ws.close();
             return;
@@ -80,11 +89,26 @@ export class DshQuestions {
             this.pending.clear();
             this.clientId = z.string().parse(value.clientId);
           }
-          if (value.type === 'cancel') this.pending.delete(value.eventId);
+          if (value.type === 'cancel') this.release(value.eventId);
           if (value.type === 'waterfall') {
             if (value.event === 'user-questions/request') {
               const frame = frameSchema.parse(value);
+              const previous = this.pending.has(frame.eventId);
               this.pending.set(frame.eventId, frame);
+              if (!previous && frame.request.wait?.timed) {
+                // Hold on the gateway, independently of phone connections. DSH
+                // suspends its unattended timer for this stream's lifetime.
+                ws.send(
+                  JSON.stringify({
+                    type: 'open',
+                    streamId: `wait:${frame.eventId}`,
+                    endpoint: 'userQuestions/attachWait',
+                    payload: {
+                      args: { agentId: frame.agentId, callId: frame.request.wait.callId },
+                    },
+                  }),
+                );
+              }
             } else if (this.clientId) {
               // Delegate unsupported native interactions to other clients; never approve them.
               void this.native
@@ -167,7 +191,14 @@ export class DshQuestions {
       eventId,
       outcome: { kind: 'result', value: answer },
     });
+    // Release only AFTER the Host accepted the native result.
+    this.release(eventId);
+  }
+  private release(eventId: string) {
+    const frame = this.pending.get(eventId);
     this.pending.delete(eventId);
+    if (frame?.request.wait?.timed && this.socket?.readyState === WebSocket.OPEN)
+      this.socket.send(JSON.stringify({ type: 'cancel', streamId: `wait:${eventId}` }));
   }
   close() {
     this.stopped = true;
