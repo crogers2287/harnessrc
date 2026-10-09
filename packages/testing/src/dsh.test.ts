@@ -226,6 +226,7 @@ test('DSH discovery, paginated history, native model selection, steering and rec
     assert.equal(session.cwd, '/workspace/app');
     assert.equal(session.capabilities.steerActiveTurn, true);
     assert.equal(session.capabilities.answerQuestion, true);
+    assert.equal(session.capabilities.interruptTurn, true);
     const adapter = host.adapters.get(session.id)!;
     assert.equal((await adapter.permissions(session)).current, 'workspace-write');
     assert.equal(

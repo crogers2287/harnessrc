@@ -77,6 +77,7 @@ export class DshHost {
             'steerActiveTurn',
             'queueTask',
             'answerQuestion',
+            ...(row.agentAvailable ? ['interruptTurn' as const] : []),
             ...(this.attachments && this.attachmentSupport ? ['attachFiles' as const] : []),
           ]),
           lastActivity: new Date(row.updatedAt).toISOString(),

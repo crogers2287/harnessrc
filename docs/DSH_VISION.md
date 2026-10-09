@@ -12,3 +12,5 @@ Host configuration corrections were saved in:
 - `~/.dsh/.agent-presets/haxor/skills/local-vision/SKILL.md`: DSH-specific native image guidance takes precedence over manual endpoint fallbacks.
 
 Both have `.before-native-vision-20261009` backups. These are local deployment settings, not files shipped by Relay. The live DSH host retains its loaded persona: inspection of the isolated session's system message still showed the old text. A coordinated DSH reload is required for the saved persona change; do not restart the host while users have running turns just to refresh this guidance. The skill file correction is available on the next fresh skill read. Existing conversation history can still contain earlier incorrect claims.
+
+A second isolated turn called native `read_image` on the local app-icon PNG, returned `isError: false`, and completed with a matching pixel-based description. This verifies both native attachment inference and local-file image inspection on the live Flash Next route. It does not prove that existing sessions will stop choosing `vision_glance` before their persona is reloaded.
