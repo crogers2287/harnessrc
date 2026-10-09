@@ -311,6 +311,24 @@ export class CodexLinks {
       ],
     });
   }
+  async interrupt(client: HerdrClient, session: Session) {
+    await this.assertDelivery(client, session);
+    await client.assertBinding(session);
+    const result = await this.native.request('thread/turns/list', {
+      threadId: session.nativeSessionId,
+      limit: 1,
+      sortDirection: 'desc',
+      itemsView: 'notLoaded',
+    });
+    const active = result.data?.find((turn: any) => turn.status === 'inProgress');
+    if (!active?.id) throw new Error('There is no active turn to stop.');
+    // Target the turn we observed, never a newly started replacement turn.
+    await client.assertBinding(session);
+    await this.native.request('turn/interrupt', {
+      threadId: session.nativeSessionId,
+      turnId: active.id,
+    });
+  }
   unavailable(agents: Agent[]): Agent[] {
     const managed = new Set(this.links().map((link) => link.terminalId));
     return agents.map((agent) =>

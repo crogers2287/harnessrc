@@ -1972,3 +1972,45 @@ test('confirmed receipt reconciles without echo or resend and preserves the next
   );
   expect(posts).toBe(0);
 });
+
+test('Stop current turn requires confirmation and sends only an interrupt request', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await pair(page);
+  const { sessions } = await page.evaluate(async () => (await fetch('/api/sessions')).json());
+  const s = sessions.find((s: any) => s.project === 'Atlas API') ?? sessions[0];
+  await page.evaluate(async (id) => {
+    const response = await fetch(`/api/sessions/${id}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-RC-Request': '1' },
+      body: JSON.stringify({
+        idempotencyKey: crypto.randomUUID(),
+        prompt: 'Keep working for steering UI test',
+        attachments: [],
+      }),
+    });
+    if (!response.ok) throw new Error('Fixture turn did not start');
+  }, s.id);
+  let stops = 0;
+  await page.route('**/interrupt', async (route) => {
+    expect(route.request().method()).toBe('POST');
+    expect(route.request().postDataJSON()).toEqual({ confirm: true });
+    expect(route.request().url()).toContain(`/sessions/${s.id}/interrupt`);
+    stops++;
+    await route.fulfill({ json: { ok: true } });
+  });
+  await page.reload();
+  await openSessions(page);
+  await page
+    .getByRole('button', {
+      name: `Actions for ${s.displayName || s.name || s.project}`,
+      exact: true,
+    })
+    .click();
+  await page.getByRole('button', { name: 'Stop current turn', exact: true }).click();
+  expect(stops).toBe(0);
+  await page.getByRole('button', { name: 'Stop turn', exact: true }).click();
+  await expect.poll(() => stops).toBe(1);
+  await expect(page.locator('.session-action-sheet')).toHaveCount(0);
+});

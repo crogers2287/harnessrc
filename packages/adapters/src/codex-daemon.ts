@@ -92,7 +92,8 @@ export class CodexDaemon {
       | 'thread/loaded/list'
       | 'thread/name/set'
       | 'thread/turns/list'
-      | 'turn/steer',
+      | 'turn/steer'
+      | 'turn/interrupt',
     params: unknown,
   ) {
     await this.connect();

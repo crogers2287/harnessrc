@@ -40,3 +40,11 @@ Priorities: original-key web retry, Android queue reorder, then notification pre
 ## Verification for this audit
 
 Gateway regression suite: 94 passed. TypeScript, ESLint and production web build passed. Android unit tests, lint and debug build passed against unchanged native sources. Browser receipt tests cover confirmed-without-echo recovery, preservation of a newer draft, zero message POSTs during recovery, transcript reconciliation and reload persistence. Native receipt recovery has its separate 0.1.3 instrumentation regression; instrumentation and physical-phone tests were not rerun for this web-only change.
+
+### Native Stop, 2026-10-09
+
+Existing web and Android Stop controls now receive `interruptTurn` for verified CLI Codex daemon links and native DSH sessions. Web: session actions → Stop current turn (also session details). Android: hold a session → Stop current turn, or Session details → Rename, pin or manage session. Confirmation is required. No new APK is needed for these server-advertised capabilities. Codex selects the exact active turn after ownership verification; DSH uses the existing host's `session/cancel` and preserves its pending inbox. This does not terminate a Herdr process or erase queued tasks. Claude CLI interruption remains unsupported until a safe native route is integrated.
+
+Validation: 96 backend tests passed, including exact Codex turn cancellation, rejected stale/replaced owners, DSH idle/missing-session rejection and cancellation acknowledgement. Browser Stop confirmation/route test passed. Native UI code did not change; physical-device Stop validation remains outstanding.
+
+Codex cancellation follows the [official app-server turn/interrupt contract](https://learn.chatgpt.com/docs/app-server), additionally checked against the installed 0.162.0 JSON schema. DSH cancellation was checked against the installed `session-controller` source; it acknowledges cancellation and retains the native inbox.

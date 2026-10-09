@@ -31,9 +31,11 @@ export class HerdrCliAdapter implements Adapter {
       input?: Pick<Task, 'id' | 'prompt' | 'attachments'>,
     ) => Promise<void>,
     private nativeState?: (session: Session) => Promise<Session['status']>,
+    private nativeInterrupt?: (session: Session) => Promise<void>,
   ) {
     this.capabilities.attachFiles = !!attachmentPrompt;
     this.capabilities.steerActiveTurn = !!nativeSteer;
+    this.capabilities.interruptTurn = !!nativeInterrupt;
   }
   async turnState(session: Session): Promise<Session['status']> {
     await this.assertOwner(session);
@@ -92,6 +94,11 @@ export class HerdrCliAdapter implements Adapter {
     if (!this.nativeSteer) throw new Error('Native steering is unavailable');
     await this.assertOwner(session);
     await this.nativeSteer(session, prompt, images, input);
+  }
+  async interrupt(session: Session) {
+    if (!this.nativeInterrupt) throw new Error('Native interruption is unavailable');
+    await this.assertOwner(session);
+    await this.nativeInterrupt(session);
   }
   async reconcile(
     session: Session,

@@ -275,3 +275,34 @@ test('Codex action-required decoration preserves and recovers the proved native 
     f.store.close();
   }
 });
+
+test('interrupt targets only the proved active Codex turn and rejects idle or replaced owners', async () => {
+  const f = fixture();
+  try {
+    const [agent] = await f.links.refresh(f.client, [f.agent()]);
+    const session = sessionFromAgent('test', agent, 'Project');
+    session.processIdentity = '10:12';
+    const original = f.native.request;
+    const stops: any[] = [];
+    let active = true;
+    f.native.request = async (method, params) => {
+      if (method === 'thread/turns/list')
+        return { data: active ? [{ id: 'turn-current', status: 'inProgress' }] : [] } as any;
+      if (method === 'turn/interrupt') {
+        stops.push(params);
+        return {};
+      }
+      return original(method, params);
+    };
+    await f.links.interrupt(f.client, session);
+    assert.deepEqual(stops, [{ threadId: 'thread-b', turnId: 'turn-current' }]);
+    active = false;
+    await assert.rejects(f.links.interrupt(f.client, session), /no active turn/);
+    active = true;
+    f.replace();
+    await assert.rejects(f.links.interrupt(f.client, session), /process|replaced|confirm/);
+    assert.equal(stops.length, 1);
+  } finally {
+    f.store.close();
+  }
+});

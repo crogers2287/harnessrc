@@ -263,6 +263,9 @@ export class Runtime extends EventEmitter {
                 this.codexLinks.get(hostId)?.hasLink(s)
                   ? (session) => this.codexLinks.get(hostId)!.turnState(client, session)
                   : undefined,
+                this.codexLinks.get(hostId)?.hasLink(s)
+                  ? (session) => this.codexLinks.get(hostId)!.interrupt(client, session)
+                  : undefined,
               );
           }
           s.capabilities = adapter?.capabilities ?? capabilities([]);

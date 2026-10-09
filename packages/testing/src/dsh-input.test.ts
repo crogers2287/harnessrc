@@ -180,3 +180,59 @@ test('DSH file/image steering preserves bytes and receipt identity, never queues
     await f.close();
   }
 });
+
+test('DSH interruption checks native session and acknowledgement without sending a prompt', async () => {
+  const f = await fixture({ startRuntime: false });
+  const calls: { method: string; args: any }[] = [];
+  const client = new DshClient('http://127.0.0.1:1', async () => 'fixture');
+  let running = true;
+  let present = true;
+  let accepted = true;
+  client.call = async (method, args) => {
+    calls.push({ method, args });
+    if (method === 'session/list')
+      return {
+        items: present
+          ? [
+              {
+                sessionId: f.session.nativeSessionId,
+                running,
+                agentAvailable: true,
+                updatedAt: Date.now(),
+              },
+            ]
+          : [],
+      };
+    assert.equal(method, 'session/cancel');
+    return { accepted };
+  };
+  const adapter = new DshAdapter(
+    client,
+    'http://127.0.0.1:1',
+    async () => 'fixture',
+    () => {},
+  );
+  try {
+    assert.equal(adapter.capabilities.interruptTurn, true);
+    await adapter.interrupt(f.session);
+    assert.deepEqual(
+      calls.filter((c) => c.method === 'session/cancel'),
+      [
+        {
+          method: 'session/cancel',
+          args: { sessionId: f.session.nativeSessionId },
+        },
+      ],
+    );
+    running = false;
+    await assert.rejects(adapter.interrupt(f.session), /no active turn/);
+    present = false;
+    await assert.rejects(adapter.interrupt(f.session), /no longer exists/);
+    present = running = true;
+    accepted = false;
+    await assert.rejects(adapter.interrupt(f.session), /acknowledge cancellation/);
+    assert.equal(calls.filter((c) => c.method === 'session/cancel').length, 2);
+  } finally {
+    await f.close();
+  }
+});

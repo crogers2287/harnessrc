@@ -136,6 +136,7 @@ export class DshAdapter implements Adapter {
     'steerActiveTurn',
     'queueTask',
     'answerQuestion',
+    'interruptTurn',
   ]);
   private last = -1;
   private records = new Map<number, z.infer<typeof nativeEvent>>();
@@ -293,6 +294,14 @@ export class DshAdapter implements Adapter {
     const task = input ?? { id: randomUUID(), prompt, attachments: [] };
     this.watch(s);
     await this.native.prompt(s.nativeSessionId, task.id, await this.input(s, task), 'steer');
+  }
+  async interrupt(s: Session) {
+    const status = await this.turnState(s);
+    if (!['working', 'blocked'].includes(status))
+      throw new Error('There is no active turn to stop.');
+    const result = await this.native.call('session/cancel', { sessionId: s.nativeSessionId });
+    if (!result || (result as { accepted?: boolean }).accepted !== true)
+      throw new Error('DSH did not acknowledge cancellation. Refresh before trying again.');
   }
   async reconcile(s: Session, t: Task): Promise<'running' | 'completed' | 'failed' | 'uncertain'> {
     this.touched = Date.now();
