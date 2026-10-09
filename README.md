@@ -6,7 +6,7 @@ A self-hosted React PWA, native Android app, and Fastify gateway for persistent 
 
 ## Native Android app
 
-Relay now has a Kotlin / Jetpack Compose Android client with a real Android editor, keyboard image paste, native file sharing and microphone recording. Download the signed APK from **Settings → Download Android APK** in the web app while connected to Tailscale. This is separate from the PWA. See [Android installation, build and verification](docs/ANDROID.md).
+Relay now has a Kotlin / Jetpack Compose Android client with a real Android editor, keyboard image paste, native file sharing and microphone recording. Download the signed APK from **Settings → Download Android APK** in the web app while connected to Tailscale. This is separate from the PWA. See [Android installation, build and verification](docs/ANDROID.md) and the [web/Android parity matrix and release contract](docs/CLIENT_PARITY.md).
 
 ## Run the credential-free demo
 

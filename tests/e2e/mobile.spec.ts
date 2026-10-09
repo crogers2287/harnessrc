@@ -1925,3 +1925,50 @@ test('Settings exposes the published native Android APK separately from PWA inst
     page.getByRole('button', { name: 'How to install Relay', exact: true }),
   ).toBeVisible();
 });
+
+test('confirmed receipt reconciles without echo or resend and preserves the next web draft', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await pair(page);
+  const { sessions } = await page.evaluate(async () => (await fetch('/api/sessions')).json());
+  const id = sessions[0].id;
+  await page.evaluate((id) => {
+    sessionStorage.setItem(
+      `relay-outgoing:${id}`,
+      JSON.stringify([
+        {
+          key: crypto.randomUUID(),
+          prompt: 'Previously delivered instruction',
+          started: new Date().toISOString(),
+          state: 'uncertain',
+        },
+      ]),
+    );
+    sessionStorage.setItem(`relay-draft:${id}`, 'Keep my next instruction');
+  }, id);
+  let confirmed = false;
+  let posts = 0;
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && /\/(messages|steer|tasks)$/.test(request.url())) posts++;
+  });
+  await page.route('**/message-receipts/*', (route) =>
+    route.fulfill({
+      json: { nativeSeen: false, confirmed },
+    }),
+  );
+  await page.goto('/?session=' + id);
+  await expect(page.locator('.outgoing-message')).toContainText('Delivery not confirmed');
+  confirmed = true;
+  await expect(page.locator('.outgoing-message')).toHaveCount(0, { timeout: 12000 });
+  await expect(page.getByLabel('Instruction', { exact: true })).toHaveText(
+    'Keep my next instruction',
+  );
+  await page.screenshot({ path: 'test-results/web-receipt-parity.png' });
+  await page.reload();
+  await expect(page.locator('.outgoing-message')).toHaveCount(0);
+  await expect(page.getByLabel('Instruction', { exact: true })).toHaveText(
+    'Keep my next instruction',
+  );
+  expect(posts).toBe(0);
+});

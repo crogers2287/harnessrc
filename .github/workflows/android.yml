@@ -1,9 +1,5 @@
 name: Android
-on:
-  push:
-    paths: ['apps/android/**', 'scripts/build-android.py', '.github/workflows/android.yml']
-  pull_request:
-    paths: ['apps/android/**', 'scripts/build-android.py', '.github/workflows/android.yml']
+on: [push, pull_request]
 permissions:
   contents: read
 jobs:

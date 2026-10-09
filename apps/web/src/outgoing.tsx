@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from '@harnessrc/client-sdk';
 import { z } from 'zod';
 import { SentAttachment } from './attachments.tsx';
@@ -27,25 +27,35 @@ export function useOutgoing(sessionId: string, events: Event[]) {
       return [];
     }
   });
-  const checked = useRef(new Set<string>());
   useEffect(() => {
-    // A stale saved card may refer to history older than the current transcript page.
-    for (const item of items) {
-      if (
-        item.state === 'sending' ||
-        checked.current.has(item.key) ||
-        !z.uuid().safeParse(item.key).success
-      )
-        continue;
-      checked.current.add(item.key);
-      void api(`/api/sessions/${sessionId}/message-receipts/${item.key}`)
-        .then((result) => {
-          if (result.nativeSeen) setItems((old) => old.filter((x) => x.key !== item.key));
-        })
-        .catch(() => {
-          /* Native events can still reconcile this card after reconnect. */
-        });
+    // Reconcile durable receipts even when no transcript echo arrives. GET only:
+    // a lost response must never trigger another native message.
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const pending = items.filter(
+      (item) => item.state !== 'sending' && z.uuid().safeParse(item.key).success,
+    );
+    if (!pending.length) return;
+    async function reconcile() {
+      await Promise.all(
+        pending.map(async (item) => {
+          try {
+            const result = await api(`/api/sessions/${sessionId}/message-receipts/${item.key}`);
+            if (!cancelled && (result.nativeSeen === true || result.confirmed === true)) {
+              setItems((old) => old.filter((x) => x.key !== item.key));
+            }
+          } catch {
+            // Keep uncertain content and retry only the read after reconnect.
+          }
+        }),
+      );
+      if (!cancelled) timer = setTimeout(() => void reconcile(), 5000);
     }
+    void reconcile();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [items, sessionId]);
   useEffect(() => {
     try {
