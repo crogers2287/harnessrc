@@ -159,9 +159,9 @@ export class CodexLinks {
       // Refresh only after that proof has restored the native name.
       agents = (await client.snapshot()).agents;
       const known = new Map(this.links().map((link) => [link.terminalId, link]));
-      const candidates = agents.filter(
-        (a) => a.agent === 'codex' && (!a.agent_session || known.has(a.terminal_id)),
-      );
+      // A CLI can report its own native ID before Relay has verified its daemon link.
+      // It still needs the same process/title proof before native control is enabled.
+      const candidates = agents.filter((a) => a.agent === 'codex');
       const discoveryDue = Date.now() >= this.nextDiscovery;
       let threads: any[] | undefined;
       for (const agent of candidates) {
@@ -169,7 +169,7 @@ export class CodexLinks {
         let valid = !!prior?.threadId && titleMatches(agent, prior.name);
         if (valid) valid = (await this.owner(client, agent)) === prior!.process;
         if (valid && Date.now() - prior!.verifiedAt < 30000) continue;
-        this.forget(agent.terminal_id);
+        if (prior || !agent.agent_session) this.forget(agent.terminal_id);
         if (valid) {
           // Revalidate the already-proven thread directly. Scanning every loaded
           // conversation every 30 seconds stalls interactive sends behind discovery.

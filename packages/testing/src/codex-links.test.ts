@@ -73,6 +73,9 @@ function fixture() {
   const links = new CodexLinks('test', store, native);
   return {
     store,
+    register: (id: string) => {
+      registered = id;
+    },
     attention: (enabled: boolean | 'blink') => {
       titlePrefix =
         enabled === 'blink'
@@ -302,6 +305,20 @@ test('interrupt targets only the proved active Codex turn and rejects idle or re
     f.replace();
     await assert.rejects(f.links.interrupt(f.client, session), /process|replaced|confirm/);
     assert.equal(stops.length, 1);
+  } finally {
+    f.store.close();
+  }
+});
+
+test('a CLI-reported native ID still receives a verified control link', async () => {
+  const f = fixture();
+  try {
+    f.register('thread-b');
+    await f.links.refresh(f.client, [f.agent()]);
+    const session = sessionFromAgent('test', f.agent(), 'Project');
+    session.processIdentity = '10:12';
+    assert.equal(f.links.hasLink(session), true);
+    assert.ok(f.writes.some((name) => name.startsWith('Relay link ')));
   } finally {
     f.store.close();
   }

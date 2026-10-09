@@ -242,35 +242,35 @@ export class Runtime extends EventEmitter {
             }
           }
           if (adapter && s.processIdentity && ['claude', 'codex'].includes(s.harness)) {
-            if (!(adapter instanceof HerdrCliAdapter))
-              adapter = new HerdrCliAdapter(
-                adapter,
-                client,
-                this.store,
-                (session) => this.assertBinding(session),
-                this.config.hosts.find((h) => h.id === hostId)?.localFiles
-                  ? (session, task) => this.attachments.prompt(session, task)
+            // Refresh native callbacks as links appear/disappear, preserving the reader cursor.
+            adapter = new HerdrCliAdapter(
+              adapter instanceof HerdrCliAdapter ? adapter.reader : adapter,
+              client,
+              this.store,
+              (session) => this.assertBinding(session),
+              this.config.hosts.find((h) => h.id === hostId)?.localFiles
+                ? (session, task) => this.attachments.prompt(session, task)
+                : undefined,
+              s.harness === 'codex' && this.codexLinks.has(hostId)
+                ? (session) => this.codexLinks.get(hostId)!.assertDelivery(client, session)
+                : undefined,
+              s.harness === 'claude'
+                ? (session, prompt, _images, input) =>
+                    this.claudeSteering.submit(session, prompt, input)
+                : this.codexLinks.get(hostId)?.hasLink(s)
+                  ? (session, prompt, images) =>
+                      this.codexLinks.get(hostId)!.steer(client, session, prompt, images)
                   : undefined,
-                s.harness === 'codex' && this.codexLinks.has(hostId)
-                  ? (session) => this.codexLinks.get(hostId)!.assertDelivery(client, session)
-                  : undefined,
-                s.harness === 'claude'
-                  ? (session, prompt, _images, input) =>
-                      this.claudeSteering.submit(session, prompt, input)
-                  : this.codexLinks.get(hostId)?.hasLink(s)
-                    ? (session, prompt, images) =>
-                        this.codexLinks.get(hostId)!.steer(client, session, prompt, images)
-                    : undefined,
-                this.codexLinks.get(hostId)?.hasLink(s)
-                  ? (session) => this.codexLinks.get(hostId)!.turnState(client, session)
-                  : undefined,
-                this.codexLinks.get(hostId)?.hasLink(s)
-                  ? (session) => this.codexLinks.get(hostId)!.interrupt(client, session)
-                  : undefined,
-                this.codexLinks.get(hostId)?.hasLink(s)
-                  ? this.codexLinks.get(hostId)!.settings(client)
-                  : undefined,
-              );
+              this.codexLinks.get(hostId)?.hasLink(s)
+                ? (session) => this.codexLinks.get(hostId)!.turnState(client, session)
+                : undefined,
+              this.codexLinks.get(hostId)?.hasLink(s)
+                ? (session) => this.codexLinks.get(hostId)!.interrupt(client, session)
+                : undefined,
+              this.codexLinks.get(hostId)?.hasLink(s)
+                ? this.codexLinks.get(hostId)!.settings(client)
+                : undefined,
+            );
           }
           s.capabilities = adapter?.capabilities ?? capabilities([]);
           if (s.harness === 'claude')
@@ -279,8 +279,13 @@ export class Runtime extends EventEmitter {
               steerActiveTurn: this.claudeSteering.available(s),
             };
           s.ownership = 'herdr-cli';
-          s.diagnostic =
-            'Messages are delivered to the existing CLI through Herdr. Follow-ups wait for native turn completion. Exact Claude permission hooks handle approvals.';
+          s.diagnostic = s.capabilities.steerActiveTurn
+            ? undefined
+            : s.harness === 'codex'
+              ? 'Connecting live controls. You can queue a follow-up while Relay reconnects.'
+              : s.harness === 'claude'
+                ? 'Live steering is not connected. Queue a follow-up or send when the agent is ready.'
+                : undefined;
           if (
             s.harness === 'claude' &&
             this.store

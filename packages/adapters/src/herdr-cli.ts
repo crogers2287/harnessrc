@@ -18,7 +18,7 @@ export class HerdrCliAdapter implements Adapter {
     'queueTask',
   ]);
   constructor(
-    private reader: Adapter,
+    readonly reader: Adapter,
     private herdr: HerdrClient,
     private store: Store,
     private assertOwner: (session: Session) => Promise<void>,

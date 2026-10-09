@@ -186,3 +186,44 @@ test('native image expansion preserves an exact transport receipt without matchi
   assert.equal(matchesTaskReceipt(native, randomUUID(), sent), false);
   assert.equal(matchesTaskReceipt('Read image', id, sent), false);
 });
+
+test('discovery refreshes native controls after linking without resetting conversation readers', async () => {
+  const f = await fixture({ harness: 'claude', startRuntime: false });
+  try {
+    f.mock.harness = 'codex';
+    const session = () => f.gateway.store.sessions().find((s) => s.harness === 'codex')!;
+    let linked = false;
+    let steered = 0;
+    const runtime = f.gateway.runtime as any;
+    runtime.codexLinks.set('test', {
+      refresh: async (_client: unknown, agents: unknown) => agents,
+      model: () => undefined,
+      hasLink: () => linked,
+      settings: () => ({ respond: async () => {} }),
+      steer: async () => {
+        steered++;
+      },
+      close: () => {},
+    });
+    await runtime.refresh('test');
+    const id = session().id;
+    const reader = runtime.adapters.get(id).reader;
+    assert.equal(session().capabilities.steerActiveTurn, false);
+    linked = true;
+    await runtime.refresh('test');
+    assert.equal(session().capabilities.steerActiveTurn, true);
+    assert.equal(session().capabilities.answerQuestion, true);
+    assert.equal(session().diagnostic, undefined);
+    assert.equal(runtime.adapters.get(id).reader, reader);
+    await runtime.adapters.get(id).steer(session(), 'Native update');
+    assert.equal(steered, 1);
+    linked = false;
+    await runtime.refresh('test');
+    assert.equal(session().capabilities.steerActiveTurn, false);
+    assert.equal(session().capabilities.answerQuestion, false);
+    assert.equal(runtime.adapters.get(id).reader, reader);
+    assert.match(session().diagnostic!, /Connecting live controls/);
+  } finally {
+    await f.close();
+  }
+});

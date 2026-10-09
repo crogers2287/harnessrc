@@ -66,3 +66,11 @@ Validation: 104 backend tests pass; TypeScript, ESLint, production web build, An
 Codex native tool output containing inline PNG/JPEG/WebP/GIF data is imported as an `artifact.created` attachment. Both clients use their existing authenticated preview/download flow; installed APK 0.1.4 needs no update. Native source IDs prevent duplicate transcript entries on replay, artifact request fingerprints prevent duplicate files, and native timestamps are retained. Base64 is removed from persisted event data. No model-provided URL is fetched and no arbitrary filesystem path is read. Historical images are backfilled during transcript replay and may appear at the end of existing history. Existing transcript size and attachment quota limits still apply.
 
 Validation: 105 backend tests, TypeScript, ESLint, production web build, Android unit/lint/debug build, and the phone-size browser artifact preview/download/replay regression pass. No Android UI code changed; physical-device verification remains outstanding.
+
+### Recovering native Codex steering
+
+CLI-reported native IDs now participate in daemon binding discovery instead of being skipped. Existing IDs still require process/title proof before controls are advertised; an unverified pre-existing ID is retained for conversation reading. Herdr CLI adapters refresh their native callbacks each discovery cycle while retaining their transcript reader, enabling controls after late binding and withdrawing them when the link is lost. Both clients consume these live capabilities; APK 0.1.4 needs no update. Ready sessions no longer carry the generic transport diagnostic (which incorrectly mentioned Claude approvals on Codex). Unavailable steering instead has a short actionable status.
+
+Regressions cover pre-registered native IDs, late link acquisition/loss, preserved reader cursors, and routing Steer to the native callback. Android's existing capability gating remains unchanged; physical-phone validation remains outstanding.
+
+Validation: 107 backend tests, TypeScript, ESLint, production web build, two mobile browser Send/Steer regressions, and Android unit/lint/debug build pass.
