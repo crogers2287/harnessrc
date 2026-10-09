@@ -1,3 +1,6 @@
+import { DshQuestions } from './DshQuestions.tsx';
+import { SessionRow, sessionLabel } from './SessionActions.tsx';
+import { useVoiceInput } from './voice.tsx';
 import { SessionFilters } from './SessionFilters.tsx';
 import {
   agentLabel,
@@ -61,7 +64,6 @@ const previewText = (text: string) =>
     .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
     .replace(/[*_`#]/g, '')
     .trim();
-const sessionLabel = (s: SessionView) => s.sessionName || s.tabName || s.project;
 const scrollPositions = new Map<string, number>();
 const drafts = new Map<string, string>();
 function restoreDraft(id: string) {
@@ -312,10 +314,11 @@ export function App() {
               {shown
                 .filter((s) => s.harness === harness)
                 .map((s) => (
-                  <button
-                    className={`session-row ${selected?.id === s.id ? 'selected' : ''}`}
+                  <SessionRow
+                    session={s}
+                    selected={selected?.id === s.id}
                     key={s.id}
-                    onClick={() => navigate({ session: s.id })}
+                    open={() => navigate({ session: s.id })}
                   >
                     <div className={`harness-mark ${s.harness}`} aria-hidden="true">
                       {s.harness === 'claude'
@@ -326,10 +329,16 @@ export function App() {
                     </div>
                     <div className="session-summary">
                       <div className="row-title">
-                        <strong>{sessionLabel(s)}</strong>
+                        <strong>
+                          {s.pinned ? '★ ' : ''}
+                          {sessionLabel(s)}
+                        </strong>
                       </div>
                       <div className="session-meta compact-session-meta">
-                        <span>{s.model || agentLabel(s.harness)}</span>
+                        <span>
+                          {s.agentPreset ? `${s.agentPreset} · ` : ''}
+                          {s.model || agentLabel(s.harness)}
+                        </span>
                         <span>{s.hostId}</span>
                       </div>
                       <div className="session-cwd" title={s.cwd}>
@@ -363,7 +372,7 @@ export function App() {
                     {!isSaved(s) && read[s.id] !== s.lastActivity && (
                       <span className="unread" aria-label="Unread activity" />
                     )}
-                  </button>
+                  </SessionRow>
                 ))}
             </section>
           ))}
@@ -544,6 +553,9 @@ function Conversation({
   const [loadingMore, setLoadingMore] = useState(false);
   const [draft, setDraft] = useState(restoreDraft(session.id));
   const attachments = useAttachments(session.id);
+  const voice = useVoiceInput(session.id, (text) =>
+    setDraft((current) => (current ? `${current.trimEnd()}\n${text}` : text)),
+  );
   const [behavior, setBehavior] = useState('auto');
   const [contextOpen, setContextOpen] = useState(false);
   const mode =
@@ -672,6 +684,7 @@ function Conversation({
       (!draft.trim() && !attachments.files.length) ||
       send.isPending ||
       busyWithoutSteering ||
+      voice.busy ||
       attachments.busy ||
       attachments.invalid
     )
@@ -762,8 +775,9 @@ function Conversation({
           >
             <h2 title={sessionLabel(session)}>{sessionLabel(session)}</h2>
             <span className="header-model">
-              {agentLabel(session.harness)} · {session.model || 'Model unknown'}{' '}
-              <span aria-hidden="true">⌄</span>
+              {agentLabel(session.harness)}
+              {session.agentPreset ? ` · ${session.agentPreset}` : ''} ·{' '}
+              {session.model || 'Model unknown'} <span aria-hidden="true">⌄</span>
             </span>
           </button>
         </div>
@@ -818,6 +832,12 @@ function Conversation({
           <dl>
             <dt>Agent</dt>
             <dd>{agentLabel(session.harness)}</dd>
+            {session.agentPreset && (
+              <>
+                <dt>Agent profile</dt>
+                <dd>{session.agentPreset}</dd>
+              </>
+            )}
             <dt>Model</dt>
             <dd>{session.model || 'Model unknown'}</dd>
             <dt>Host</dt>
@@ -909,11 +929,18 @@ function Conversation({
         {session.capabilities.readConversation &&
           session.status === 'working' &&
           connection === 'connected' && (
-            <WorkingIndicator harness={agentLabel(session.harness)} events={merged} />
+            <WorkingIndicator
+              harness={session.agentPreset || agentLabel(session.harness)}
+              events={merged}
+            />
           )}
         <div className="interaction-stack">
           {detail.data?.interactions
-            .filter((i) => i.status === 'pending' || i.id === route.interaction)
+            .filter(
+              (i) =>
+                ['pending', 'responding', 'uncertain'].includes(i.status) ||
+                i.id === route.interaction,
+            )
             .map((i) => (
               <InteractionCard
                 key={i.id}
@@ -927,7 +954,7 @@ function Conversation({
             ))}
         </div>
       </div>
-      {!atBottom && (
+      {!atBottom && pending.length === 0 && (
         <button
           className="jump-latest"
           onClick={() => {
@@ -957,11 +984,24 @@ function Conversation({
           </button>
         )}
         {pending.length > 0 && (
-          <p className="composer-hint attention-text">
+          <button
+            type="button"
+            className="composer-hint attention-text pending-jump"
+            onClick={() => {
+              document
+                .getElementById(`interaction-${pending[0].id}`)
+                ?.scrollIntoView({
+                  block: 'start',
+                  behavior: matchMedia('(prefers-reduced-motion: reduce)').matches
+                    ? 'instant'
+                    : 'smooth',
+                });
+            }}
+          >
             <CircleHelp size={16} aria-hidden="true" />
-            {pending.length} pending request{pending.length > 1 ? 's' : ''}. Reply in the card
-            above.
-          </p>
+            {pending.length} pending request{pending.length > 1 ? 's' : ''}. View and reply
+            <ChevronRight size={16} aria-hidden="true" />
+          </button>
         )}
         {session.capabilities.queueTask ? (
           <form
@@ -982,6 +1022,7 @@ function Conversation({
               }
             }}
           >
+            {voice.panel}
             <AttachmentTray value={attachments} />
             <label className="sr-only" htmlFor="composer">
               Instruction
@@ -1021,11 +1062,13 @@ function Conversation({
                   <option value="queue">Queue for later</option>
                 </select>
               </div>
+              {voice.button}
               <button
                 className="send-button"
                 type="submit"
                 disabled={
                   (!draft.trim() && !attachments.files.length) ||
+                  voice.busy ||
                   attachments.busy ||
                   attachments.invalid ||
                   busyWithoutSteering ||
@@ -1363,7 +1406,14 @@ function InteractionCard({
             : JSON.stringify(i.metadata.input, null, 2)}
         </pre>
       )}
-      {approval ? (
+      {i.route === 'dsh-native' ? (
+        <DshQuestions
+          questions={i.metadata.dshQuestions as any}
+          disabled={!active}
+          submitting={mutation.isPending}
+          submit={(response) => mutation.mutate(response)}
+        />
+      ) : approval ? (
         <div className="approval-actions">
           {i.choices.map((c) => (
             <button
@@ -1649,6 +1699,7 @@ function SessionDetails({ session: s }: { session: SessionView }) {
       <dl className="details-list">
         {[
           ['Agent', s.harness],
+          ...(s.agentPreset ? [['Agent profile', s.agentPreset]] : []),
           ['Model', s.model || 'Model unknown'],
           ['Host', s.hostId],
           ['Workspace', s.workspaceId],

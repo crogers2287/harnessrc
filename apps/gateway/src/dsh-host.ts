@@ -1,3 +1,4 @@
+import { DshQuestions } from '../../../packages/adapters/src/dsh-questions.ts';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { z } from 'zod';
@@ -13,6 +14,7 @@ export const dshHostSchema = z.object({
 });
 export class DshHost {
   native: DshClient;
+  questions: DshQuestions;
   adapters = new Map<string, DshAdapter>();
   connected = false;
   diagnostic: string | undefined;
@@ -24,6 +26,7 @@ export class DshHost {
   ) {
     this.credential = dshCredential(config.endpoint, config.tokenFile);
     this.native = new DshClient(config.endpoint, this.credential);
+    this.questions = new DshQuestions(config.endpoint, this.credential, this.native);
   }
   refresh() {
     return (this.refreshing ??= this.refreshNative().finally(() => {
@@ -32,6 +35,7 @@ export class DshHost {
   }
   private async refreshNative() {
     try {
+      void this.questions.start();
       const rows = z.object({ items: z.array(dshRowSchema) }).parse(await this.native.list()).items;
       this.connected = true;
       this.diagnostic = undefined;
@@ -58,7 +62,7 @@ export class DshHost {
           project: path.basename(row.cwd ?? '') || 'DSH',
           sessionName: typeof p.title === 'string' ? p.title : undefined,
           cwd: row.cwd ?? '',
-          status: dshStatus(row),
+          status: this.questions.hasPending(row.sessionId) ? 'blocked' : dshStatus(row),
           ownership: 'observed',
           presence: row.agentAvailable ? 'live' : 'saved',
           capabilities: capabilities([
@@ -67,6 +71,7 @@ export class DshHost {
             'sendMessage',
             'steerActiveTurn',
             'queueTask',
+            'answerQuestion',
           ]),
           lastActivity: new Date(row.updatedAt).toISOString(),
           preview: old?.preview ?? '',
@@ -76,16 +81,21 @@ export class DshHost {
           connected: true,
           queuePaused: old?.queuePaused ?? false,
           model: selection?.model,
+          agentPreset: typeof p.agentPreset === 'string' ? p.agentPreset : undefined,
           modelUpdatedAt: old?.modelUpdatedAt,
           diagnostic:
-            'Connected to the existing DSH web host. Native questions and approvals must currently be answered in DSH.',
+            'Connected to the existing DSH web host. Native questions are connected. Command permissions still use DSH.',
         };
         this.store.saveSession(session);
         if (!this.adapters.has(id))
           this.adapters.set(
             id,
-            new DshAdapter(this.native, this.config.endpoint, this.credential, (event) =>
-              this.store.event(this.store.session(id), event),
+            new DshAdapter(
+              this.native,
+              this.config.endpoint,
+              this.credential,
+              (event) => this.store.event(this.store.session(id), event),
+              this.questions,
             ),
           );
       }
@@ -116,6 +126,7 @@ export class DshHost {
     if (!this.adapters.has(s.id)) throw new Error('DSH session unavailable');
   }
   close() {
+    this.questions.close();
     for (const a of this.adapters.values()) a.close();
   }
 }

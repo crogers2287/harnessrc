@@ -1,3 +1,4 @@
+import { voiceConfigSchema } from './voice.ts';
 import { dshHostSchema } from './dsh-host.ts';
 import { launchProfileSchema } from './launch.ts';
 import { z } from 'zod';
@@ -6,6 +7,7 @@ import path from 'node:path';
 import { readFileSync } from 'node:fs';
 const home = homedir();
 export const configSchema = z.object({
+  voice: voiceConfigSchema.optional(),
   dsh: z.array(dshHostSchema).default([]),
   dataDir: z.string().default('.data'),
   listen: z.string().default('127.0.0.1'),

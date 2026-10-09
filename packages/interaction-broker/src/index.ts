@@ -76,6 +76,12 @@ export class InteractionBroker {
       .find((i) => i.nativeRequestId === value.nativeRequestId);
     if (old) {
       if (old.generation !== s.generation) throw new Error('Stale native request identity');
+      if (old.status === 'expired' && Date.parse(value.expiresAt) > Date.now()) {
+        old.status = 'pending';
+        old.leaseUntil = leaseUntil;
+        old.expiresAt = value.expiresAt;
+        this.store.saveInteraction(old);
+      }
       return old;
     }
     const interaction: Interaction = {
@@ -136,6 +142,7 @@ export class InteractionBroker {
     const adapter = this.adapter(i.sessionId);
     if (i.route !== 'claude-hook' && !adapter?.respond)
       throw new Error('Native response adapter unavailable');
+    adapter?.validateInteractionResponse?.(session, i, response);
     /* Claim after await: concurrent submits must re-check the persisted status. */ this.store.transaction(
       () => {
         if (this.store.interaction(id).status !== 'pending')

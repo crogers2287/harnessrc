@@ -2,7 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { MockHarness } from './mock.ts';
-import { configSchema } from '../../../apps/gateway/src/config.ts';
+import { configSchema, type Config } from '../../../apps/gateway/src/config.ts';
 import { createGateway } from '../../../apps/gateway/src/server.ts';
 export async function eventually(fn: () => boolean | Promise<boolean>, timeout = 6000) {
   const end = Date.now() + timeout;
@@ -15,6 +15,7 @@ export async function eventually(fn: () => boolean | Promise<boolean>, timeout =
 export async function fixture(
   options: {
     harness?: string;
+    voice?: Config['voice'];
     startRuntime?: boolean;
     tailnetLookup?: (ip: string) => Promise<{ id: string; name: string }>;
   } = {},
@@ -25,6 +26,7 @@ export async function fixture(
   await mock.listen(path.join(dir, 'herdr.sock'), path.join(dir, 'native.sock'));
   const config = configSchema.parse({
     dataDir: dir,
+    voice: options.voice,
     tailnet: options.tailnetLookup
       ? { endpoint: 'https://private.example.test', port: 49001 }
       : undefined,

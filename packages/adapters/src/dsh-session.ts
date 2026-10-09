@@ -1,3 +1,4 @@
+import type { DshQuestions } from './dsh-questions.ts';
 import { randomUUID } from 'node:crypto';
 import WebSocket from 'ws';
 import { z } from 'zod';
@@ -8,6 +9,7 @@ import {
   type Session,
   type SourceEvent,
   type Task,
+  type Interaction,
 } from '@harnessrc/protocol';
 import { DshClient } from './dsh.ts';
 
@@ -113,6 +115,7 @@ export class DshAdapter implements Adapter {
     'sendMessage',
     'steerActiveTurn',
     'queueTask',
+    'answerQuestion',
   ]);
   private last = -1;
   private records = new Map<number, z.infer<typeof nativeEvent>>();
@@ -126,6 +129,7 @@ export class DshAdapter implements Adapter {
     private endpoint: string,
     private credential: () => Promise<string>,
     private emit: (event: SourceEvent) => void,
+    private questions?: DshQuestions,
   ) {}
   async row(s: Session) {
     const rows = z.object({ items: z.array(dshRowSchema) }).parse(await this.native.list()).items;
@@ -134,7 +138,21 @@ export class DshAdapter implements Adapter {
     return row;
   }
   async turnState(s: Session) {
-    return dshStatus(await this.row(s));
+    return this.questions?.interactions(s.nativeSessionId).length
+      ? 'blocked'
+      : dshStatus(await this.row(s));
+  }
+  async interactions(s: Session) {
+    return this.questions?.interactions(s.nativeSessionId) ?? [];
+  }
+  validateInteractionResponse(s: Session, interaction: Interaction, response: unknown) {
+    if (!this.questions) throw new Error('DSH question channel unavailable');
+    this.questions.validate(s.nativeSessionId, interaction.nativeRequestId, response);
+  }
+  async respond(s: Session, interaction: Interaction, response: unknown) {
+    await this.row(s);
+    if (!this.questions) throw new Error('DSH question channel unavailable');
+    await this.questions.respond(s.nativeSessionId, interaction.nativeRequestId, response);
   }
   watch(_s: Session) {
     this.touched = Date.now();

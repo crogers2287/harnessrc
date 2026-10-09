@@ -24,7 +24,8 @@ export const defaultFilters: SessionFilters = {
   cwd: 'all',
   search: '',
 };
-export const isSaved = (s: SessionView) => s.presence === 'saved' || s.status === 'ended';
+export const isSaved = (s: SessionView) =>
+  !!s.archived || s.presence === 'saved' || s.status === 'ended';
 export function filterSessions(sessions: SessionView[], f: SessionFilters) {
   const words = f.search.trim().toLowerCase().split(/\s+/).filter(Boolean);
   return sessions
@@ -42,6 +43,8 @@ export function filterSessions(sessions: SessionView[], f: SessionFilters) {
       const haystack = [
         s.project,
         s.sessionName,
+        s.relayName,
+        s.agentPreset,
         s.tabName,
         s.cwd,
         s.harness,
@@ -55,6 +58,9 @@ export function filterSessions(sessions: SessionView[], f: SessionFilters) {
       return words.every((word) => haystack.includes(word));
     })
     .sort(
-      (a, b) => Date.parse(b.lastActivity) - Date.parse(a.lastActivity) || a.id.localeCompare(b.id),
+      (a, b) =>
+        Number(!!b.pinned) - Number(!!a.pinned) ||
+        Date.parse(b.lastActivity) - Date.parse(a.lastActivity) ||
+        a.id.localeCompare(b.id),
     );
 }

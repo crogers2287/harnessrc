@@ -65,6 +65,7 @@ export const sessionSchema = z.object({
   harness: z.string(),
   model: z.string().max(160).optional(),
   modelUpdatedAt: z.string().optional(),
+  agentPreset: z.string().optional(),
   nativeSessionId: z.string(),
   nativeSessionKind: z.enum(['id', 'path']),
   terminalId: z.string(),
@@ -108,7 +109,7 @@ export const interactionInputSchema = z.object({
   default: z.unknown().optional(),
   responseSchema: z.record(z.string(), z.unknown()),
   expiresAt: z.string(),
-  route: z.enum(['claude-hook', 'codex-bridge', 'mock']),
+  route: z.enum(['claude-hook', 'codex-bridge', 'mock', 'dsh-native']),
   metadata: z.record(z.string(), z.unknown()).default({}),
 });
 export type InteractionInput = z.infer<typeof interactionInputSchema>;
@@ -144,7 +145,14 @@ export type Task = {
   correlation?: string;
   error?: string;
 };
-export type SessionView = Session & { pendingCount: number; queuedCount: number };
+export type SessionView = Session & {
+  pendingCount: number;
+  queuedCount: number;
+  relayName?: string;
+  pinned?: boolean;
+  archived?: boolean;
+  canManage?: boolean;
+};
 export type Host = {
   id: string;
   name: string;
@@ -163,6 +171,11 @@ export type Adapter = {
     session: Session,
     task: Task,
   ) => Promise<'running' | 'completed' | 'failed' | 'uncertain'>;
+  validateInteractionResponse?: (
+    session: Session,
+    interaction: Interaction,
+    response: unknown,
+  ) => void;
   respond?: (session: Session, interaction: Interaction, response: unknown) => Promise<void>;
   interactions?: (session: Session) => Promise<InteractionInput[]>;
   steer?: (session: Session, prompt: string, images?: string[]) => Promise<void>;

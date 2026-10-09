@@ -43,6 +43,12 @@ export class Store extends EventEmitter {
         'utf8',
       ),
     );
+    this.db.exec(
+      readFileSync(
+        new URL('../../../migrations/009-session-preferences.sql', import.meta.url),
+        'utf8',
+      ),
+    );
   }
   transaction<T>(fn: () => T): T {
     this.db.exec('BEGIN IMMEDIATE');

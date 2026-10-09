@@ -48,7 +48,7 @@ test('mobile chat: native approval, serial queued work, reconnect, and settings'
   });
   await pair(page);
   await page.screenshot({ path: 'docs/screenshots/inbox-mobile.png' });
-  await page.getByRole('button', { name: /Atlas API/ }).click();
+  await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
   await expect(page.getByRole('heading', { name: 'Atlas API', exact: true })).toBeVisible();
   await page
     .getByLabel('Instruction', { exact: true })
@@ -133,7 +133,7 @@ test('responsive inbox supports phone, landscape, tablet, desktop, zoom, and red
     expect(controls.filter((b: any) => b.height < 47)).toEqual([]);
   }
   await page.screenshot({ path: 'docs/screenshots/inbox-desktop.png' });
-  await page.getByRole('button', { name: /Atlas API/ }).click();
+  await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
   await page.screenshot({ path: 'docs/screenshots/conversation-desktop.png' });
   await page.setViewportSize({ width: 375, height: 812 });
   await page.evaluate(() => (document.documentElement.style.fontSize = '200%'));
@@ -147,7 +147,7 @@ test('mobile attachments: photo and file previews, draft recovery, removal and d
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await pair(page);
-  await page.getByRole('button', { name: /Atlas API/ }).click();
+  await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
   await page.getByLabel('Instruction', { exact: true }).fill('Review these attachments');
   await page.getByRole('button', { name: 'Add files or images' }).click();
   await expect(page.getByRole('button', { name: 'Camera', exact: true })).toBeVisible();
@@ -224,12 +224,12 @@ test('mobile audit: dense inbox, missing chat binding, and keyboard-sized compos
   await page.getByRole('button', { name: /^Codex, 10 sessions$/ }).click();
   await expect(page.locator('.inbox-heading .count')).toHaveText('10');
   await page.screenshot({ path: 'docs/screenshots/inbox-dense-mobile.png' });
-  await page.getByRole('button', { name: /Project 1:/ }).click();
+  await page.locator('button.session-row').filter({ hasText: 'Project 1:' }).click();
   await expect(page.getByRole('heading', { name: 'Chat is not connected' })).toBeVisible();
   await expect(page.getByText('Ready for your next instruction')).toHaveCount(0);
   await page.screenshot({ path: 'docs/screenshots/unbound-mobile.png' });
   await openSessions(page);
-  await page.getByRole('button', { name: /Project 3:/ }).click();
+  await page.locator('button.session-row').filter({ hasText: 'Project 3:' }).click();
   await page.setViewportSize({ width: 390, height: 410 });
   await page
     .getByLabel('Instruction', { exact: true })
@@ -285,7 +285,7 @@ test('live chat appends events without refetching history and preserves reading 
   });
   await page.reload();
   await openSessions(page);
-  await page.getByRole('button', { name: /Streaming acceptance/ }).click();
+  await page.locator('button.session-row').filter({ hasText: 'Streaming acceptance' }).click();
   await expect(page.locator('.conversation-heading .header-model')).toContainText('gpt-6-astra');
   await expect(page.getByRole('status', { name: /is working/ })).toBeAttached();
   const composer = page.getByLabel('Instruction', { exact: true });
@@ -401,7 +401,7 @@ test('mobile opens chat first, defaults to Send, and supports edge swipe drawer 
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await pair(page);
-  await page.getByRole('button', { name: /Atlas API/ }).click();
+  await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
   await expect(page.getByLabel('Instruction behavior')).toHaveValue('auto');
   await expect(page.getByRole('button', { name: 'Send message', exact: true })).toBeVisible();
   await page.getByLabel('Instruction', { exact: true }).fill('A draft survives navigation');
@@ -437,7 +437,7 @@ test('default Send and Steer use native message delivery; only explicit Queue sc
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await pair(page);
-  await page.getByRole('button', { name: /Atlas API/ }).click();
+  await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
   const draft = page.getByLabel('Instruction', { exact: true });
   let queueRequests = 0;
   page.on('request', (request) => {
@@ -489,7 +489,7 @@ test('Steer renders immediately, preserves the next draft, and keeps uncertain d
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await pair(page);
-  await page.getByRole('button', { name: /Atlas API/ }).click();
+  await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
   // Keep a mock turn working while testing slow and interrupted delivery feedback.
   await page.getByLabel('Instruction', { exact: true }).fill('Keep working for steering UI test');
   await page.getByLabel('Instruction behavior').selectOption('queue');
@@ -566,7 +566,7 @@ test('native question replies read like chat and repeated real touch taps reliab
   );
   await page.reload();
   await openSessions(page);
-  await page.getByRole('button', { name: /Atlas API/ }).click();
+  await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
   await expect(page.getByText('this one lol', { exact: true })).toBeVisible();
   await expect(page.getByText('Which session is still queuing?', { exact: true })).toBeVisible();
   await expect(page.getByText(/<send_user_message_question_reply>/)).toHaveCount(0);
@@ -619,7 +619,7 @@ test('mobile browser Back opens sessions from chat and preserves secondary navig
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await pair(page);
-  await page.getByRole('button', { name: /Atlas API/ }).click();
+  await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
   await page.getByLabel('Instruction', { exact: true }).fill('Keep this draft when I go back');
   await page.reload();
   await page.getByLabel('Instruction', { exact: true }).waitFor();
@@ -635,7 +635,7 @@ test('mobile browser Back opens sessions from chat and preserves secondary navig
   await expect(page.getByLabel('Instruction', { exact: true })).toBeVisible();
   await page.goBack();
   await expect(page.getByRole('dialog', { name: 'Sessions', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: /Atlas API/ }).click();
+  await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
   await page.getByRole('button', { name: 'Open sessions', exact: true }).click();
   await page.goBack();
   await expect(page.getByRole('dialog', { name: 'Sessions', exact: true })).not.toBeVisible();
@@ -646,7 +646,7 @@ test('working composer accepts file and image steering through real touch target
 }) => {
   await page.setViewportSize({ width: 390, height: 520 });
   await pair(page);
-  await page.getByRole('button', { name: /Atlas API/ }).click();
+  await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
   const draft = page.getByLabel('Instruction', { exact: true });
   // Earlier interaction tests leave this mock working; create a turn if run independently.
   if (await page.getByRole('button', { name: 'Send message', exact: true }).isVisible()) {
@@ -871,7 +871,7 @@ test('composer tracks a shrinking and panning Android visual viewport without a 
     Object.defineProperty(window, 'visualViewport', { value: viewport, configurable: true });
   });
   await pair(page);
-  await page.getByRole('button', { name: /Atlas API/ }).click();
+  await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
   await page.getByLabel('Instruction', { exact: true }).fill('Keep this draft above the keyboard');
   for (const [height, top] of [
     [500, 0],
@@ -894,6 +894,8 @@ test('composer tracks a shrinking and panning Android visual viewport without a 
       .toBeLessThanOrEqual(height + top);
     const b = await page.locator('.send-button').boundingBox();
     expect(b!.y).toBeGreaterThan(top);
+    await expect(page.locator('.conversation-header')).toBeHidden();
+    await expect(page.locator('.chat-context-strip')).toBeHidden();
     await expect(page.getByLabel('Instruction', { exact: true })).toHaveValue(
       'Keep this draft above the keyboard',
     );
@@ -906,6 +908,8 @@ test('composer tracks a shrinking and panning Android visual viewport without a 
   await expect
     .poll(async () => Math.round((await page.locator('.app').boundingBox())!.height))
     .toBe(844);
+  await expect(page.locator('.conversation-header')).toBeVisible();
+  await expect(page.locator('.chat-context-strip')).toBeVisible();
 });
 
 test('Settings offers install help, invokes a captured native installer once, and observes installation', async ({
@@ -1033,7 +1037,7 @@ test('clipboard screenshot uploads once, keeps draft text, and sends the attachm
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await pair(page);
-  await page.getByRole('button', { name: /Atlas API/ }).click();
+  await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await page.evaluate(async () => {
     const canvas = document.createElement('canvas');
@@ -1073,7 +1077,7 @@ test('clipboard denial or no image gives a usable photo fallback without losing 
 }) => {
   await page.setViewportSize({ width: 320, height: 740 });
   await pair(page);
-  await page.getByRole('button', { name: /Atlas API/ }).click();
+  await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
   await page.getByLabel('Instruction', { exact: true }).fill('Preserve me');
   await page.evaluate(() =>
     Object.defineProperty(navigator.clipboard, 'read', {
@@ -1098,4 +1102,232 @@ test('clipboard denial or no image gives a usable photo fallback without losing 
   await expect(page.getByRole('alert')).toContainText('No image was shared');
   await expect(page.getByLabel('Message attachments')).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test('voice records real browser audio, cleans into a draft, preserves typing and never auto-sends', async ({
+  page,
+  context,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await context.grantPermissions(['microphone']);
+  await page.route('**/api/voice', (r) => r.fulfill({ json: { enabled: true, maxSeconds: 180 } }));
+  let submissions = 0;
+  page.on('request', (r) => {
+    if (r.method() === 'POST' && /\/(messages|tasks|steer)$/.test(r.url())) submissions++;
+  });
+  await page.route('**/dictation?*', async (r) => {
+    expect(r.request().headers()['content-type']).toBe('application/octet-stream');
+    expect(r.request().postDataBuffer()!.length).toBeGreaterThan(0);
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    await r.fulfill({
+      json: {
+        text: 'Keep port 42. Do not send automatically.',
+        original: 'um keep port 42 uh do not send automatically',
+        cleaned: true,
+      },
+    });
+  });
+  await pair(page);
+  await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
+  const draft = page.getByLabel('Instruction', { exact: true });
+  await draft.fill('Existing draft');
+  await page.getByRole('button', { name: 'Dictate message', exact: true }).click();
+  await expect(page.getByText(/Listening ·/)).toBeVisible();
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: 'docs/screenshots/voice-recording-mobile.png' });
+  await page.getByRole('button', { name: 'Finish dictation', exact: true }).click();
+  await expect(page.getByText('Transcribing and cleaning up…')).toBeVisible();
+  await draft.fill('Typing while transcribing');
+  await expect(draft).toHaveValue(
+    'Typing while transcribing\nKeep port 42. Do not send automatically.',
+  );
+  expect(submissions).toBe(0);
+  await page.getByText('Original transcription', { exact: true }).click();
+  await expect(
+    page.getByText('um keep port 42 uh do not send automatically', { exact: true }),
+  ).toBeVisible();
+  await page.screenshot({ path: 'docs/screenshots/voice-draft-mobile.png' });
+  await page.getByRole('button', { name: 'Dismiss voice input' }).click();
+  await page.getByRole('button', { name: 'Dictate message', exact: true }).click();
+  await expect(page.getByText(/Listening ·/)).toBeVisible();
+  await page.getByRole('button', { name: 'Cancel voice input' }).click();
+  await expect(page.getByLabel('Voice input', { exact: true })).toHaveCount(0);
+  expect(submissions).toBe(0);
+});
+
+test('voice permission refusal preserves the draft; service failure keeps audio for retry', async ({
+  page,
+  context,
+}) => {
+  await page.setViewportSize({ width: 320, height: 740 });
+  await page.route('**/api/voice', (r) => r.fulfill({ json: { enabled: true, maxSeconds: 180 } }));
+  await pair(page);
+  await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
+  await page.getByLabel('Instruction', { exact: true }).fill('Keep my draft');
+  await context.clearPermissions();
+  await page.evaluate(() => {
+    (window as any).originalMic = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+    navigator.mediaDevices.getUserMedia = async () => {
+      throw new DOMException('Denied', 'NotAllowedError');
+    };
+  });
+  await page.getByRole('button', { name: 'Dictate message', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('Microphone access was blocked');
+  await expect(page.getByLabel('Instruction', { exact: true })).toHaveValue('Keep my draft');
+  await page.getByRole('button', { name: 'Dismiss voice input' }).click();
+  await context.grantPermissions(['microphone']);
+  await page.evaluate(() => {
+    navigator.mediaDevices.getUserMedia = (window as any).originalMic;
+  });
+  let attempts = 0;
+  await page.route('**/dictation?*', async (r) => {
+    attempts++;
+    await r.fulfill(
+      attempts === 1
+        ? { status: 502, json: { error: 'Transcription failed. Retry your recording.' } }
+        : {
+            json: { text: 'Recovered dictation.', original: 'Recovered dictation.', cleaned: true },
+          },
+    );
+  });
+  await page.getByRole('button', { name: 'Dictate message', exact: true }).click();
+  await expect(page.getByText(/Listening ·/)).toBeVisible();
+  await page.waitForTimeout(400);
+  await page.getByRole('button', { name: 'Finish dictation', exact: true }).click();
+  await page.getByRole('button', { name: 'Retry transcription', exact: true }).click();
+  await expect(page.getByLabel('Instruction', { exact: true })).toHaveValue(
+    'Keep my draft\nRecovered dictation.',
+  );
+  expect(attempts).toBe(2);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test('holding a session opens its action sheet; rename and pin persist and scrolling cancels the hold', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await pair(page);
+  const row = page.locator('.session-row').filter({ hasText: 'Atlas API' }).first();
+  const box = (await row.boundingBox())!;
+  await page.mouse.move(box.x + 70, box.y + 30);
+  await page.mouse.down();
+  await page.waitForTimeout(600);
+  await page.mouse.up();
+  const sheet = page.locator('dialog.session-action-sheet');
+  await expect(sheet).toBeVisible();
+  await page.screenshot({ path: 'docs/screenshots/session-actions-mobile.png' });
+  await sheet.getByRole('button', { name: 'Rename', exact: true }).click();
+  await sheet.getByLabel('Conversation name').fill('Pinned mobile project');
+  await sheet.getByRole('button', { name: 'Save name' }).click();
+  await expect(
+    page.locator('.session-row').filter({ hasText: 'Pinned mobile project' }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Actions for Pinned mobile project' }).click();
+  await page.getByRole('button', { name: 'Pin to top' }).click();
+  await page.reload();
+  await openSessions(page);
+  await page.getByRole('button', { name: 'Actions for Pinned mobile project' }).click();
+  await expect(page.getByRole('button', { name: 'Unpin', exact: true })).toBeVisible();
+  await page.goBack();
+  await expect(page.locator('.session-action-sheet')).toHaveCount(0);
+  const current = page.locator('.session-row').filter({ hasText: 'Pinned mobile project' });
+  const pos = (await current.boundingBox())!;
+  await page.mouse.move(pos.x + 60, pos.y + 30);
+  await page.mouse.down();
+  await page.mouse.move(pos.x + 60, pos.y + 55);
+  await page.waitForTimeout(600);
+  await page.mouse.up();
+  await expect(page.locator('.session-action-sheet')).toHaveCount(0);
+  await openSessions(page);
+  await page.getByRole('button', { name: 'Actions for Pinned mobile project' }).click();
+  await page.getByRole('button', { name: 'Close conversation', exact: true }).click();
+  await expect(page.getByText(/The agent and queued work keep running/)).toBeVisible();
+  await page.getByRole('button', { name: 'Move to History', exact: true }).click();
+  await expect(
+    page.locator('.session-row').filter({ hasText: 'Pinned mobile project' }),
+  ).toHaveCount(0);
+  // Restore to avoid changing shared fixture assumptions in other tests.
+  const sessions = await (await page.request.get('/api/sessions')).json();
+  const s = sessions.sessions.find((s: any) => s.relayName === 'Pinned mobile project');
+  await page.request.patch(`/api/sessions/${s.id}/preferences`, {
+    headers: { 'x-rc-request': '1' },
+    data: { name: null, pinned: false, archived: false },
+  });
+});
+
+test('DSH native questions render choices and submit the exact answer batch without sending a chat turn', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await pair(page);
+  await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
+  let submitted: any;
+  let messages = 0;
+  page.on('request', (r) => {
+    if (r.method() === 'POST' && /\/(messages|tasks|steer)$/.test(r.url())) messages++;
+  });
+  await page.route('**/api/sessions/*', async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    if (data.session) {
+      data.session.harness = 'dsh';
+      data.session.agentPreset = 'haxor';
+      data.session.capabilities.answerQuestion = true;
+      data.interactions = [
+        {
+          id: 'dsh-card',
+          nativeRequestId: 'native-event',
+          sessionId: data.session.id,
+          nativeSessionId: 'native-session',
+          generation: data.session.generation,
+          source: 'dsh',
+          status: 'pending',
+          leaseUntil: Date.now() + 60000,
+          expiresAt: '2099-01-01T00:00:00Z',
+          route: 'dsh-native',
+          type: 'free-text',
+          prompt: 'DSH needs your input',
+          choices: [],
+          metadata: {
+            dshQuestions: [
+              {
+                id: 'layout',
+                question: 'Which layout?',
+                options: [{ label: 'Compact', description: 'Fits on a phone' }, { label: 'Wide' }],
+              },
+              {
+                id: 'features',
+                question: 'Which features?',
+                multiSelect: true,
+                options: [{ label: 'Files' }, { label: 'Voice' }],
+              },
+            ],
+          },
+          responseSchema: { type: 'object' },
+        },
+      ];
+    }
+    await route.fulfill({ json: data });
+  });
+  await page.route('**/api/interactions/dsh-card/respond', async (route) => {
+    submitted = route.request().postDataJSON();
+    await route.fulfill({ json: { ok: true } });
+  });
+  await page.reload();
+  await page.getByRole('radio', { name: /Compact/ }).check();
+  await page.getByRole('checkbox', { name: 'Files', exact: true }).check();
+  await page.getByRole('checkbox', { name: 'Voice', exact: true }).check();
+  await page.screenshot({ path: 'docs/screenshots/dsh-question-mobile.png' });
+  await page.getByRole('button', { name: 'Send response', exact: true }).click();
+  await expect
+    .poll(() => submitted)
+    .toEqual({
+      response: {
+        answers: [
+          { id: 'layout', selected: ['Compact'], custom: '' },
+          { id: 'features', selected: ['Files', 'Voice'], custom: '' },
+        ],
+      },
+    });
+  expect(messages).toBe(0);
 });

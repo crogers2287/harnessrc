@@ -2,6 +2,7 @@
 export function trackViewport() {
   const root = document.documentElement;
   let frame = 0;
+  let restingHeight = window.innerHeight;
   const update = () => {
     frame = 0;
     const v = window.visualViewport;
@@ -10,7 +11,11 @@ export function trackViewport() {
     const top = v?.offsetTop ?? 0;
     root.style.setProperty('--app-height', `${height}px`);
     root.style.setProperty('--app-top', `${top}px`);
-    root.dataset.keyboard = String(window.innerHeight - height > 120);
+    const editing = document.activeElement?.matches('textarea, input, [contenteditable=true]');
+    const keyboard =
+      window.innerHeight - height > 120 || (!!editing && restingHeight - height > 120);
+    if (!keyboard) restingHeight = Math.max(window.innerHeight, height);
+    root.dataset.keyboard = String(keyboard);
   };
   const schedule = () => {
     if (!frame) frame = requestAnimationFrame(update);

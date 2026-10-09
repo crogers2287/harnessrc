@@ -44,3 +44,5 @@ Monorepo: `apps/web`, `apps/gateway`, `packages/{protocol,herdr,adapters,interac
 The mobile-first composer supports files, photos/camera selection, upload progress, retries, removable previews and draft recovery. Sent images can be inspected and downloaded; messages can be copied. Tool activity is collapsed into readable groups. Set `hosts[].localFiles: true` for Fred or another host sharing the gateway filesystem. [Attachment setup](docs/ATTACHMENTS.md), [UI audit](docs/UI_AUDIT.md), and [live validation evidence](docs/VALIDATION.md) distinguish working features from outstanding native interaction gaps.
 
 Create sessions from your phone: [host folders, agents, models, and CFRproxy profiles](docs/SESSION_CREATION.md).
+
+Voice dictation with local transcription/cleanup: [setup and privacy](docs/VOICE.md). Mobile session long-press actions include shared Relay names, pinning, Close to History, and capability-gated Stop Turn. DSH native questions use the existing host event stream; see [DSH](docs/DSH.md).

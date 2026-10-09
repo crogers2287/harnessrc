@@ -1,3 +1,4 @@
+import { VoiceService, MAX_VOICE_BYTES, voiceMimeSchema } from './voice.ts';
 import { DshAdapter } from '../../../packages/adapters/src/dsh-session.ts';
 import { sendMessage } from './messages.ts';
 import { randomUUID } from 'node:crypto';
@@ -37,6 +38,7 @@ export async function createGateway(
   mkdirSync(config.dataDir, { recursive: true, mode: 0o700 });
   const store = options.store ?? new Store(path.join(config.dataDir, 'gateway.db'));
   const runtime = new Runtime(store, config);
+  const voice = new VoiceService(config.voice);
   const launcher = new Launcher(
     store,
     config.launchProfiles,
@@ -128,12 +130,45 @@ export async function createGateway(
     if (!auth.allowed(req.device, id, control))
       throw Object.assign(new Error('Session permission denied'), { statusCode: 403 });
   };
+  app.get('/api/voice', async () => ({ enabled: voice.enabled, maxSeconds: 180 }));
+  app.post(
+    '/api/sessions/:id/dictation',
+    {
+      bodyLimit: MAX_VOICE_BYTES,
+      config: { rateLimit: { max: 6, timeWindow: '1 minute' } },
+    },
+    async (req) => {
+      const { id } = z.object({ id: z.string() }).parse(req.params);
+      check(req, id, true);
+      const { mime } = z.object({ mime: voiceMimeSchema }).parse(req.query);
+      if (!Buffer.isBuffer(req.body))
+        throw Object.assign(new Error('Send a binary audio recording'), { statusCode: 400 });
+      const result = await voice.transcribe(req.body, mime);
+      // Only operation metadata is audited; audio and transcript are never persisted here.
+      store.audit(req.device.id, 'voice.transcribe', id, {
+        bytes: req.body.length,
+        cleaned: result.cleaned,
+      });
+      return result;
+    },
+  );
   const sessionViews = (device: Device): SessionView[] =>
     store
       .sessions()
       .filter((s) => auth.allowed(device, s.id))
       .map((s) => ({
         ...s,
+        ...(() => {
+          const preference = store.db
+            .prepare('SELECT name,pinned,archived FROM session_preferences WHERE session_id=?')
+            .get(s.id);
+          return {
+            relayName: preference?.name as string | undefined,
+            pinned: !!preference?.pinned,
+            archived: !!preference?.archived,
+            canManage: auth.allowed(device, s.id, true),
+          };
+        })(),
         capabilities: auth.allowed(device, s.id, true)
           ? s.capabilities
           : Object.fromEntries(
@@ -230,6 +265,36 @@ export async function createGateway(
       req.device.admin ? c.host : { id: c.host.id, name: c.host.name, connected: c.host.connected },
     ),
   }));
+  app.patch('/api/sessions/:id/preferences', async (req) => {
+    const { id } = z.object({ id: z.string() }).parse(req.params);
+    check(req, id, true);
+    const patch = z
+      .object({
+        name: z.string().trim().min(1).max(120).nullable().optional(),
+        pinned: z.boolean().optional(),
+        archived: z.boolean().optional(),
+      })
+      .strict()
+      .parse(req.body);
+    store.transaction(() => {
+      store.db.prepare('INSERT OR IGNORE INTO session_preferences(session_id) VALUES(?)').run(id);
+      if (patch.name !== undefined)
+        store.db
+          .prepare('UPDATE session_preferences SET name=? WHERE session_id=?')
+          .run(patch.name, id);
+      if (patch.pinned !== undefined)
+        store.db
+          .prepare('UPDATE session_preferences SET pinned=? WHERE session_id=?')
+          .run(Number(patch.pinned), id);
+      if (patch.archived !== undefined)
+        store.db
+          .prepare('UPDATE session_preferences SET archived=? WHERE session_id=?')
+          .run(Number(patch.archived), id);
+      store.audit(req.device.id, 'session.preferences', id, patch);
+    });
+    store.emit('change', id);
+    return { session: sessionViews(req.device).find((s) => s.id === id) };
+  });
   app.get('/api/sessions/:id', async (req) => {
     const { id } = req.params as { id: string };
     check(req, id);

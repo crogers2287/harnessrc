@@ -108,6 +108,7 @@ test('DSH discovery, paginated history, native model selection, steering and rec
                     asOfSeq: 2,
                     values: {
                       title: 'Native DSH',
+                      agentPreset: 'haxor',
                       modelSelection: { next: { provider: 'cfrproxy', model } },
                     },
                   },
@@ -156,7 +157,17 @@ test('DSH discovery, paginated history, native model selection, steering and rec
   });
   const ws = new WebSocketServer({ server, path: '/api/remote.mux' });
   ws.on('connection', (socket) =>
-    socket.on('message', () =>
+    socket.on('message', (raw) => {
+      if (JSON.parse(raw.toString()).endpoint === '$events') {
+        socket.send(
+          JSON.stringify({
+            type: 'item',
+            streamId: 'questions',
+            value: { type: 'ready', clientId: 'fixture' },
+          }),
+        );
+        return;
+      }
       socket.send(
         JSON.stringify({
           type: 'item',
@@ -177,8 +188,8 @@ test('DSH discovery, paginated history, native model selection, steering and rec
             },
           },
         }),
-      ),
-    ),
+      );
+    }),
   );
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   const endpoint = `http://127.0.0.1:${(server.address() as any).port}`;
@@ -195,9 +206,10 @@ test('DSH discovery, paginated history, native model selection, steering and rec
     await host.refresh();
     const session = store.sessions()[0];
     assert.equal(session.sessionName, 'Native DSH');
+    assert.equal(session.agentPreset, 'haxor');
     assert.equal(session.cwd, '/workspace/app');
     assert.equal(session.capabilities.steerActiveTurn, true);
-    assert.equal(session.capabilities.answerQuestion, false);
+    assert.equal(session.capabilities.answerQuestion, true);
     const adapter = host.adapters.get(session.id)!;
     // Simulate launch discovery before the scheduler has adopted the adapter.
     runtime.dshHosts.set('dsh-host', host);

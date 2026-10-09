@@ -11,7 +11,7 @@ export default defineConfig({
     browserName: 'chromium',
     launchOptions: {
       executablePath: process.env.CHROMIUM_PATH || undefined,
-      args: ['--no-sandbox'],
+      args: ['--no-sandbox', '--use-fake-device-for-media-stream'],
     },
     trace: 'retain-on-failure',
   },
