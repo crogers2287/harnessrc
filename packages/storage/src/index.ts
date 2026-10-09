@@ -94,12 +94,21 @@ export class Store extends EventEmitter {
       nativeSessionId: session.nativeSessionId,
       source: session.harness,
     };
-    const r = this.db
-      .prepare('INSERT OR IGNORE INTO events(id,session_id,source_id,body) VALUES(?,?,?,?)')
-      .run(event.id, session.id, src.sourceId, JSON.stringify(event));
-    const saved = this.db
+    // INSERT OR IGNORE still advances SQLite's AUTOINCREMENT sequence on a
+    // duplicate and commits a WAL write. Native history replay must be read-only.
+    const existing = this.db
       .prepare('SELECT sequence,body FROM events WHERE session_id=? AND source_id=?')
-      .get(session.id, src.sourceId)!;
+      .get(session.id, src.sourceId);
+    const r = existing
+      ? { changes: 0 }
+      : this.db
+          .prepare('INSERT OR IGNORE INTO events(id,session_id,source_id,body) VALUES(?,?,?,?)')
+          .run(event.id, session.id, src.sourceId, JSON.stringify(event));
+    const saved =
+      existing ??
+      this.db
+        .prepare('SELECT sequence,body FROM events WHERE session_id=? AND source_id=?')
+        .get(session.id, src.sourceId)!;
     const out = { ...JSON.parse(saved.body as string), sequence: Number(saved.sequence) } as Event;
     if (r.changes) {
       const s = this.session(session.id);

@@ -1,3 +1,4 @@
+import { notifyEvent } from './notifications.ts';
 import { DshQuestions } from './DshQuestions.tsx';
 import { SessionRow, sessionLabel } from './SessionActions.tsx';
 import { useVoiceInput } from './voice.tsx';
@@ -175,6 +176,10 @@ export function App() {
         if (state === 'connected') void query.invalidateQueries({ queryKey: ['events'] });
       },
       (event) => {
+        const session = query
+          .getQueryData<{ sessions: SessionView[] }>(['sessions'])
+          ?.sessions.find((s) => s.id === event.sessionId);
+        void notifyEvent(event, session);
         const key = ['events', event.sessionId];
         if (!query.getQueryData(key)) return;
         query.setQueryData<{ events: Event[] }>(key, (old) => ({
@@ -241,7 +246,6 @@ export function App() {
     history.replaceState({ relayDrawer: true, relayDrawerBase: true }, '', location.href);
     history.pushState({ relayChat: true }, '', location.href);
   }, [mobile, auth.data, route]);
-  useNotifications(sessions, !!auth.data);
   if (auth.isPending)
     return (
       <main className="pairing">
@@ -2057,45 +2061,4 @@ function SettingsView({ admin, back }: { admin: boolean; back: () => void }) {
       </div>
     </>
   );
-}
-function useNotifications(sessions: SessionView[], enabled: boolean) {
-  const previous = useRef(new Map<string, SessionView>());
-  const seen = useRef(new Set<string>());
-  useEffect(() => {
-    if (!enabled) return;
-    const notify = async (s: SessionView, label: string, key: string, interaction?: string) => {
-      if (
-        seen.current.has(key) ||
-        localStorage.getItem('relay-notifications') !== 'on' ||
-        !('Notification' in window) ||
-        Notification.permission !== 'granted'
-      )
-        return;
-      seen.current.add(key);
-      const path = `/?session=${s.id}${interaction ? `&interaction=${interaction}` : ''}`;
-      const registration = await navigator.serviceWorker?.ready;
-      const opts = { body: s.project, tag: key, data: { path } };
-      if (registration) await registration.showNotification(label, opts);
-      else {
-        const notification = new Notification(label, opts);
-        notification.onclick = () => location.assign(path);
-      }
-    };
-    for (const s of sessions) {
-      const old = previous.current.get(s.id);
-      if (old && s.pendingCount > old.pendingCount)
-        void api<Detail>(`/api/sessions/${s.id}`).then((d) => {
-          for (const i of d.interactions.filter((i) => i.status === 'pending'))
-            void notify(s, 'Your agent needs input', i.id, i.id);
-        });
-      if (old && old.status === 'working' && s.status === 'idle')
-        void api<Detail>(`/api/sessions/${s.id}`).then((d) => {
-          for (const t of d.tasks.filter((t) => ['completed', 'failed'].includes(t.status)))
-            void notify(s, t.status === 'failed' ? 'Task failed' : 'Task complete', t.id);
-        });
-      if (old && s.status === 'ended' && old.status !== s.status)
-        void notify(s, 'Session ended', `${s.id}:ended`);
-      previous.current.set(s.id, s);
-    }
-  }, [sessions, enabled]);
 }

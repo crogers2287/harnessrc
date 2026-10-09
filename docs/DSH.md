@@ -72,3 +72,10 @@ Steering uses `mode: steer` and the **same durable Relay request ID** on the nat
 DSH's `$events/result` success response legitimately omits `value` for a void return. Relay accepts that envelope; `session/prompt` still requires `{accepted:true}`. The earlier required-value parser could report “Invalid request” after DSH had already accepted a question answer.
 
 On Fred, the `llm-pi-ai` provider catalog incorrectly declared `cfrproxy` model `fred/flash-next` with `input: [text]`. Its entry was corrected to `[text, image]` through `settings/mutate`, fenced by the settings revision; no agent restart or blanket provider override was used. The isolated native validation session then read a proof string from a file and described an uploaded icon using Flash Next. For other deployments, inspect the model's own catalog entry before assuming an image admission rejection describes the actual upstream model capability.
+
+
+### Replay and notification recovery
+
+Native replay now checks the durable source identity before inserting. SQLite `INSERT OR IGNORE` on the AUTOINCREMENT event table had still allocated sequence numbers and committed duplicate WAL writes, blocking the gateway's event loop on disk commits. A regression replays 2,000 events and asserts zero writes, unchanged sequence, and no repeated event emission. Durable new-message/task writes retain FULL synchronization.
+
+Notifications now originate from new question/approval, task-completion and turn-failure events, with persistent event deduplication, per-session tags, no repeated sound on replacement, and suppression for the visible conversation. Status changes and old history do not generate notifications. The updated service worker clears obsolete “Session ended” alerts. The initial app shell displays connection progress while selecting its authenticated transport.

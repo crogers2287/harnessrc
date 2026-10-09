@@ -1560,3 +1560,58 @@ test('DSH steering acknowledgement stays distinct from an applied model update',
   await expect(page.getByText('Steering accepted · waiting for the next agent step')).toBeVisible();
   expect(submissions).toBe(1);
 });
+
+test('notifications ignore ended-session floods and deduplicate native events across reloads', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('relay-notifications', 'on');
+    (window as any).testNotifications = [];
+    (window as any).Notification = class {
+      static permission = 'granted';
+      constructor(title: string, options: unknown) {
+        (window as any).testNotifications.push({ title, options });
+      }
+    };
+    Object.defineProperty(document, 'visibilityState', { get: () => 'hidden' });
+    if (navigator.serviceWorker) navigator.serviceWorker.getRegistration = async () => undefined;
+  });
+  let inject: ((message: unknown) => void) | undefined;
+  await page.routeWebSocket('**/ws', (ws) => {
+    inject = (message) => ws.send(JSON.stringify(message));
+    ws.connectToServer();
+  });
+  await pair(page);
+  const sessions = await page.evaluate(
+    async () => (await (await fetch('/api/sessions')).json()).sessions,
+  );
+  for (let i = 0; i < 23; i++) {
+    inject!({
+      type: 'invalidate',
+      sessions: sessions.map((s: any) => ({ ...s, status: i % 2 ? 'working' : 'ended' })),
+    });
+  }
+  await page.waitForTimeout(200);
+  expect(await page.evaluate(() => (window as any).testNotifications)).toHaveLength(0);
+  const event = {
+    id: 'notification-proof',
+    sourceId: 'notification-proof',
+    sessionId: sessions[0].id,
+    timestamp: new Date().toISOString(),
+    kind: 'question',
+    data: { interactionId: 'pending-proof' },
+    sequence: 999,
+  };
+  inject!({ type: 'event', event });
+  inject!({ type: 'event', event });
+  await expect.poll(() => page.evaluate(() => (window as any).testNotifications.length)).toBe(1);
+  const shown = await page.evaluate(() => (window as any).testNotifications[0]);
+  expect(shown.title).toBe('Your agent needs input');
+  expect(shown.options.tag).toBe(`relay-session:${sessions[0].id}`);
+  expect(shown.options.renotify).toBe(false);
+  await page.reload();
+  await page.getByRole('button', { name: 'Open sessions', exact: true }).waitFor();
+  inject!({ type: 'event', event: { ...event, timestamp: new Date().toISOString() } });
+  await page.waitForTimeout(200);
+  expect(await page.evaluate(() => (window as any).testNotifications)).toHaveLength(0);
+});

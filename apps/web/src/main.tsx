@@ -19,8 +19,14 @@ const client = new QueryClient({
   defaultOptions: { queries: { retry: false, refetchOnWindowFocus: true } },
 });
 prepareMobileHistory();
+const root = createRoot(document.getElementById('root')!);
+root.render(
+  <main className="pairing">
+    <p role="status">Connecting to your gateway…</p>
+  </main>,
+);
 void selectTransport().then(() => {
-  createRoot(document.getElementById('root')!).render(
+  root.render(
     <React.StrictMode>
       <QueryClientProvider client={client}>
         <App />
