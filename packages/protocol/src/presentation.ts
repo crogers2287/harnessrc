@@ -52,7 +52,7 @@ export function presentUserMessage(text: string): MessagePresentation {
       },
     );
     const rest = body.replace(
-      /<(task-id|tool-use-id|output-file|status|summary|task-type)>([\s\S]*?)<\/\1>/g,
+      /<(task-id|tool-use-id|output-file|status|summary|task-type|result)>([\s\S]*?)<\/\1>/g,
       (_, key: string, value: string) => {
         if (key in fields) valid = false;
         fields[key] = value.trim();
@@ -73,6 +73,7 @@ export function presentUserMessage(text: string): MessagePresentation {
         status: 'Status',
         usage: 'Usage',
         diagnostics: 'Diagnostics',
+        result: 'Result',
       };
       return {
         text: fields.summary,

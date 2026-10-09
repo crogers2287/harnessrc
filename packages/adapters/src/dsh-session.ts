@@ -106,8 +106,19 @@ export function dshEvents(input: unknown): SourceEvent[] {
         ...base,
         kind: 'tool.output',
         data: {
-          text:
-            typeof d.content === 'string' ? d.content : JSON.stringify(d.content ?? d.result ?? {}),
+          text: d.message
+            ? text(d.message)
+            : typeof d.content === 'string'
+              ? d.content
+              : JSON.stringify(d.content ?? d.result ?? {}),
+          ...(d.message
+            ? {
+                toolCallId: d.message.toolCallId,
+                isError: d.message.isError === true,
+                imageCount: (d.message.content ?? []).filter((part: any) => part.type === 'image')
+                  .length,
+              }
+            : {}),
         },
       },
     ];
@@ -184,15 +195,13 @@ export class DshAdapter implements Adapter {
       );
     if (!/^[a-zA-Z0-9_-]+$/.test(value) || !settings.options.some((o) => o.value === value))
       throw Object.assign(new Error('Permission preset is not available.'), { statusCode: 400 });
-    const result = z
-      .object({ result: z.object({ kind: z.string() }) })
-      .parse(
-        await this.native.call('commands/execute', {
-          agentId: s.nativeSessionId,
-          line: `/permission ${value}`,
-          submittedAttachments: [],
-        }),
-      );
+    const result = z.object({ result: z.object({ kind: z.string() }) }).parse(
+      await this.native.call('commands/execute', {
+        agentId: s.nativeSessionId,
+        line: `/permission ${value}`,
+        submittedAttachments: [],
+      }),
+    );
     if (result.result.kind !== 'success')
       throw new Error('DSH did not apply the permission preset.');
     const updated = await this.permissions(s);

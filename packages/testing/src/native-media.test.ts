@@ -115,3 +115,28 @@ test('conversation pages skip completed stream fragments without losing active s
     await f.close();
   }
 });
+
+test('DSH native tool messages retain output, error state and image count without publishing model inputs', () => {
+  const [event] = dshEvents({
+    seq: 321,
+    time: 1780000000000,
+    type: 'tool/result',
+    data: {
+      turn: 2,
+      message: {
+        toolCallId: 'call-image',
+        isError: false,
+        content: [
+          { type: 'text', text: 'Image read successfully' },
+          { type: 'image', attachment: { attachmentId: 'native-image', mediaType: 'image/png' } },
+        ],
+      },
+    },
+  });
+  assert.equal(event.kind, 'tool.output');
+  assert.equal(event.data.text, 'Image read successfully');
+  assert.equal(event.data.toolCallId, 'call-image');
+  assert.equal(event.data.isError, false);
+  assert.equal(event.data.imageCount, 1);
+  assert.deepEqual(nativeFiles(event), []);
+});

@@ -168,3 +168,80 @@ fun displayText(value: String): String {
         )
     return text.trim()
 }
+
+data class TaskNotice(
+    val title: String,
+    val summary: String,
+    val details: List<Pair<String, String>>,
+)
+
+/** Only complete, known transport envelopes are interpreted; code examples stay literal. */
+fun taskNotice(text: String): TaskNotice? {
+    val match =
+        Regex(
+                """^\s*<task-notification>([\s\S]*?)</task-notification>\s*(?:<system-reminder>([\s\S]*?)</system-reminder>\s*)?$"""
+            )
+            .matchEntire(text) ?: return null
+    val fields = linkedMapOf<String, String>()
+    var valid = true
+    val rest =
+        Regex(
+                """<(task-id|tool-use-id|output-file|status|summary|task-type|result|usage|diagnostics)>([\s\S]*?)</\1>"""
+            )
+            .replace(match.groupValues[1]) {
+                val key = it.groupValues[1]
+                if (fields.containsKey(key)) valid = false
+                fields[key] = it.groupValues[2].trim()
+                ""
+            }
+    if (!valid || rest.isNotBlank() || fields["summary"].isNullOrBlank()) return null
+    val title =
+        when (fields["status"]) {
+            "completed" -> "Background task completed"
+            "failed" -> "Background task failed"
+            "killed" -> "Background task stopped"
+            else -> "Background task update"
+        }
+    val labels =
+        mapOf(
+            "task-id" to "Task",
+            "tool-use-id" to "Tool call",
+            "output-file" to "Output file",
+            "task-type" to "Task type",
+        )
+    val details =
+        fields
+            .filterKeys { it != "summary" }
+            .map { (key, value) ->
+                (labels[key] ?: key.replaceFirstChar { it.uppercase() }) to
+                    if (key == "usage" || key == "diagnostics")
+                        value
+                            .replace(Regex("</[^>]+>"), "; ")
+                            .replace(Regex("<([^>]+)>"), "$1: ")
+                            .trim()
+                    else value
+            } +
+            match.groupValues[2]
+                .takeIf { it.isNotBlank() }
+                ?.let { listOf("Context" to it.trim()) }
+                .orEmpty()
+    return TaskNotice(title, fields.getValue("summary"), details)
+}
+
+fun messageTimestamp(
+    value: String,
+    zone: java.time.ZoneId = java.time.ZoneId.systemDefault(),
+    locale: java.util.Locale = java.util.Locale.getDefault(),
+): String? =
+    runCatching {
+            java.time.Instant.parse(value)
+                .atZone(zone)
+                .format(
+                    java.time.format.DateTimeFormatter.ofLocalizedDateTime(
+                            java.time.format.FormatStyle.MEDIUM,
+                            java.time.format.FormatStyle.SHORT,
+                        )
+                        .withLocale(locale)
+                )
+        }
+        .getOrNull()

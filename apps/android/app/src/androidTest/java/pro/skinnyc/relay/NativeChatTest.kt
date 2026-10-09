@@ -136,6 +136,61 @@ class NativeChatTest {
     }
 
     @Test
+    fun taskNotificationsAndMessageTimesRenderAsConversation() {
+        compose.waitUntil(10000) { liveSocket != null }
+        val stamp = "2026-10-09T15:35:42Z"
+        fun emit(id: String, seq: Int, kind: String, text: String) {
+            liveSocket!!.send(
+                json(
+                        "type" to "event",
+                        "event" to
+                            json(
+                                "id" to id,
+                                "sequence" to seq,
+                                "sessionId" to "test-session",
+                                "timestamp" to stamp,
+                                "kind" to kind,
+                                "data" to json("text" to text),
+                            ),
+                    )
+                    .toString()
+            )
+        }
+        emit("sent-time", 100, "user.message", "Check the build")
+        emit("reply-time", 101, "assistant.message", "The build passed")
+        emit(
+            "task-time",
+            102,
+            "user.message",
+            "<task-notification><status>completed</status><summary>Checks complete</summary><result>All tests passed</result></task-notification>",
+        )
+        compose.waitUntil(10000) {
+            compose
+                .onAllNodesWithText("Background task completed")
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        compose.onNodeWithText("Sent · ${messageTimestamp(stamp)}").assertExists()
+        assertEquals(
+            2,
+            compose
+                .onAllNodesWithText("Received · ${messageTimestamp(stamp)}")
+                .fetchSemanticsNodes()
+                .size,
+        )
+        compose.onNodeWithText("Background task completed").performClick()
+        compose.onNodeWithText("All tests passed").assertExists()
+        InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot().let { bitmap ->
+            File(ctx.getExternalFilesDir(null), "native-message-times.png").outputStream().use {
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
+            }
+            bitmap.recycle()
+        }
+
+        compose.onNodeWithText("<task-notification>", substring = true).assertDoesNotExist()
+    }
+
+    @Test
     fun launcherResumeDoesNotImport() {
         scenario.onActivity {
             it.onNewIntent(Intent(it, MainActivity::class.java).setAction(Intent.ACTION_MAIN))

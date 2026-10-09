@@ -562,6 +562,30 @@ fun Chat(vm: RelayModel, modifier: Modifier) {
 @Composable
 fun Message(vm: RelayModel, event: ChatEvent) {
     val user = event.kind == "user.message"
+    val notice = if (user) taskNotice(event.text) else null
+    if (notice != null) {
+        var expanded by remember(event.id) { mutableStateOf(false) }
+        Column {
+            TextButton(onClick = { expanded = !expanded }) {
+                Icon(if (expanded) Icons.Outlined.ExpandMore else Icons.Outlined.ChevronRight, null)
+                Text(notice.title)
+            }
+            Text(notice.summary, style = MaterialTheme.typography.bodyMedium)
+            MessageTime(event, "Received")
+            if (expanded)
+                notice.details.forEach { (label, value) ->
+                    Text(
+                        label,
+                        style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                    SelectionContainerCompat {
+                        Text(value, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+        }
+        return
+    }
     val activity =
         event.kind.startsWith("tool.") ||
             event.kind in listOf("diff", "file.change", "reasoning.summary")
@@ -655,17 +679,32 @@ fun Message(vm: RelayModel, event: ChatEvent) {
         }
         val context = LocalContext.current
         Row(verticalAlignment = Alignment.CenterVertically) {
-            if (!user)
-                Text(
-                    vm.session?.agent ?: "Agent",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            Column(Modifier.weight(1f)) {
+                if (!user)
+                    Text(
+                        vm.session?.agent ?: "Agent",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                MessageTime(event, if (user) "Sent" else "Received")
+            }
             ActionIcon(Icons.Outlined.ContentCopy, "Copy message") {
                 (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
                     .setPrimaryClip(ClipData.newPlainText("Message", text))
             }
         }
+    }
+}
+
+@Composable
+fun MessageTime(event: ChatEvent, direction: String) {
+    messageTimestamp(event.data.str("timestamp"))?.let { time ->
+        Text(
+            "$direction · $time",
+            modifier = Modifier.padding(vertical = 4.dp),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

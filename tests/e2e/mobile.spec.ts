@@ -1350,7 +1350,7 @@ test('Claude commands and background notifications render as readable mobile cha
   const texts = [
     '<command-name>/goal</command-name><command-message>goal</command-message><command-args>Make the project production ready by morning.</command-args>',
     '<local-command-stdout>Goal set: Make the project production ready by morning.</local-command-stdout>',
-    '<task-notification><task-id>background-check</task-id><tool-use-id>call-123</tool-use-id><output-file>/tmp/claude/session/tasks/background-check.output</output-file><status>completed</status><summary>Background integration checks completed (exit code 0)</summary></task-notification>',
+    '<task-notification><task-id>background-check</task-id><tool-use-id>call-123</tool-use-id><output-file>/tmp/claude/session/tasks/background-check.output</output-file><status>completed</status><summary>Background integration checks completed (exit code 0)</summary><result>All tests pass. No production changes.</result></task-notification>',
   ];
   await page.route('**/events?*', (route) =>
     route.fulfill({
@@ -1382,6 +1382,9 @@ test('Claude commands and background notifications render as readable mobile cha
   await expect(details.locator('dd').filter({ hasText: '/tmp/claude/' })).toBeHidden();
   await details.locator('summary').click();
   await expect(details.locator('dd').filter({ hasText: '/tmp/claude/' })).toBeVisible();
+  await expect(
+    details.locator('dd').filter({ hasText: 'All tests pass. No production changes.' }),
+  ).toBeVisible();
   await details.locator('summary').click();
   for (const width of [320, 390, 430, 768, 1440]) {
     await page.setViewportSize({ width, height: 900 });

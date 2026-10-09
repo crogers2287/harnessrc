@@ -8,6 +8,43 @@ import org.junit.Test
 
 class ProtocolTest {
     @Test
+    fun taskNotificationRetainsResultWithoutTransportMarkup() {
+        val notice =
+            taskNotice(
+                "<task-notification><task-id>t1</task-id><status>completed</status><summary>Checks complete</summary><result>[\"Tests pass\"]</result></task-notification>"
+            )!!
+        assertEquals("Background task completed", notice.title)
+        assertEquals("Checks complete", notice.summary)
+        assertTrue(notice.details.contains("Result" to "[\"Tests pass\"]"))
+        assertNull(
+            taskNotice(
+                "```xml\n<task-notification><summary>Example</summary></task-notification>\n```"
+            )
+        )
+        assertNull(
+            taskNotice(
+                "<task-notification><summary>First</summary><summary>Second</summary></task-notification>"
+            )
+        )
+        assertNull(taskNotice("<task-notification><summary>Partial"))
+        assertNull(taskNotice("<div>Keep code</div>"))
+    }
+
+    @Test
+    fun messageTimesUseNativeTimestampAndPhoneTimezone() {
+        val value =
+            messageTimestamp(
+                "2026-10-09T15:35:42Z",
+                java.time.ZoneId.of("America/New_York"),
+                java.util.Locale.US,
+            )!!
+        assertTrue(value.contains("11:35"))
+        assertTrue(value.contains("2026"))
+        assertNull(messageTimestamp(""))
+        assertNull(messageTimestamp("not a timestamp"))
+    }
+
+    @Test
     fun sessionsSortWorkingFirstThenAttentionThenIdleByNewestActivity() {
         fun session(id: String, status: String, time: String, pinned: Boolean = false) =
             Session(

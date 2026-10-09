@@ -100,3 +100,16 @@ test('Claude reverse-order command envelopes normalize without hiding literal XM
   ])
     assert.deepEqual(presentUserMessage(value), { text: value });
 });
+
+test('Claude background task result payload is preserved in activity details', () => {
+  const result = presentUserMessage(
+    '<task-notification><task-id>t1</task-id><status>completed</status><summary>Checks complete</summary><result>["Tests pass", "No deployment"]</result></task-notification>',
+  );
+  assert.equal(result.activity?.title, 'Background task completed');
+  assert.equal(result.text, 'Checks complete');
+  assert.ok(
+    result.activity?.details.some(
+      (d) => d.label === 'Result' && d.value === '["Tests pass", "No deployment"]',
+    ),
+  );
+});

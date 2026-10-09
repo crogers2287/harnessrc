@@ -72,3 +72,11 @@ The screenshot uses isolated fixture conversation content. The Android input tes
 Install the signed 0.1.1 APK over 0.1.0 to retain drafts and settings. Native changes require installing the APK update; refreshing the web app does not update the Android client.
 
 0.1.1 validation: nine unit tests and nine Android emulator integration tests passed, including preserved scroll offset across messages/tools/repeated idle refreshes, repeated Back, and launcher re-entry/recreation. Real Android SEND → Cancel → Home → launcher was also checked with UI Automator: the import dialog did not return. Android lint and signed release build passed. Physical-device confirmation remains outstanding.
+
+### 0.1.2 conversation presentation
+
+Claude background-task notifications, including native result payloads, render as expandable task summaries instead of user-message XML. Results and diagnostic fields remain available; complete recognized envelopes are formatted, while code examples, partial data and unrecognized structures remain literal. Stored source events are unchanged. The web formatter also accepts the result field.
+
+User messages display Sent and agent messages display Received with the source event date/time in the phone timezone and locale. Missing/invalid native timestamps are omitted rather than replaced with the current time. This is the recorded event time, not a new delivery receipt. Install 0.1.2 over the existing Android app.
+
+0.1.2 validation: 11 native unit tests and all 10 Android emulator integration tests passed, including task-result expansion and sent/received timestamps. The mobile web task-notification rendering test passed across the configured phone/tablet/desktop widths. An emulator System UI ANR initially obscured two native focus/clipboard tests; restarting that emulator component resolved the interference, and the complete suite then passed.
