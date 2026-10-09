@@ -11,7 +11,7 @@ import {
   type Task,
   type Interaction,
 } from '@harnessrc/protocol';
-import { DshClient } from './dsh.ts';
+import { DshClient, type DshAttachment } from './dsh.ts';
 
 export const dshRowSchema = z.object({
   sessionId: z.string(),
@@ -130,7 +130,22 @@ export class DshAdapter implements Adapter {
     private credential: () => Promise<string>,
     private emit: (event: SourceEvent) => void,
     private questions?: DshQuestions,
-  ) {}
+    private attachment?: (session: Session, id: string) => DshAttachment,
+    private decorate?: (session: Session, event: SourceEvent) => SourceEvent,
+  ) {
+    this.capabilities.attachFiles = !!attachment;
+  }
+  private async input(s: Session, t: Pick<Task, 'id' | 'prompt' | 'attachments'>) {
+    // Resolve and verify ALL owners/checksums before performing any native uploads.
+    const files = t.attachments.map((id) => {
+      if (!this.attachment) throw new Error('DSH attachment storage is unavailable');
+      return this.attachment(s, id);
+    });
+    return this.native.content(s.nativeSessionId, t.prompt, files);
+  }
+  private events(s: Session, input: unknown) {
+    return dshEvents(input).map((event) => this.decorate?.(s, event) ?? event);
+  }
   async row(s: Session) {
     const rows = z.object({ items: z.array(dshRowSchema) }).parse(await this.native.list()).items;
     const row = rows.find((r) => r.sessionId === s.nativeSessionId);
@@ -202,19 +217,25 @@ export class DshAdapter implements Adapter {
     for (const e of fresh) this.records.set(e.seq, e);
     this.last = p.asOfSeq;
     setTimeout(() => void this.connect(s), 0);
-    return fresh.flatMap(dshEvents);
+    return fresh.flatMap((e) => this.events(s, e));
   }
   async send(s: Session, t: Task) {
-    if (t.attachments.length) throw new Error('DSH attachments are not connected yet');
     if (!['idle', 'done'].includes(await this.turnState(s)))
       throw new DeliveryDeferred('DSH agent is busy');
     this.watch(s);
-    await this.native.prompt(s.nativeSessionId, t.id, t.prompt, 'queue');
+    await this.native.prompt(s.nativeSessionId, t.id, await this.input(s, t), 'queue');
     return { correlation: t.id };
   }
-  async steer(s: Session, prompt: string) {
+  async steer(
+    s: Session,
+    prompt: string,
+    _images?: string[],
+    input?: Pick<Task, 'id' | 'prompt' | 'attachments'>,
+  ) {
     if ((await this.turnState(s)) !== 'working') throw new Error('DSH active turn has ended');
-    await this.native.prompt(s.nativeSessionId, randomUUID(), prompt, 'steer');
+    const task = input ?? { id: randomUUID(), prompt, attachments: [] };
+    this.watch(s);
+    await this.native.prompt(s.nativeSessionId, task.id, await this.input(s, task), 'steer');
   }
   async reconcile(s: Session, t: Task): Promise<'running' | 'completed' | 'failed' | 'uncertain'> {
     this.touched = Date.now();
@@ -283,11 +304,11 @@ export class DshAdapter implements Adapter {
           if (envelope.type !== 'item') return;
           const v = envelope.value;
           if (v?.type === 'event') {
-            for (const e of dshEvents(v.event)) this.emit(e);
+            for (const e of this.events(s, v.event)) this.emit(e);
             return;
           }
           if (v?.type === 'snapshot') {
-            for (const r of v.records ?? []) for (const e of dshEvents(r.event)) this.emit(e);
+            for (const r of v.records ?? []) for (const e of this.events(s, r.event)) this.emit(e);
             const a = v.assistantStream?.activeAttempt;
             if (a) {
               active = { id: a.attemptId, turn: a.turn, step: a.step };

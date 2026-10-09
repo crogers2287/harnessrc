@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
-import type { Session, Task } from '@harnessrc/protocol';
+import type { Session, Task, SourceEvent } from '@harnessrc/protocol';
 import type { Store } from './index.ts';
 export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 export type Attachment = {
@@ -99,6 +99,31 @@ export class Attachments {
       throw new Error('This attachment is part of a saved message');
     unlinkSync(path.join(this.root, String(row.filename)));
     this.store.db.prepare('DELETE FROM attachments WHERE id=?').run(id);
+  }
+  /** Native correlation, never prompt similarity, binds DSH echoes to uploaded files. */
+  nativeEvent(session: Session, event: SourceEvent): SourceEvent {
+    if (event.kind !== 'user.message' || typeof event.data.requestId !== 'string') return event;
+    const requestId = event.data.requestId;
+    const task = this.store
+      .tasks(session.id)
+      .find((t) => t.id === requestId && t.generation === session.generation);
+    const ids =
+      task?.attachments ??
+      this.store.db
+        .prepare(
+          `
+      SELECT m.attachment_id FROM message_attachments m
+      JOIN message_receipts r ON r.request_id=m.request_id
+      WHERE m.request_id=? AND r.session_id=? ORDER BY m.rowid`,
+        )
+        .all(requestId, session.id)
+        .map((r) => String(r.attachment_id));
+    if (!ids.length) return event;
+    const attachments = ids.map((id) => {
+      const a = this.get(session, id);
+      return { id, name: a.name, mime: a.mime, size: a.size };
+    });
+    return { ...event, data: { ...event.data, attachments } };
   }
   imagePaths(session: Session, ids: string[]) {
     return ids.flatMap((id) => {

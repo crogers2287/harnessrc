@@ -656,12 +656,20 @@ function Conversation({
       setReceiptId(_result?.task?.id);
       if (submitted.mode === 'queue')
         setDraft((current) => (current === submitted.prompt ? '' : current));
-      else outgoing.finish(submitted.key, 'confirmed', _result?.task?.id);
+      else
+        outgoing.finish(
+          submitted.key,
+          'confirmed',
+          _result?.task?.id,
+          session.harness === 'dsh' && _result?.mode === 'steer' ? 'next-step' : undefined,
+        );
       attachments.clear(submitted.attachments);
       submission.current = undefined;
       setNotice(
         _result?.mode === 'steer'
-          ? 'Active turn updated.'
+          ? session.harness === 'dsh'
+            ? 'Steering accepted. DSH will apply it at the next step.'
+            : 'Active turn updated.'
           : submitted.mode === 'queue'
             ? 'Queued for a later turn.'
             : 'Message sent.',

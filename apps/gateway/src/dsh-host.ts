@@ -2,6 +2,7 @@ import { DshQuestions } from '../../../packages/adapters/src/dsh-questions.ts';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { z } from 'zod';
+import { Attachments } from '../../../packages/storage/src/attachments.ts';
 import { Store } from '@harnessrc/storage';
 import { type Session, capabilities } from '@harnessrc/protocol';
 import { DshClient, dshCredential } from '../../../packages/adapters/src/dsh.ts';
@@ -19,10 +20,12 @@ export class DshHost {
   connected = false;
   diagnostic: string | undefined;
   private refreshing?: Promise<void>;
+  private attachmentSupport?: boolean;
   private credential: () => Promise<string>;
   constructor(
     public config: z.infer<typeof dshHostSchema>,
     private store: Store,
+    private attachments?: Attachments,
   ) {
     this.credential = dshCredential(config.endpoint, config.tokenFile);
     this.native = new DshClient(config.endpoint, this.credential);
@@ -37,6 +40,8 @@ export class DshHost {
     try {
       void this.questions.start();
       const rows = z.object({ items: z.array(dshRowSchema) }).parse(await this.native.list()).items;
+      if (this.attachments && this.attachmentSupport === undefined)
+        this.attachmentSupport = await this.native.supportsAttachments();
       this.connected = true;
       this.diagnostic = undefined;
       const seen = new Set<string>();
@@ -72,6 +77,7 @@ export class DshHost {
             'steerActiveTurn',
             'queueTask',
             'answerQuestion',
+            ...(this.attachments && this.attachmentSupport ? ['attachFiles' as const] : []),
           ]),
           lastActivity: new Date(row.updatedAt).toISOString(),
           preview: old?.preview ?? '',
@@ -96,6 +102,15 @@ export class DshHost {
               this.credential,
               (event) => this.store.event(this.store.session(id), event),
               this.questions,
+              this.attachments && this.attachmentSupport
+                ? (session, id) => {
+                    const { row, bytes } = this.attachments!.read(session, id);
+                    return { name: String(row.name), mime: String(row.mime), bytes };
+                  }
+                : undefined,
+              this.attachments && this.attachmentSupport
+                ? (session, event) => this.attachments!.nativeEvent(session, event)
+                : undefined,
             ),
           );
       }
@@ -110,6 +125,7 @@ export class DshHost {
       }
     } catch (error) {
       this.connected = false;
+      this.attachmentSupport = undefined;
       this.diagnostic = (error as Error).message;
       for (const s of this.store.sessions().filter((s) => s.hostId === this.config.id)) {
         s.connected = false;

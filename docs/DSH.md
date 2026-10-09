@@ -34,7 +34,7 @@ Validate with `systemctl --user is-active dsh-w6800`, the native web model picke
 
 ## Limits
 
-DSH native question replies are connected through the bridge below. Command approvals, interruption, attachments and reasoning controls remain unsupported. Pending live questions block task dispatch. The existing DSH web host owns its lifecycle, independently of phone connections. Optional host plugins can still report their own configuration errors. Relay does not claim full DSH parity.
+DSH native question replies are connected through the bridge below. Command approvals, interruption and reasoning controls remain unsupported. Native image/file input is connected for Send, Queue and Steer when the installed host exposes its upload route. Pending live questions block task dispatch. The existing DSH web host owns its lifecycle, independently of phone connections. Optional host plugins can still report their own configuration errors. Relay does not claim full DSH parity.
 
 Protocol verified against Fred's installed MIT-licensed source: `packages/api/session-controller`, `packages/client/connection`, and compact assistant stream definitions in `packages/llm/llm`. No third-party implementation code was copied.
 
@@ -61,3 +61,14 @@ This suspends DSH's unattended timer while the Relay gateway connection stays up
 Relay retires uncertain DSH cards once a healthy native question subscription confirms the request no longer exists. It never retries an uncertain answer or invents a successful response. Questions that already timed out cannot be reopened as the original blocking tool call; native continued-question replies remain a separate unsupported pathway.
 
 Regression verification covers a held deadline, duplicate replay, reconnection/reclaim, acknowledgement-before-release, claim-stream completion, and retiring an uncertain card without another prompt. Fred's running server accepted the exact attachWait stream argument shape; the installed native TimedQuestionWait was separately verified to remain live beyond its deadline while held.
+
+
+### Image/file input and steering receipts
+
+Relay submits supported images as native `session/prompt` image parts (MIME, original name and base64 bytes). Other files are uploaded to DSH's authenticated `/api/session/uploadFileBinary?sessionId=...&name=...` route, then referenced by the returned session-scoped receipt. DSH owns durable attachment admission. Relay checks each upload's session, native owner, generation and checksum before dispatch; no host-local path text substitutes for native attachments. The installed route is feature-detected with a non-mutating GET (405, Allow: POST).
+
+Steering uses `mode: steer` and the **same durable Relay request ID** on the native prompt. DSH applies this at its next step boundary, potentially after an in-flight tool/model call. An acceptance receipt is not proof the model has consumed the input. Relay displays “Steering accepted” while awaiting the exact native echo; that echo carries the uploaded previews. Retries with the same Relay key do not resubmit. A lost acknowledgement remains uncertain.
+
+DSH's `$events/result` success response legitimately omits `value` for a void return. Relay accepts that envelope; `session/prompt` still requires `{accepted:true}`. The earlier required-value parser could report “Invalid request” after DSH had already accepted a question answer.
+
+On Fred, the `llm-pi-ai` provider catalog incorrectly declared `cfrproxy` model `fred/flash-next` with `input: [text]`. Its entry was corrected to `[text, image]` through `settings/mutate`, fenced by the settings revision; no agent restart or blanket provider override was used. The isolated native validation session then read a proof string from a file and described an uploaded icon using Flash Next. For other deployments, inspect the model's own catalog entry before assuming an image admission rejection describes the actual upstream model capability.

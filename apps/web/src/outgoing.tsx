@@ -12,6 +12,7 @@ export function useOutgoing(sessionId: string, events: Event[]) {
           z.object({
             key: z.string(),
             nativeRequestId: z.string().optional(),
+            delivery: z.literal('next-step').optional(),
             prompt: z.string(),
             attachments: z
               .array(z.object({ id: z.string(), name: z.string(), mime: z.string() }))
@@ -66,8 +67,15 @@ export function useOutgoing(sessionId: string, events: Event[]) {
         ...old.filter((x) => x.key !== key),
         { key, prompt, attachments, started: new Date().toISOString(), state: 'sending' },
       ]),
-    finish: (key: string, state: Outgoing['state'], nativeRequestId?: string) =>
-      setItems((old) => old.map((x) => (x.key === key ? { ...x, state, nativeRequestId } : x))),
+    finish: (
+      key: string,
+      state: Outgoing['state'],
+      nativeRequestId?: string,
+      delivery?: Outgoing['delivery'],
+    ) =>
+      setItems((old) =>
+        old.map((x) => (x.key === key ? { ...x, state, nativeRequestId, delivery } : x)),
+      ),
     dismiss: (key: string) => setItems((old) => old.filter((x) => x.key !== key)),
   };
 }
@@ -101,7 +109,9 @@ export function OutgoingMessages({
             {item.state === 'sending'
               ? 'Sending…'
               : item.state === 'confirmed'
-                ? 'Sent · waiting for conversation update'
+                ? item.delivery === 'next-step'
+                  ? 'Steering accepted · waiting for the next agent step'
+                  : 'Sent · waiting for conversation update'
                 : 'Delivery not confirmed. Check the conversation before sending again.'}
             {item.state === 'uncertain' && (
               <>

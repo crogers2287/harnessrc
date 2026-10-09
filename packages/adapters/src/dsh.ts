@@ -5,10 +5,16 @@ const responseSchema = z.object({
   type: z.literal('server-response'),
   rpcId: z.string(),
   result: z.discriminatedUnion('ok', [
-    z.object({ ok: z.literal(true), value: z.unknown() }),
+    z.object({ ok: z.literal(true), value: z.unknown().optional() }),
     z.object({ ok: z.literal(false), error: z.object({ code: z.string(), message: z.string() }) }),
   ]),
 });
+
+export type DshContent =
+  | { type: 'text'; text: string }
+  | { type: 'image'; mediaType: string; data: string; name: string }
+  | { type: 'file'; receiptId: string };
+export type DshAttachment = { name: string; mime: string; bytes: Buffer };
 
 /** Native DSH Typert transport. Never starts another host or resumes via a second writer. */
 export class DshClient {
@@ -42,7 +48,14 @@ export class DshClient {
     if (!response.ok) throw new Error(`DSH request failed (${response.status})`);
     const data = responseSchema.parse(await response.json());
     if (data.rpcId !== rpcId) throw new Error('DSH response identity mismatch');
-    if (!data.result.ok) throw new Error(`DSH ${data.result.error.code}`);
+    if (!data.result.ok) {
+      // Give a useful model-selection error without exposing arbitrary native diagnostics.
+      if (data.result.error.code === 'session/attachment-invalid')
+        throw new Error(
+          'DSH rejected the attachment. Check the file format and select an image-capable model for images.',
+        );
+      throw new Error(`DSH ${data.result.error.code}`);
+    }
     return data.result.value;
   }
   list() {
@@ -56,12 +69,71 @@ export class DshClient {
       request: { sessionId, provider, model, ...(reasoningEffort ? { reasoningEffort } : {}) },
     });
   }
-  /** Caller supplies its durable request ID; the native host deduplicates prompt admission. */
-  prompt(sessionId: string, requestId: string, text: string, mode: 'queue' | 'steer') {
-    if (!sessionId || !requestId || !text.trim()) throw new Error('DSH prompt is incomplete');
-    return this.call('session/prompt', {
-      request: { sessionId, requestId, mode, content: [{ type: 'text', text }] },
+  /** Non-mutating feature probe: the installed binary owns this route. */
+  async supportsAttachments() {
+    const cookie = await this.credential();
+    if (!cookie || /[\r\n]/.test(cookie)) return false;
+    const response = await fetch(new URL('/api/session/uploadFileBinary', this.endpoint), {
+      method: 'GET',
+      redirect: 'manual',
+      signal: AbortSignal.timeout(10000),
+      headers: { Cookie: cookie },
     });
+    await response.body?.cancel();
+    return response.status === 405 && response.headers.get('allow') === 'POST';
+  }
+  /** DSH's authenticated raw-byte upload returns a session-scoped file receipt. */
+  async upload(sessionId: string, file: DshAttachment) {
+    const cookie = await this.credential();
+    if (!cookie || /[\r\n]/.test(cookie)) throw new Error('DSH authentication is not configured');
+    const url = new URL('/api/session/uploadFileBinary', this.endpoint);
+    url.search = new URLSearchParams({ sessionId, name: file.name }).toString();
+    const response = await fetch(url, {
+      method: 'POST',
+      redirect: 'error',
+      signal: AbortSignal.timeout(30000),
+      headers: { 'Content-Type': 'application/octet-stream', Cookie: cookie },
+      body: new Uint8Array(file.bytes),
+    });
+    if (!response.ok) throw new Error(`DSH file upload failed (${response.status})`);
+    const result = z
+      .discriminatedUnion('ok', [
+        z.object({ ok: z.literal(true), value: z.object({ receiptId: z.string().min(1) }) }),
+        z.object({ ok: z.literal(false), error: z.object({ code: z.string() }) }),
+      ])
+      .parse(await response.json());
+    if (!result.ok) throw new Error(`DSH file upload rejected (${result.error.code})`);
+    return result.value.receiptId;
+  }
+  async content(sessionId: string, text: string, files: DshAttachment[]): Promise<DshContent[]> {
+    const content: DshContent[] = text.trim() ? [{ type: 'text', text }] : [];
+    for (const file of files) {
+      if (['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.mime))
+        content.push({
+          type: 'image',
+          mediaType: file.mime,
+          data: file.bytes.toString('base64'),
+          name: file.name,
+        });
+      else content.push({ type: 'file', receiptId: await this.upload(sessionId, file) });
+    }
+    return content;
+  }
+  /** Caller supplies its durable request ID; the native host deduplicates prompt admission. */
+  prompt(
+    sessionId: string,
+    requestId: string,
+    input: string | DshContent[],
+    mode: 'queue' | 'steer',
+  ) {
+    const content = typeof input === 'string' ? [{ type: 'text' as const, text: input }] : input;
+    if (!sessionId || !requestId || !content.some((p) => p.type !== 'text' || p.text.trim()))
+      throw new Error('DSH prompt is incomplete');
+    return this.call('session/prompt', { request: { sessionId, requestId, mode, content } }).then(
+      (value) => {
+        z.object({ accepted: z.literal(true) }).parse(value);
+      },
+    );
   }
 }
 

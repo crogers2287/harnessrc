@@ -179,7 +179,12 @@ export type Adapter = {
   ) => void;
   respond?: (session: Session, interaction: Interaction, response: unknown) => Promise<void>;
   interactions?: (session: Session) => Promise<InteractionInput[]>;
-  steer?: (session: Session, prompt: string, images?: string[]) => Promise<void>;
+  steer?: (
+    session: Session,
+    prompt: string,
+    images?: string[],
+    input?: Pick<Task, 'id' | 'prompt' | 'attachments'>,
+  ) => Promise<void>;
   interrupt?: (session: Session) => Promise<void>;
 };
 export function redact(value: unknown): unknown {

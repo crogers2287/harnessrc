@@ -58,12 +58,12 @@ export class Runtime extends EventEmitter {
         daemon.hostId,
         new CodexLinks(daemon.hostId, store, new CodexDaemon(daemon.socket)),
       );
+    this.attachments = new Attachments(store, config.dataDir);
     for (const host of config.dsh ?? []) {
       if (this.clients.has(host.id) || this.dshHosts.has(host.id))
         throw new Error('DSH host IDs must be unique');
-      this.dshHosts.set(host.id, new DshHost(host, store));
+      this.dshHosts.set(host.id, new DshHost(host, store, this.attachments));
     }
-    this.attachments = new Attachments(store, config.dataDir);
     this.queue = new TaskQueue(
       store,
       (id) => this.adapters.get(id),

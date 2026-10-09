@@ -68,6 +68,7 @@ export async function sendMessage(
         session,
         prompt,
         runtime.attachments.imagePaths(session, value.attachments),
+        { id: value.idempotencyKey, prompt: value.prompt, attachments: value.attachments },
       );
       result = { mode: 'steer' };
     } else if (state === 'idle' || state === 'done') {

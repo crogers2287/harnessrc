@@ -2,6 +2,7 @@ import type { Event } from '@harnessrc/protocol';
 export type Outgoing = {
   key: string;
   nativeRequestId?: string;
+  delivery?: 'next-step';
   prompt: string;
   attachments?: { id: string; name: string; mime: string }[];
   started: string;

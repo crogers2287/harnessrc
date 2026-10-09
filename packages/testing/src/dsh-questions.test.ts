@@ -38,7 +38,7 @@ test('DSH pending waterfall replays, validates exact answers, claims once, and n
     for await (const chunk of req) raw += chunk;
     const body = JSON.parse(raw);
     calls.push(body);
-    let value: any = {};
+    let value: any = undefined;
     if (body.method === 'session/list')
       value = {
         items: [{ sessionId: sid, updatedAt: Date.now(), agentAvailable: true, running: true }],
@@ -98,7 +98,7 @@ test('DSH pending waterfall replays, validates exact answers, claims once, and n
     assert.equal(f.gateway.store.interaction(i.id).status, 'pending');
     const response = {
       answers: [
-        { id: 'layout', selected: ['Compact'] },
+        { id: 'layout', selected: [], custom: 'Use the installed skill' },
         { id: 'features', selected: ['Voice', 'Files'], custom: 'Keep shortcuts' },
       ],
     };
@@ -146,7 +146,7 @@ test('timed DSH questions hold beyond their deadline and release only after nati
       JSON.stringify({
         type: 'server-response',
         rpcId: body.rpcId,
-        result: { ok: true, value: {} },
+        result: { ok: true },
       }),
     );
   });
