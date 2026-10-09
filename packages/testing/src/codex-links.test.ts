@@ -193,10 +193,11 @@ test('steer targets the proved native active turn and never falls back to a new 
       return original(method, params);
     };
     assert.equal(await f.links.turnState(f.client, session), 'working');
-    await f.links.steer(f.client, session, 'Also check mobile');
+    await f.links.steer(f.client, session, 'Also check mobile', ['/uploads/screenshot.png']);
     assert.equal(steers.length, 1);
     assert.equal(steers[0].threadId, 'thread-b');
     assert.equal(steers[0].expectedTurnId, 'turn-current');
+    assert.deepEqual(steers[0].input[1], { type: 'localImage', path: '/uploads/screenshot.png' });
     active = false;
     assert.equal(await f.links.turnState(f.client, session), 'idle');
     await assert.rejects(() => f.links.steer(f.client, session, 'Too late'), /no longer working/);

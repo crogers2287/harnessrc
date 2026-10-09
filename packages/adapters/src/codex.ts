@@ -93,8 +93,8 @@ export class CodexBridgeAdapter implements Adapter {
   async respond(session: Session, interaction: Interaction, response: unknown) {
     await this.call(session, 'respond', { nativeRequestId: interaction.nativeRequestId, response });
   }
-  async steer(session: Session, prompt: string) {
-    await this.call(session, 'steer', { prompt });
+  async steer(session: Session, prompt: string, images: string[] = []) {
+    await this.call(session, 'steer', { prompt, images });
   }
   async interrupt(session: Session) {
     await this.call(session, 'interrupt');

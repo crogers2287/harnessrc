@@ -26,4 +26,4 @@ Readers import emitted supported record types; they do not manufacture reasoning
 
 Next priorities: complete native CLI question routing and upstream owner-bound prompt preconditions; add complete file attachment/diff/subagent contracts; validate Hermes/OpenCode/OMP live readers; test physical devices and native push infrastructure. Browser notifications require an open app; no closed-app push claim.
 
-See [attachment delivery](ATTACHMENTS.md) for same-filesystem configuration, limits, permissions and native file-reader behavior. Image picker/upload is implemented; embedded image-block injection into an existing CLI is not claimed.
+See [attachment delivery](ATTACHMENTS.md) for same-filesystem configuration, limits, permissions and native file-reader behavior. Image picker/upload is implemented; verified Codex native steering also passes native localImage inputs. Other delivery paths use local file references.

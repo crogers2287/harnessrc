@@ -188,17 +188,15 @@ export class CodexLinks {
               });
               for (let offset = 0; offset < loaded.data.length; offset += 4) {
                 const batch = await Promise.all(
-                  loaded.data
-                    .slice(offset, offset + 4)
-                    .map(
-                      async (id: string) =>
-                        (
-                          await this.native.request('thread/read', {
-                            threadId: id,
-                            includeTurns: false,
-                          })
-                        ).thread,
-                    ),
+                  loaded.data.slice(offset, offset + 4).map(
+                    async (id: string) =>
+                      (
+                        await this.native.request('thread/read', {
+                          threadId: id,
+                          includeTurns: false,
+                        })
+                      ).thread,
+                  ),
                 );
                 for (const thread of batch)
                   if (!thread.parentThreadId && typeof thread.name === 'string')
@@ -287,7 +285,7 @@ export class CodexLinks {
     if (['completed', 'failed', 'interrupted'].includes(result.data[0].status)) return 'idle';
     throw new Error('Native turn state is unavailable');
   }
-  async steer(client: HerdrClient, session: Session, prompt: string) {
+  async steer(client: HerdrClient, session: Session, prompt: string, images: string[] = []) {
     await this.assertDelivery(client, session);
     await client.assertBinding(session);
     const result = await this.native.request('thread/turns/list', {
@@ -302,7 +300,10 @@ export class CodexLinks {
       threadId: session.nativeSessionId,
       expectedTurnId: active.id,
       clientUserMessageId: randomUUID(),
-      input: [{ type: 'text', text: prompt }],
+      input: [
+        { type: 'text', text: prompt },
+        ...images.map((path) => ({ type: 'localImage', path })),
+      ],
     });
   }
   unavailable(agents: Agent[]): Agent[] {

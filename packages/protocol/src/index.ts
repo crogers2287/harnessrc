@@ -164,7 +164,7 @@ export type Adapter = {
   ) => Promise<'running' | 'completed' | 'failed' | 'uncertain'>;
   respond?: (session: Session, interaction: Interaction, response: unknown) => Promise<void>;
   interactions?: (session: Session) => Promise<InteractionInput[]>;
-  steer?: (session: Session, prompt: string) => Promise<void>;
+  steer?: (session: Session, prompt: string, images?: string[]) => Promise<void>;
   interrupt?: (session: Session) => Promise<void>;
 };
 export function redact(value: unknown): unknown {

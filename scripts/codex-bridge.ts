@@ -323,6 +323,12 @@ server = net.createServer((socket) => {
           expectedTurnId: state.activeTurn,
           input: [
             { type: 'text', text: z.string().min(1).max(32000).parse(p.prompt), text_elements: [] },
+            ...z
+              .array(z.string().min(1))
+              .max(10)
+              .default([])
+              .parse(p.images)
+              .map((path) => ({ type: 'localImage', path })),
           ],
         });
       }

@@ -64,7 +64,11 @@ export async function sendMessage(
         store.db
           .prepare('INSERT INTO message_attachments VALUES(?,?,?)')
           .run(value.idempotencyKey, id, value.prompt);
-      await adapter.steer(session, prompt);
+      await adapter.steer(
+        session,
+        prompt,
+        runtime.attachments.imagePaths(session, value.attachments),
+      );
       result = { mode: 'steer' };
     } else if (state === 'idle' || state === 'done') {
       result = { mode: 'send', task: await runtime.queue.sendNow(sessionId, value) };

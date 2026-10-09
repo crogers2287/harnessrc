@@ -253,7 +253,8 @@ export class Runtime extends EventEmitter {
                   ? (session) => this.codexLinks.get(hostId)!.assertDelivery(client, session)
                   : undefined,
                 this.codexLinks.get(hostId)?.hasLink(s)
-                  ? (session, prompt) => this.codexLinks.get(hostId)!.steer(client, session, prompt)
+                  ? (session, prompt, images) =>
+                      this.codexLinks.get(hostId)!.steer(client, session, prompt, images)
                   : undefined,
                 this.codexLinks.get(hostId)?.hasLink(s)
                   ? (session) => this.codexLinks.get(hostId)!.turnState(client, session)

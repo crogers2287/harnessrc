@@ -99,6 +99,14 @@ export class Attachments {
     unlinkSync(path.join(this.root, String(row.filename)));
     this.store.db.prepare('DELETE FROM attachments WHERE id=?').run(id);
   }
+  imagePaths(session: Session, ids: string[]) {
+    return ids.flatMap((id) => {
+      const { row } = this.read(session, id);
+      return ['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(String(row.mime))
+        ? [path.join(this.root, String(row.filename))]
+        : [];
+    });
+  }
   prompt(session: Session, task: Pick<Task, 'id' | 'prompt' | 'attachments'>) {
     if (!task.attachments.length) return task.prompt;
     const files = task.attachments.map((id) => {
