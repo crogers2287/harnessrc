@@ -33,7 +33,7 @@ export function DshQuestions({
         const answer = answers[q.id] ?? { selected: [], custom: '' };
         return (
           <fieldset key={q.id} disabled={disabled || submitting}>
-            <legend>{q.question}</legend>
+            <legend className={questions.length === 1 ? 'sr-only' : undefined}>{q.question}</legend>
             {q.detail && (
               <div className="question-detail">
                 <Markdown>{q.detail}</Markdown>

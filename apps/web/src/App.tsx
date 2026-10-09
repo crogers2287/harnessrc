@@ -988,14 +988,12 @@ function Conversation({
             type="button"
             className="composer-hint attention-text pending-jump"
             onClick={() => {
-              document
-                .getElementById(`interaction-${pending[0].id}`)
-                ?.scrollIntoView({
-                  block: 'start',
-                  behavior: matchMedia('(prefers-reduced-motion: reduce)').matches
-                    ? 'instant'
-                    : 'smooth',
-                });
+              document.getElementById(`interaction-${pending[0].id}`)?.scrollIntoView({
+                block: 'start',
+                behavior: matchMedia('(prefers-reduced-motion: reduce)').matches
+                  ? 'instant'
+                  : 'smooth',
+              });
             }}
           >
             <CircleHelp size={16} aria-hidden="true" />
@@ -1112,18 +1110,20 @@ function Conversation({
           </p>
         )}
         <p className="composer-footer" role="status">
-          {busyWithoutSteering
-            ? 'This agent cannot be steered yet. Choose Queue to schedule a follow-up.'
-            : (send.isPending
-                ? send.variables?.mode === 'steer'
-                  ? 'Sending to the active turn…'
-                  : 'Sending your instruction…'
-                : '') ||
-              receiptStatus ||
-              notice ||
-              (!session.capabilities.queueTask
-                ? 'Chat control is waiting for a verified connection.'
-                : '')}
+          {pending.length > 0
+            ? 'Answer the question above to continue.'
+            : busyWithoutSteering
+              ? 'This agent cannot be steered yet. Choose Queue to schedule a follow-up.'
+              : (send.isPending
+                  ? send.variables?.mode === 'steer'
+                    ? 'Sending to the active turn…'
+                    : 'Sending your instruction…'
+                  : '') ||
+                receiptStatus ||
+                notice ||
+                (!session.capabilities.queueTask
+                  ? 'Chat control is waiting for a verified connection.'
+                  : '')}
         </p>
       </div>
     </>
