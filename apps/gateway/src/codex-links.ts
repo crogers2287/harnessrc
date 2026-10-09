@@ -1,11 +1,17 @@
+import { CodexSettings } from '../../../packages/adapters/src/codex-settings.ts';
 import { randomUUID } from 'node:crypto';
 import type { Agent, HerdrClient } from '@harnessrc/herdr';
-import type { Session } from '@harnessrc/protocol';
+import type { Session, Interaction } from '@harnessrc/protocol';
 import type { Store } from '@harnessrc/storage';
 import { nativeModel } from '../../../packages/adapters/src/transcripts.ts';
 import { CodexDaemon } from '../../../packages/adapters/src/codex-daemon.ts';
 
-type Native = { request: CodexDaemon['request']; close?: () => void };
+type Native = {
+  request: CodexDaemon['request'];
+  close?: () => void;
+  questions?: CodexDaemon['questions'];
+  respond?: CodexDaemon['respond'];
+};
 type Link = {
   threadId: string;
   terminalId: string;
@@ -43,6 +49,7 @@ export class CodexLinks {
   diagnostic?: string;
   private tail: Promise<unknown> = Promise.resolve();
   private nextDiscovery = 0;
+  private subscriptions = new Map<string, number>();
   constructor(
     private host: string,
     private store: Store,
@@ -266,6 +273,59 @@ export class CodexLinks {
         throw error;
       }
     });
+  }
+  async interactions(client: HerdrClient, s: Session) {
+    if (!this.native.questions) return [];
+    if (!this.hasLink(s)) throw new Error('Codex binding is not verified');
+    await client.assertBinding(s);
+    // Reattach periodically to recover pending server requests after reconnects.
+    if (Date.now() - (this.subscriptions.get(s.id) ?? 0) > 5000) {
+      const { thread } = await this.native.request('thread/read', { threadId: s.nativeSessionId });
+      if (!['active', 'idle'].includes(thread?.status?.type))
+        throw new Error('Codex thread is not loaded');
+      await this.native.request('thread/resume', {
+        threadId: s.nativeSessionId,
+        excludeTurns: true,
+      });
+      this.subscriptions.set(s.id, Date.now());
+    }
+    return this.native.questions.list(s.nativeSessionId);
+  }
+  async respond(client: HerdrClient, s: Session, interaction: Interaction, response: unknown) {
+    await this.assertDelivery(client, s);
+    await client.assertBinding(s);
+    if (
+      !this.native.respond ||
+      !this.native.questions
+        ?.list(s.nativeSessionId)
+        .some(
+          (i) =>
+            i.nativeRequestId === interaction.nativeRequestId && i.turnId === interaction.turnId,
+        )
+    )
+      throw new Error('Native question is no longer available');
+    await this.native.respond(s.nativeSessionId, interaction.nativeRequestId, response);
+  }
+  settings(client: HerdrClient) {
+    const settings = new CodexSettings(this.native, async (s) => {
+      if (!this.hasLink(s)) throw new Error('Codex binding is not verified');
+      await this.assertDelivery(client, s);
+      await client.assertBinding(s);
+    });
+    return {
+      ...(this.native.questions && this.native.respond
+        ? {
+            interactions: (s: Session) => this.interactions(client, s),
+            respond: (s: Session, i: Interaction, r: unknown) => this.respond(client, s, i, r),
+          }
+        : {}),
+      permissions: (s: Session) => settings.read(s, 'permissions'),
+      setPermissions: (s: Session, value: string, expected: string) =>
+        settings.set(s, 'permissions', value, expected),
+      mode: (s: Session) => settings.read(s, 'mode'),
+      setMode: (s: Session, value: string, expected: string) =>
+        settings.set(s, 'mode', value, expected),
+    };
   }
   hasLink(session: Session) {
     return this.links().some(

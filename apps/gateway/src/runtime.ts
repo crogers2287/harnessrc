@@ -266,6 +266,9 @@ export class Runtime extends EventEmitter {
                 this.codexLinks.get(hostId)?.hasLink(s)
                   ? (session) => this.codexLinks.get(hostId)!.interrupt(client, session)
                   : undefined,
+                this.codexLinks.get(hostId)?.hasLink(s)
+                  ? this.codexLinks.get(hostId)!.settings(client)
+                  : undefined,
               );
           }
           s.capabilities = adapter?.capabilities ?? capabilities([]);
@@ -401,7 +404,8 @@ export class Runtime extends EventEmitter {
                 (i) =>
                   i.route !== 'claude-hook' &&
                   (i.status === 'pending' ||
-                    (i.route === 'dsh-native' && i.status === 'uncertain')) &&
+                    (['dsh-native', 'codex-native'].includes(i.route) &&
+                      i.status === 'uncertain')) &&
                   !ids.has(i.nativeRequestId),
               )) {
               old.status = 'stale';

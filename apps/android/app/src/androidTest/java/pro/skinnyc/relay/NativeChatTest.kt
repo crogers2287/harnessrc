@@ -34,6 +34,7 @@ class NativeChatTest {
     private lateinit var scenario: ActivityScenario<MainActivity>
     private val requests = CopyOnWriteArrayList<RecordedRequest>()
     @Volatile private var pendingQuestion: JSONObject? = null
+    @Volatile private var selectedMode = "default"
     @Volatile private var rejectMessage = false
     @Volatile private var receiptConfirmed = false
     @Volatile private var liveSocket: okhttp3.WebSocket? = null
@@ -46,6 +47,7 @@ class NativeChatTest {
     @Before
     fun setup() {
         requests.clear()
+        selectedMode = "default"
         server = MockWebServer()
         server.dispatcher =
             object : Dispatcher() {
@@ -77,8 +79,11 @@ class NativeChatTest {
                             .setResponseCode(503)
                             .setBody("{\"error\":\"Connection lost\"}")
                     if (path == "/api/interactions/question-1/respond") pendingQuestion = null
+                    if (path.endsWith("/mode") && request.method == "POST") selectedMode = JSONObject(request.body.clone().readUtf8()).getString("value")
                     val body =
                         when {
+                            path.endsWith("/mode") -> """{"supported":true,"current":"$selectedMode","options":[{"value":"default","name":"Build"},{"value":"plan","name":"Plan","description":"Applies to subsequent turns."}]}"""
+                            path.endsWith("/permissions") -> """{"supported":false,"options":[],"reason":"Test session uses host permissions."}"""
                             path == "/api/sessions" -> "{\"sessions\":[$session]}"
                             path == "/api/voice" -> "{\"enabled\":true,\"maxSeconds\":180}"
                             path == "/api/sessions/test-session" ->
@@ -477,6 +482,38 @@ class NativeChatTest {
                 .getJSONArray("selected")
                 .getString(0),
         )
+        assertFalse(requests.any { it.path?.endsWith("/messages") == true })
+    }
+
+    @Test
+    fun sessionPlanModeRequiresConfirmationAndUsesSettingsRoute() {
+        compose.onNodeWithContentDescription("Session details").performClick()
+        compose.waitUntil(15000) { compose.onAllNodesWithText("Plan").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Plan").performScrollTo().performClick()
+        assertFalse(requests.any { it.path?.endsWith("/mode") == true && it.method == "POST" })
+        compose.onNodeWithText("Apply settings").performClick()
+        compose.waitUntil(15000) { requests.any { it.path?.endsWith("/mode") == true && it.method == "POST" } }
+        val body = JSONObject(requests.first { it.path?.endsWith("/mode") == true && it.method == "POST" }.body.readUtf8())
+        assertEquals("plan", body.getString("value"))
+        assertEquals("default", body.getString("expected"))
+        assertTrue(body.getBoolean("confirm"))
+        assertFalse(requests.any { it.path?.endsWith("/messages") == true })
+    }
+
+    @Test
+    fun codexQuestionUsesStructuredAnswersWithoutSendingChat() {
+        pendingQuestion = JSONObject(
+            """{"id":"question-1","type":"free-text","route":"codex-native","status":"pending","expiresAt":"2099-01-01T00:00:00.000Z","prompt":"Which color?","metadata":{"questions":[{"id":"color","question":"Which color?","options":[{"label":"Blue","description":"Use blue"},{"label":"Green","description":"Use green"}]}]}}"""
+        )
+        scenario.onActivity { it.model.reload() }
+        compose.waitUntil(15000) {
+            compose.onAllNodesWithText("Blue").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText("Blue").performScrollTo().performClick()
+        compose.onNodeWithText("Send response").performScrollTo().performClick()
+        compose.waitUntil(15000) { requests.any { it.path == "/api/interactions/question-1/respond" } }
+        val body = JSONObject(requests.first { it.path == "/api/interactions/question-1/respond" }.body.readUtf8())
+        assertEquals("Blue", body.getJSONObject("response").getJSONObject("answers").getJSONObject("color").getJSONArray("answers").getString(0))
         assertFalse(requests.any { it.path?.endsWith("/messages") == true })
     }
 

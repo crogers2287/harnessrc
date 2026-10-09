@@ -1,3 +1,4 @@
+import type { PermissionSettings } from './permissions.ts';
 import { z } from 'zod';
 export const capabilityNames = [
   'readConversation',
@@ -110,7 +111,7 @@ export const interactionInputSchema = z.object({
   default: z.unknown().optional(),
   responseSchema: z.record(z.string(), z.unknown()),
   expiresAt: z.string(),
-  route: z.enum(['claude-hook', 'codex-bridge', 'mock', 'dsh-native']),
+  route: z.enum(['claude-hook', 'codex-bridge', 'codex-native', 'mock', 'dsh-native']),
   metadata: z.record(z.string(), z.unknown()).default({}),
 });
 export type InteractionInput = z.infer<typeof interactionInputSchema>;
@@ -164,6 +165,14 @@ export type Host = {
   diagnostic?: string;
 };
 export type Adapter = {
+  permissions?: (session: Session) => Promise<PermissionSettings>;
+  setPermissions?: (
+    session: Session,
+    value: string,
+    expected: string,
+  ) => Promise<PermissionSettings>;
+  mode?: (session: Session) => Promise<PermissionSettings>;
+  setMode?: (session: Session, value: string, expected: string) => Promise<PermissionSettings>;
   turnState?: (session: Session) => Promise<Session['status']>;
   capabilities: Capabilities;
   read: (session: Session) => Promise<SourceEvent[]>;

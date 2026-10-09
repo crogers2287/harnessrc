@@ -14,7 +14,7 @@ Both clients are first-class Relay clients. A user-facing feature or fix must be
 | Send, Steer, explicit Queue | Implemented | Implemented | Gateway messages API is authoritative |
 | Confirmed receipt without transcript echo | Implemented in this change | Implemented in 0.1.3 | Browser receipt regression / confirmedReceiptUnlocksComposerWithoutResendingOrLosingNewDraft |
 | Uncertain delivery recovery | Retains card, Restore draft / Dismiss | Durable original-key Retry safely | Gap: web does not yet provide the equivalent original-key retry control; Restore draft must not be described as safe retry |
-| Questions, approvals, stale request handling | Implemented | Implemented | Same interaction API; existing CLI Codex question routing remains an adapter limitation, not a client feature |
+| Questions, approvals, stale request handling | Implemented | Implemented | Same interaction API; native request_user_input supported on verified CLI Codex; other async formats and CLI approvals remain limited |
 | Queue edit, cancel, pause/resume | Implemented | Implemented | App.tsx / QueueScreen |
 | Reorder pending tasks | Implemented | Missing | Add native reorder controls against the existing gateway route |
 | Model and session permissions | Implemented | Implemented | Capability gated; confirm permission changes |
@@ -48,3 +48,15 @@ Existing web and Android Stop controls now receive `interruptTurn` for verified 
 Validation: 96 backend tests passed, including exact Codex turn cancellation, rejected stale/replaced owners, DSH idle/missing-session rejection and cancellation acknowledgement. Browser Stop confirmation/route test passed. Native UI code did not change; physical-device Stop validation remains outstanding.
 
 Codex cancellation follows the [official app-server turn/interrupt contract](https://learn.chatgpt.com/docs/app-server), additionally checked against the installed 0.162.0 JSON schema. DSH cancellation was checked against the installed `session-controller` source; it acknowledges cancellation and retains the native inbox.
+
+### Native Codex questions and session settings, 0.1.4
+
+The permissions route uses the adapter contract instead of a DSH-only class check. Verified existing Codex daemon connections expose only allowed native profiles. Custom policies have a stable snapshot identity and a readable label; selecting a preset uses `thread/settings/update`, with ownership checks, confirmation, serialized updates and read-back confirmation. The separate `/mode` route exposes Build/Plan, preserves the model/reasoning effort, and does not modify the permission profile. Both settings apply to subsequent turns.
+
+Web and Android Session details have separate permission and mode controls. DSH retains its existing native permission presets. DSH mode and Claude CLI permission/mode changes remain unsupported. No slash-command chat workaround is used. Codex reads/subscriptions attach to the existing loaded daemon with `thread/resume` without configuration overrides. No second app-server is started.
+
+Existing CLI Codex sessions now receive native `item/tool/requestUserInput` cards. Relay responds using the original JSON-RPC request ID and waits for `serverRequest/resolved`. Replayed requests deduplicate; external answers remove cards; dropped-response delivery becomes uncertain rather than automatically resending. Native questions remain available while the server keeps them pending. A reconnect resubscribes and recovers outstanding requests. This pathway does not claim support for arbitrary dynamic tools, every async question representation, or native CLI command/file approvals.
+
+Live verification used an isolated Codex thread: a genuine request_user_input question appeared, replayed on a second connection after reconnect, accepted the exact structured answer and emitted resolution. Separate profile and mode changes were confirmed through native read-back on that test thread. User sessions were not used for test mutations.
+
+Validation: 104 backend tests pass; TypeScript, ESLint, production web build, Android unit tests, lint, debug/test APKs and signed 0.1.4 build pass. Two phone-size browser regressions verify independent Plan confirmation and exact Codex question responses with no chat submission. Native emulator results and release status are recorded in ANDROID.md. Physical-phone checks remain outstanding.

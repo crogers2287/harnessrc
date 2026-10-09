@@ -32,7 +32,13 @@ export class HerdrCliAdapter implements Adapter {
     ) => Promise<void>,
     private nativeState?: (session: Session) => Promise<Session['status']>,
     private nativeInterrupt?: (session: Session) => Promise<void>,
+    settings?: Pick<
+      Adapter,
+      'permissions' | 'setPermissions' | 'mode' | 'setMode' | 'interactions' | 'respond'
+    >,
   ) {
+    Object.assign(this, settings);
+    this.capabilities.answerQuestion = !!settings?.respond;
     this.capabilities.attachFiles = !!attachmentPrompt;
     this.capabilities.steerActiveTurn = !!nativeSteer;
     this.capabilities.interruptTurn = !!nativeInterrupt;

@@ -500,13 +500,16 @@ fun DetailsScreen(vm: RelayModel, back: () -> Unit) {
     val s = vm.session
     var models by remember(s?.id) { mutableStateOf<JSONObject?>(null) }
     var permissions by remember(s?.id) { mutableStateOf<JSONObject?>(null) }
+    var agentMode by remember(s?.id) { mutableStateOf<JSONObject?>(null) }
+    var settingKind by remember(s?.id) { mutableStateOf("permissions") }
     var loadError by remember(s?.id) { mutableStateOf("") }
-    var permissionChoice by remember { mutableStateOf<JSONObject?>(null) }
+    var permissionChoice by remember(s?.id) { mutableStateOf<JSONObject?>(null) }
     var actionSheet by remember { mutableStateOf(false) }
     LaunchedEffect(s?.id) {
         if (s != null)
             runCatching {
                     permissions = vm.api.api("/api/sessions/${s.id}/permissions")
+                    agentMode = vm.api.api("/api/sessions/${s.id}/mode")
                     if (s.harness == "dsh") models = vm.api.api("/api/sessions/${s.id}/models")
                 }
                 .onFailure { loadError = it.message ?: "Could not load settings" }
@@ -571,28 +574,30 @@ fun DetailsScreen(vm: RelayModel, back: () -> Unit) {
                     Text("Apply model")
                 }
             }
-            permissions?.let { catalog ->
-                HorizontalDivider()
-                Text("Permissions", style = MaterialTheme.typography.titleMedium)
-                if (catalog.optBoolean("supported")) {
-                    Text("Current: ${catalog.str("current")}")
-                    catalog.rows("options").forEach { option ->
-                        OutlinedButton(
-                            enabled = !vm.working && option.str("value") != catalog.str("current"),
-                            onClick = { permissionChoice = option },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Column {
-                                Text(option.str("name"))
-                                if (option.str("description").isNotBlank())
-                                    Text(
-                                        option.str("description"),
-                                        style = MaterialTheme.typography.bodySmall,
-                                    )
+            listOf("permissions" to permissions, "mode" to agentMode).forEach { (kind, settings) ->
+                settings?.let { catalog ->
+                    HorizontalDivider()
+                    Text(if (kind == "mode") "Agent mode" else "Permissions", style = MaterialTheme.typography.titleMedium)
+                    if (catalog.optBoolean("supported")) {
+                        Text("Current: ${catalog.str("currentName").ifBlank { catalog.str("current") }}")
+                        catalog.rows("options").forEach { option ->
+                            OutlinedButton(
+                                enabled = !vm.working && option.str("value") != catalog.str("current"),
+                                onClick = { settingKind = kind; permissionChoice = option },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Column {
+                                    Text(option.str("name"))
+                                    if (option.str("description").isNotBlank())
+                                        Text(
+                                            option.str("description"),
+                                            style = MaterialTheme.typography.bodySmall,
+                                        )
+                                }
                             }
                         }
-                    }
-                } else Text(catalog.str("reason"), style = MaterialTheme.typography.bodyMedium)
+                    } else Text(catalog.str("reason"), style = MaterialTheme.typography.bodyMedium)
+                }
             }
         }
     }
@@ -600,26 +605,26 @@ fun DetailsScreen(vm: RelayModel, back: () -> Unit) {
     permissionChoice?.let { option ->
         AlertDialog(
             onDismissRequest = { permissionChoice = null },
-            title = { Text("Change agent permissions?") },
+            title = { Text(if (settingKind == "mode") "Change agent mode?" else "Change agent permissions?") },
             text = { Text("${option.str("name")}\n${option.str("description")}") },
             confirmButton = {
                 TextButton(
                     enabled = !vm.working,
                     onClick = {
                         vm.operation(
-                            "/api/sessions/${s?.id}/permissions",
+                            "/api/sessions/${s?.id}/${settingKind}",
                             json(
                                 "value" to option.str("value"),
-                                "expected" to permissions?.str("current"),
+                                "expected" to (if (settingKind == "mode") agentMode else permissions)?.str("current"),
                                 "confirm" to true,
                             ),
                         ) {
-                            permissions = it
+                            if (settingKind == "mode") agentMode = it else permissions = it
                             permissionChoice = null
                         }
                     },
                 ) {
-                    Text("Apply permission change")
+                    Text("Apply settings")
                 }
             },
             dismissButton = { TextButton(onClick = { permissionChoice = null }) { Text("Cancel") } },
@@ -944,8 +949,7 @@ fun LaunchScreen(vm: RelayModel, back: () -> Unit) {
                         error = ""
                         scope.launch {
                             try {
-                                val launchRequest =
-                                    json(
+                                val launchRequest = json(
                                         "requestId" to requestId,
                                         "profileId" to profileId,
                                         "cwd" to cwd,

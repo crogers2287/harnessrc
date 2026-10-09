@@ -2,6 +2,7 @@ import { z } from 'zod';
 export const permissionSettingsSchema = z.object({
   supported: z.boolean(),
   current: z.string().optional(),
+  currentName: z.string().optional(),
   reason: z.string().optional(),
   options: z.array(
     z.object({

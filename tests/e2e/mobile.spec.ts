@@ -2014,3 +2014,104 @@ test('Stop current turn requires confirmation and sends only an interrupt reques
   await expect.poll(() => stops).toBe(1);
   await expect(page.locator('.session-action-sheet')).toHaveCount(0);
 });
+
+test('session settings separate permissions and Plan mode with explicit confirmation', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  let mode = 'default';
+  let permission = 'custom:fixture';
+  const writes: any[] = [];
+  for (const kind of ['permissions', 'mode'])
+    await page.route(`**/api/sessions/*/${kind}`, async (route) => {
+      if (route.request().method() === 'POST') {
+        const body = route.request().postDataJSON();
+        writes.push({ kind, ...body });
+        if (kind === 'mode') mode = body.value;
+        else permission = body.value;
+      }
+      await route.fulfill({
+        json: {
+          supported: true,
+          current: kind === 'mode' ? mode : permission,
+          currentName: kind === 'mode' ? mode : 'Custom session permissions',
+          options:
+            kind === 'mode'
+              ? [
+                  { value: 'default', name: 'Build' },
+                  { value: 'plan', name: 'Plan', description: 'Applies to subsequent turns.' },
+                ]
+              : [
+                  { value: ':workspace', name: 'Workspace' },
+                  { value: ':danger-full-access', name: 'Full access / bypass approvals' },
+                ],
+        },
+      });
+    });
+  await pair(page);
+  await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
+  await page.getByRole('button', { name: 'Session details', exact: true }).click();
+  await page.getByLabel('Mode', { exact: true }).selectOption('plan');
+  const modeSection = page.getByRole('region', { name: 'Agent mode' });
+  await expect(modeSection.getByRole('button', { name: 'Apply settings' })).toBeDisabled();
+  await modeSection.getByRole('checkbox').check();
+  await modeSection.getByRole('button', { name: 'Apply settings' }).click();
+  await expect(modeSection.getByRole('status')).toHaveText('Settings saved in the harness.');
+  expect(writes).toEqual([{ kind: 'mode', value: 'plan', expected: 'default', confirm: true }]);
+  await page.screenshot({ path: '/tmp/relay-session-settings-mobile.png', fullPage: true });
+});
+
+test('Codex native question answers use the interaction route instead of a chat turn', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await pair(page);
+  await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
+  let submitted: any;
+  let sends = 0;
+  page.on('request', (r) => {
+    if (r.method() === 'POST' && /\/(messages|tasks|steer)$/.test(r.url())) sends++;
+  });
+  await page.route('**/api/sessions/*', async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    if (data.session)
+      data.interactions = submitted
+        ? []
+        : [
+            {
+              id: 'codex-question',
+              route: 'codex-native',
+              type: 'free-text',
+              status: 'pending',
+              expiresAt: '2099-01-01T00:00:00Z',
+              prompt: 'Which color?',
+              metadata: {
+                questions: [
+                  {
+                    id: 'color',
+                    question: 'Which color?',
+                    options: [
+                      { label: 'Blue', description: 'Use blue' },
+                      { label: 'Green', description: 'Use green' },
+                    ],
+                  },
+                ],
+              },
+            },
+          ];
+    await route.fulfill({ json: data });
+  });
+  await page.route('**/api/interactions/codex-question/respond', async (route) => {
+    submitted = route.request().postDataJSON();
+    await route.fulfill({ json: { ok: true } });
+  });
+  await page.reload();
+  await page.getByRole('radio', { name: /Blue/ }).check();
+  await page.screenshot({ path: '/tmp/relay-codex-question-mobile.png' });
+  await page.getByRole('button', { name: 'Send response', exact: true }).click();
+  await expect
+    .poll(() => submitted)
+    .toEqual({ response: { answers: { color: { answers: ['Blue'] } } } });
+  expect(sends).toBe(0);
+});

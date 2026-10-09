@@ -1,10 +1,12 @@
+import { CodexRequests } from './codex-requests.ts';
 import WebSocket from 'ws';
 import { lstatSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 
-/** Connection to an EXISTING daemon. Never starts/resumes a thread or turn; steering requires an exact active turn. */
+/** Connection to an EXISTING daemon. Live settings attach only to verified loaded threads; steering requires an exact active turn. */
 export class CodexDaemon {
   private ws?: WebSocket;
+  readonly questions = new CodexRequests();
   private connecting?: Promise<void>;
   private pending = new Map<
     string,
@@ -30,7 +32,10 @@ export class CodexDaemon {
       ws.on('message', (raw) => {
         try {
           const response = JSON.parse(raw.toString());
-          if (response.method) return; // This observer does not claim native interactions.
+          if (response.method) {
+            this.questions.receive(response);
+            return;
+          }
           const pending = this.pending.get(String(response.id));
           if (!pending) return;
           clearTimeout(pending.timer);
@@ -42,6 +47,7 @@ export class CodexDaemon {
         }
       });
       const disconnected = () => {
+        this.questions.disconnect();
         for (const p of this.pending.values()) {
           clearTimeout(p.timer);
           p.reject(new Error('Codex daemon disconnected'));
@@ -88,6 +94,9 @@ export class CodexDaemon {
   async request(
     method:
       | 'thread/read'
+      | 'thread/resume'
+      | 'thread/settings/update'
+      | 'permissionProfile/list'
       | 'thread/start'
       | 'thread/loaded/list'
       | 'thread/name/set'
@@ -98,6 +107,13 @@ export class CodexDaemon {
   ) {
     await this.connect();
     return this.send(method, params);
+  }
+  async respond(threadId: string, id: string, response: unknown) {
+    if (this.ws?.readyState !== WebSocket.OPEN)
+      throw new Error('Native question connection is unavailable');
+    return this.questions.respond(threadId, id, response, (frame) =>
+      this.ws!.send(JSON.stringify(frame)),
+    );
   }
   close() {
     this.ws?.close();

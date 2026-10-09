@@ -84,3 +84,11 @@ User messages display Sent and agent messages display Received with the source e
 ### 0.1.3 send recovery
 
 A durable confirmed gateway receipt now resolves an uncertain Android send even when the native transcript echo has not arrived. Reconciliation preserves a newer draft and does not submit another message. The gateway marks failures before any delivery attempt as a definitive rejection (HTTP 422) and removes the unused receipt, keeping them out of uncertain-delivery recovery. Errors after a native delivery attempt retain the original idempotency key and remain uncertain. Existing CLI Codex question/approval routing is unchanged by this delivery fix.
+
+### 0.1.4 native Codex questions and session settings
+
+Session details now separates permission profiles from Build/Plan mode. Supported settings come from the gateway’s native adapter; each change requires confirmation and read-back from the harness. Existing Codex daemon questions render as structured cards, send the exact native answer object, recover after reconnects, and disappear after external resolution. Native CLI command/file approvals and Claude permission/mode controls are not included.
+
+Validation: 104 backend tests, 11 Android unit tests, 13 emulator instrumentation tests, and two mobile browser regressions passed. Android lint, debug/test builds and signed 0.1.4 release build passed. The initial emulator runs were obstructed by Launcher/System UI ANR dialogs; after restarting those emulator components and dismissing their dialogs, the complete 13-test suite passed. Native screenshots with keyboard open and closed were inspected. Live Codex question replay/response and permission/mode changes were verified on an isolated test thread. Physical-phone verification remains outstanding.
+
+Install 0.1.4 over your existing app to get the separate mode selector and readable custom-policy labels. Gateway question routing works with the existing structured-question UI too. Settings affect subsequent turns; Plan mode does not silently change permission profiles.
