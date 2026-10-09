@@ -1755,3 +1755,77 @@ test('Claude task metadata is collapsed and earlier conversation paging requests
   await expect(page.getByText('Earlier conversation recovered', { exact: true })).toBeVisible();
   expect(older).toBe(1);
 });
+
+test('native close request on untouched mobile launch opens sessions instead of exiting', async ({
+  page,
+  context,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await pair(page);
+  const fresh = await context.newPage();
+  await fresh.setViewportSize({ width: 390, height: 844 });
+  await fresh.goto('/');
+  await fresh.getByLabel('Instruction', { exact: true }).waitFor();
+  // Escape is Chromium's desktop native close request, the same CloseWatcher path
+  // used by Android Back. history.back() alone misses Chrome's history intervention.
+  expect(await fresh.evaluate(() => 'CloseWatcher' in window)).toBe(true);
+  await fresh.keyboard.press('Escape');
+  await expect(fresh.getByRole('dialog', { name: 'Sessions', exact: true })).toBeVisible();
+  await fresh.getByRole('button', { name: 'Close sessions', exact: true }).click();
+  await fresh.keyboard.press('Escape');
+  await expect(fresh.getByRole('dialog', { name: 'Sessions', exact: true })).toBeVisible();
+  await fresh.close();
+});
+
+test('session permission picker confirms native changes and displays failure', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  let current = 'workspace-write';
+  let changes = 0;
+  await page.route('**/api/sessions/*/permissions', async (r) => {
+    if (r.request().method() === 'POST') {
+      if (changes) {
+        await r.fulfill({
+          status: 409,
+          json: { error: 'Permissions changed. Reload the current settings before applying.' },
+        });
+        return;
+      }
+      const body = r.request().postDataJSON();
+      expect(body).toEqual({ value: 'read-only', expected: 'workspace-write', confirm: true });
+      current = body.value;
+      changes++;
+    }
+    await r.fulfill({
+      json: {
+        supported: true,
+        current,
+        options: [
+          { value: 'read-only', name: 'Read only' },
+          { value: 'workspace-write', name: 'Workspace write' },
+          { value: 'danger-full-access', name: 'Full access' },
+        ],
+      },
+    });
+  });
+  await pair(page);
+  await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
+  await page.getByRole('button', { name: 'Session details', exact: true }).click();
+  await page.getByLabel('Permission preset', { exact: true }).selectOption('read-only');
+  await expect(page.getByRole('button', { name: 'Apply permissions', exact: true })).toBeDisabled();
+  await page
+    .getByRole('checkbox', { name: 'Apply this permission change to this session' })
+    .check();
+  await page.getByRole('button', { name: 'Apply permissions', exact: true }).click();
+  await expect(page.getByText('Permissions saved in the harness.')).toBeVisible();
+  expect(changes).toBe(1);
+  await expect(page.getByLabel('Permission preset', { exact: true })).toHaveValue('read-only');
+  await page.screenshot({ path: '/tmp/relay-permissions-mobile.png' });
+  await page.getByLabel('Permission preset', { exact: true }).selectOption('danger-full-access');
+  await expect(page.getByText(/Full access lets this agent/)).toBeVisible();
+  await page
+    .getByRole('checkbox', { name: 'Apply this permission change to this session' })
+    .check();
+  await page.getByRole('button', { name: 'Apply permissions', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('Permissions changed');
+  expect(changes).toBe(1);
+});

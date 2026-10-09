@@ -33,6 +33,8 @@ export class DshClient {
     if (
       !/^session\/[a-zA-Z]+$/.test(method) &&
       method !== 'agentPresets/list' &&
+      method !== 'permissionPresets/catalog' &&
+      method !== 'commands/execute' &&
       method !== '$events/result'
     )
       throw new Error('Invalid DSH method');
@@ -50,6 +52,13 @@ export class DshClient {
     const data = responseSchema.parse(await response.json());
     if (data.rpcId !== rpcId) throw new Error('DSH response identity mismatch');
     if (!data.result.ok) {
+      if (
+        method === 'commands/execute' &&
+        data.result.error.message.includes('persistent terminal sessions')
+      )
+        throw new Error(
+          'DSH cannot change the sandbox while persistent terminal sessions are open. Close those sessions in DSH, then retry.',
+        );
       // Give a useful model-selection error without exposing arbitrary native diagnostics.
       if (data.result.error.code === 'session/attachment-invalid')
         throw new Error(

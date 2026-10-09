@@ -59,6 +59,7 @@ test('DSH discovery, paginated history, native model selection, steering and rec
     running = false,
     missing = false;
   const received: any[] = [];
+  let permission = 'workspace-write';
   const now = Date.now();
   const records = [
     {
@@ -109,12 +110,27 @@ test('DSH discovery, paginated history, native model selection, steering and rec
                     values: {
                       title: 'Native DSH',
                       agentPreset: 'haxor',
+                      permissions: { currentValue: permission },
                       modelSelection: { next: { provider: 'cfrproxy', model } },
                     },
                   },
                 },
               ],
         };
+        break;
+      case 'permissionPresets/catalog':
+        value = {
+          options: ['read-only', 'workspace-write', 'danger-full-access'].map((value) => ({
+            value,
+            name: value,
+          })),
+        };
+        break;
+      case 'commands/execute':
+        assert.equal(body.payload.args.agentId, 'native-one');
+        assert.deepEqual(body.payload.args.submittedAttachments, []);
+        permission = body.payload.args.line.replace('/permission ', '');
+        value = { result: { kind: 'success' } };
         break;
       case 'session/modelCatalog':
         value = {
@@ -211,6 +227,20 @@ test('DSH discovery, paginated history, native model selection, steering and rec
     assert.equal(session.capabilities.steerActiveTurn, true);
     assert.equal(session.capabilities.answerQuestion, true);
     const adapter = host.adapters.get(session.id)!;
+    assert.equal((await adapter.permissions(session)).current, 'workspace-write');
+    assert.equal(
+      (await adapter.setPermissions(session, 'read-only', 'workspace-write')).current,
+      'read-only',
+    );
+    await assert.rejects(
+      adapter.setPermissions(session, 'danger-full-access', 'workspace-write'),
+      /changed/,
+    );
+    await assert.rejects(
+      adapter.setPermissions(session, 'read-only; arbitrary', 'read-only'),
+      /not available/,
+    );
+    assert.equal(received.filter((r) => r.method === 'commands/execute').length, 1);
     // Simulate launch discovery before the scheduler has adopted the adapter.
     runtime.dshHosts.set('dsh-host', host);
     assert.equal(runtime.adapters.has(session.id), false);

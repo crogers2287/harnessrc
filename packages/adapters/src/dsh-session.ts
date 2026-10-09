@@ -4,6 +4,7 @@ import WebSocket from 'ws';
 import { z } from 'zod';
 import {
   capabilities,
+  permissionSettingsSchema,
   DeliveryDeferred,
   type Adapter,
   type Session,
@@ -159,6 +160,45 @@ export class DshAdapter implements Adapter {
     const row = rows.find((r) => r.sessionId === s.nativeSessionId);
     if (!row) throw new Error('DSH native session no longer exists');
     return row;
+  }
+  async permissions(s: Session) {
+    const row = await this.row(s);
+    const current = row.projections?.values.permissions?.currentValue;
+    if (typeof current !== 'string' || !row.agentAvailable)
+      return {
+        supported: false,
+        options: [],
+        reason: 'This DSH session does not expose live permission controls.',
+      };
+    const catalog = z
+      .object({ options: permissionSettingsSchema.shape.options })
+      .parse(await this.native.call('permissionPresets/catalog', {}));
+    return { supported: true, current, options: catalog.options };
+  }
+  async setPermissions(s: Session, value: string, expected: string) {
+    const settings = await this.permissions(s);
+    if (!settings.supported || settings.current !== expected)
+      throw Object.assign(
+        new Error('Permissions changed. Reload the current settings before applying.'),
+        { statusCode: 409 },
+      );
+    if (!/^[a-zA-Z0-9_-]+$/.test(value) || !settings.options.some((o) => o.value === value))
+      throw Object.assign(new Error('Permission preset is not available.'), { statusCode: 400 });
+    const result = z
+      .object({ result: z.object({ kind: z.string() }) })
+      .parse(
+        await this.native.call('commands/execute', {
+          agentId: s.nativeSessionId,
+          line: `/permission ${value}`,
+          submittedAttachments: [],
+        }),
+      );
+    if (result.result.kind !== 'success')
+      throw new Error('DSH did not apply the permission preset.');
+    const updated = await this.permissions(s);
+    if (updated.current !== value)
+      throw new Error('DSH has not confirmed the permission change. Refresh before retrying.');
+    return updated;
   }
   async turnState(s: Session) {
     return this.questions?.interactions(s.nativeSessionId).length

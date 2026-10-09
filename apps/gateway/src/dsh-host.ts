@@ -90,7 +90,7 @@ export class DshHost {
           agentPreset: typeof p.agentPreset === 'string' ? p.agentPreset : undefined,
           modelUpdatedAt: old?.modelUpdatedAt,
           diagnostic:
-            'Connected to the existing DSH web host. Native questions are connected. Command permissions still use DSH.',
+            'Connected to the existing DSH web host. Native questions are connected. Session permission presets are managed through the native DSH connection.',
         };
         this.store.saveSession(session);
         if (!this.adapters.has(id))

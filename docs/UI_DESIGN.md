@@ -102,3 +102,9 @@ The response renderer now uses OpenUI's Image component inside keyboard-accessib
 History pages omit token fragments once their completed message exists, preserving the raw replay log. Loading older messages stops bottom pinning and reports errors. Wide Markdown tables scroll horizontally rather than compressing words into narrow columns. Claude goal task notices and usage diagnostics become collapsed activity rather than raw user-message XML.
 
 Browser tests verify actual decoded image bytes, full-size preview, named download, 390px overflow, collapsed notifications and earlier-history navigation. Live native Claude hook steering was verified on Fred; physical Android/iOS testing remains separate.
+
+### Cold-start Back and native session permissions
+
+Chrome may skip programmatic history entries created without user activation. Mobile conversation roots now use the native CloseWatcher close-request channel when available, in addition to history for other browsers. It handles one close request by opening Sessions; it does not cancel repeated Back requests to trap the user. Secondary pages keep ordinary Back navigation. Desktop Escape exercises the same browser primitive, but physical Android Back remains a separate validation.
+
+Session details includes the native permission catalog and current selection, with pending, unsupported, failure and saved states. All changes require a session-specific checkbox and Apply; Full access has an explicit scope warning. Permissions remain adapter-driven. Dials and tokens are unchanged (variance 3, motion 2, density 4).

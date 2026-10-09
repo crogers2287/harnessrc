@@ -397,6 +397,46 @@ export async function createGateway(
     store.audit(req.device.id, 'attachment.remove', id, { attachmentId: file });
     return { ok: true };
   });
+  const permissionChanges = new Set<string>();
+  app.get('/api/sessions/:id/permissions', async (req) => {
+    const { id } = req.params as { id: string };
+    check(req, id);
+    const adapter = runtime.adapters.get(id);
+    if (!(adapter instanceof DshAdapter))
+      return {
+        supported: false,
+        options: [],
+        reason:
+          'This session’s native connection does not expose permission changes yet. Existing harness permissions remain in effect.',
+      };
+    await runtime.assertBinding(store.session(id));
+    return adapter.permissions(store.session(id));
+  });
+  app.post('/api/sessions/:id/permissions', async (req) => {
+    const { id } = req.params as { id: string };
+    check(req, id, true);
+    const body = z
+      .object({ value: z.string().min(1).max(100), expected: z.string(), confirm: z.literal(true) })
+      .strict()
+      .parse(req.body);
+    const adapter = runtime.adapters.get(id);
+    if (!(adapter instanceof DshAdapter))
+      throw Object.assign(new Error('Native permission changes unavailable'), { statusCode: 409 });
+    if (permissionChanges.has(id))
+      throw Object.assign(new Error('A permission change is already in progress'), {
+        statusCode: 409,
+      });
+    permissionChanges.add(id);
+    try {
+      await runtime.assertBinding(store.session(id));
+      store.audit(req.device.id, 'permissions.requested', id, { value: body.value });
+      const result = await adapter.setPermissions(store.session(id), body.value, body.expected);
+      store.audit(req.device.id, 'permissions.applied', id, { value: result.current });
+      return result;
+    } finally {
+      permissionChanges.delete(id);
+    }
+  });
   app.get('/api/sessions/:id/models', async (req) => {
     const { id } = req.params as { id: string };
     check(req, id);

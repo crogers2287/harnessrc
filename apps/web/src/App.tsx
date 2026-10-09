@@ -1,3 +1,5 @@
+import { SessionPermissions } from './SessionPermissions.tsx';
+import { watchMobileBack } from './navigation.ts';
 import { NativeMedia, NativeMediaGallery, MediaPreviewProvider } from './NativeMedia.tsx';
 import { nativeFiles } from '@harnessrc/protocol';
 import { notifyEvent } from './notifications.ts';
@@ -139,6 +141,10 @@ export function App() {
   }, [filters]);
   const [drawerOpen, setDrawerOpen] = useState(() => !!history.state?.relayDrawer);
   const [mobile, setMobile] = useState(() => matchMedia('(max-width: 767px)').matches);
+  useEffect(() => {
+    watchMobileBack(mobile && !drawerOpen && !route.view);
+    return () => watchMobileBack(false);
+  }, [mobile, drawerOpen, route.view]);
   const openDrawer = () => {
     if (matchMedia('(max-width: 767px)').matches && !history.state?.relayDrawer)
       history.pushState({ relayDrawer: true }, '', location.href);
@@ -1796,6 +1802,7 @@ function SessionDetails({ session: s }: { session: SessionView }) {
         <Status status={s.status} />
       )}
       {s.harness === 'dsh' && s.capabilities.sendMessage && <DshModel session={s} />}
+      <SessionPermissions sessionId={s.id} />
       <dl className="details-list">
         {[
           ['Agent', s.harness],

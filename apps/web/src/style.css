@@ -3245,3 +3245,26 @@ body,
   word-break: normal;
   overflow-wrap: normal;
 }
+
+/* Keep native session controls readable as a small settings form. */
+.page-content .settings-section {
+  margin-block: 24px;
+  padding-block: 20px;
+  border-block: 1px solid var(--border);
+}
+.page-content .settings-section h3 {
+  margin-bottom: 8px;
+}
+.page-content .settings-section form {
+  display: grid;
+  gap: 12px;
+}
+.page-content .settings-section label {
+  display: grid;
+  gap: 8px;
+}
+.page-content .settings-section label.choice {
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+}
