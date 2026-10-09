@@ -76,6 +76,7 @@ function SessionActions({ session: s, close }: { session: SessionView; close: ()
   const [mode, setMode] = useState<'menu' | 'rename' | 'archive' | 'interrupt'>('menu');
   const [name, setName] = useState(sessionLabel(s));
   const dialog = useRef<HTMLDialogElement>(null);
+  const backdropPress = useRef(false);
   const closeRef = useRef(close);
   closeRef.current = close;
   const query = useQueryClient();
@@ -113,17 +114,16 @@ function SessionActions({ session: s, close }: { session: SessionView; close: ()
         close();
       }}
       onKeyDown={(e) => e.stopPropagation()}
+      onPointerDown={(e) => {
+        const r = e.currentTarget.getBoundingClientRect();
+        backdropPress.current =
+          e.target === e.currentTarget &&
+          (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom);
+      }}
       onClick={(e) => {
-        if (e.target === e.currentTarget) {
-          const r = e.currentTarget.getBoundingClientRect();
-          if (
-            e.clientX < r.left ||
-            e.clientX > r.right ||
-            e.clientY < r.top ||
-            e.clientY > r.bottom
-          )
-            close();
-        }
+        // The finger releasing the hold must not also dismiss the newly opened sheet.
+        if (backdropPress.current && e.target === e.currentTarget) close();
+        backdropPress.current = false;
       }}
     >
       <header>

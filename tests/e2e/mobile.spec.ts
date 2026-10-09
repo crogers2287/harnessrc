@@ -1209,10 +1209,13 @@ test('holding a session opens its action sheet; rename and pin persist and scrol
   await pair(page);
   const row = page.locator('.session-row').filter({ hasText: 'Atlas API' }).first();
   const box = (await row.boundingBox())!;
-  await page.mouse.move(box.x + 70, box.y + 30);
-  await page.mouse.down();
-  await page.waitForTimeout(600);
-  await page.mouse.up();
+  const touch = await page.context().newCDPSession(page);
+  await touch.send('Input.dispatchTouchEvent', {
+    type: 'touchStart',
+    touchPoints: [{ x: box.x + 70, y: box.y + 30 }],
+  });
+  await page.waitForTimeout(650);
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   const sheet = page.locator('dialog.session-action-sheet');
   await expect(sheet).toBeVisible();
   await page.screenshot({ path: 'docs/screenshots/session-actions-mobile.png' });
