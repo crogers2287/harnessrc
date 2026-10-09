@@ -73,14 +73,34 @@ export class DshClient {
   async supportsAttachments() {
     const cookie = await this.credential();
     if (!cookie || /[\r\n]/.test(cookie)) return false;
-    const response = await fetch(new URL('/api/session/uploadFileBinary', this.endpoint), {
-      method: 'POST',
-      redirect: 'manual',
-      signal: AbortSignal.timeout(10000),
-      headers: { Cookie: cookie, 'Content-Type': 'application/octet-stream' },
+    const url = new URL('/api/session/uploadFileBinary', this.endpoint);
+    const { request } = await import(url.protocol === 'https:' ? 'node:https' : 'node:http');
+    // Native admission can close a rejected Fetch body early. Use a zero-length
+    // HTTP request for this probe; it cannot resolve an agent or store bytes.
+    return new Promise<boolean>((resolve) => {
+      const req = request(
+        url,
+        {
+          method: 'POST',
+          headers: {
+            Cookie: cookie,
+            'Content-Type': 'application/octet-stream',
+            'Content-Length': '0',
+          },
+        },
+        (res) => {
+          let text = '';
+          res.on('data', (chunk) => {
+            if (text.length < 1024) text += chunk.toString();
+          });
+          res.on('end', () => resolve(res.statusCode === 400 && text === 'sessionId is required'));
+          res.on('error', () => resolve(false));
+        },
+      );
+      req.setTimeout(10000, () => req.destroy());
+      req.on('error', () => resolve(false));
+      req.end();
     });
-    // No session ID: the native handler rejects before resolving an agent or storing bytes.
-    return response.status === 400 && (await response.text()) === 'sessionId is required';
   }
   /** DSH's authenticated raw-byte upload returns a session-scoped file receipt. */
   async upload(sessionId: string, file: DshAttachment) {

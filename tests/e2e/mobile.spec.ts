@@ -1471,6 +1471,34 @@ test('an attention status does not disable a native steering-capable composer', 
     );
     await route.fulfill({ json: data });
   });
+  await page.route('**/api/sessions/*', async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    if (data.session?.project === 'Atlas API') {
+      data.session.status = 'blocked';
+      data.session.connected = true;
+      data.session.capabilities.steerActiveTurn = true;
+      data.interactions = [];
+    }
+    await route.fulfill({ json: data });
+  });
+  await page.routeWebSocket('**/ws', (ws) => {
+    const server = ws.connectToServer();
+    server.onMessage((message) => {
+      const data = JSON.parse(String(message));
+      if (data.type === 'invalidate')
+        data.sessions = data.sessions.map((s: any) =>
+          s.project === 'Atlas API'
+            ? {
+                ...s,
+                status: 'blocked',
+                capabilities: { ...s.capabilities, steerActiveTurn: true },
+              }
+            : s,
+        );
+      ws.send(JSON.stringify(data));
+    });
+  });
   await pair(page);
   await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
   await page.getByLabel('Instruction', { exact: true }).fill('A follow-up for the active turn');
@@ -1478,4 +1506,57 @@ test('an attention status does not disable a native steering-capable composer', 
   await expect(
     page.getByText('This agent cannot be steered yet. Choose Queue to schedule a follow-up.'),
   ).toHaveCount(0);
+});
+
+test('DSH steering acknowledgement stays distinct from an applied model update', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const adapt = (s: any) =>
+    s.project === 'Atlas API'
+      ? {
+          ...s,
+          harness: 'dsh',
+          agentPreset: 'haxor',
+          status: 'working',
+          capabilities: { ...s.capabilities, steerActiveTurn: true, attachFiles: true },
+        }
+      : s;
+  await page.route('**/api/sessions', async (route) => {
+    const data = await (await route.fetch()).json();
+    data.sessions = data.sessions.map(adapt);
+    await route.fulfill({ json: data });
+  });
+  await page.route('**/api/sessions/*', async (route) => {
+    const data = await (await route.fetch()).json();
+    if (data.session) {
+      data.session = adapt(data.session);
+      data.interactions = [];
+    }
+    await route.fulfill({ json: data });
+  });
+  await page.routeWebSocket('**/ws', (ws) => {
+    const server = ws.connectToServer();
+    server.onMessage((message) => {
+      const data = JSON.parse(String(message));
+      if (data.type === 'invalidate') data.sessions = data.sessions.map(adapt);
+      ws.send(JSON.stringify(data));
+    });
+  });
+  let submissions = 0;
+  await page.route('**/api/sessions/*/messages', async (route) => {
+    submissions++;
+    await route.fulfill({ json: { mode: 'steer' } });
+  });
+  await pair(page);
+  await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
+  await page.getByLabel('Instruction', { exact: true }).fill('Steering feedback fixture');
+  await page.getByRole('button', { name: 'Steer active turn', exact: true }).click();
+  await expect(page.getByText('Steering accepted · waiting for the next agent step')).toBeVisible();
+  await expect(
+    page.getByText('Steering accepted. DSH will apply it at the next step.'),
+  ).toBeVisible();
+  await page.reload();
+  await expect(page.getByText('Steering accepted · waiting for the next agent step')).toBeVisible();
+  expect(submissions).toBe(1);
 });
