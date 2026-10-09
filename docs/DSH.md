@@ -65,7 +65,7 @@ Regression verification covers a held deadline, duplicate replay, reconnection/r
 
 ### Image/file input and steering receipts
 
-Relay submits supported images as native `session/prompt` image parts (MIME, original name and base64 bytes). Other files are uploaded to DSH's authenticated `/api/session/uploadFileBinary?sessionId=...&name=...` route, then referenced by the returned session-scoped receipt. DSH owns durable attachment admission. Relay checks each upload's session, native owner, generation and checksum before dispatch; no host-local path text substitutes for native attachments. The installed route is feature-detected with a non-mutating GET (405, Allow: POST).
+Relay submits supported images as native `session/prompt` image parts (MIME, original name and base64 bytes). Other files are uploaded to DSH's authenticated `/api/session/uploadFileBinary?sessionId=...&name=...` route, then referenced by the returned session-scoped receipt. DSH owns durable attachment admission. Relay checks each upload's session, native owner, generation and checksum before dispatch; no host-local path text substitutes for native attachments. The installed route is feature-detected with a non-mutating admission probe without a session ID (400, `sessionId is required`).
 
 Steering uses `mode: steer` and the **same durable Relay request ID** on the native prompt. DSH applies this at its next step boundary, potentially after an in-flight tool/model call. An acceptance receipt is not proof the model has consumed the input. Relay displays “Steering accepted” while awaiting the exact native echo; that echo carries the uploaded previews. Retries with the same Relay key do not resubmit. A lost acknowledgement remains uncertain.
 

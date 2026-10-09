@@ -74,13 +74,13 @@ export class DshClient {
     const cookie = await this.credential();
     if (!cookie || /[\r\n]/.test(cookie)) return false;
     const response = await fetch(new URL('/api/session/uploadFileBinary', this.endpoint), {
-      method: 'GET',
+      method: 'POST',
       redirect: 'manual',
       signal: AbortSignal.timeout(10000),
-      headers: { Cookie: cookie },
+      headers: { Cookie: cookie, 'Content-Type': 'application/octet-stream' },
     });
-    await response.body?.cancel();
-    return response.status === 405 && response.headers.get('allow') === 'POST';
+    // No session ID: the native handler rejects before resolving an agent or storing bytes.
+    return response.status === 400 && (await response.text()) === 'sessionId is required';
   }
   /** DSH's authenticated raw-byte upload returns a session-scoped file receipt. */
   async upload(sessionId: string, file: DshAttachment) {

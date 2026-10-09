@@ -15,9 +15,9 @@ test('DSH file/image steering preserves bytes and receipt identity, never queues
   let omitAcknowledgement = false;
   const server = createServer(async (req, res) => {
     assert.equal(req.headers.cookie, 'native=fixture');
-    if (req.method === 'GET') {
-      res.writeHead(405, { Allow: 'POST' });
-      res.end();
+    if (req.url === '/api/session/uploadFileBinary') {
+      res.writeHead(400);
+      res.end('sessionId is required');
       return;
     }
     const chunks = [];
