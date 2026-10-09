@@ -855,7 +855,7 @@ code {
   gap: 0;
   box-shadow: 0 2px 8px #15272c06;
 }
-.composer textarea {
+.composer :is(textarea, .composer-input) {
   border: 0;
   border-radius: 16px;
   padding: 16px 18px;
@@ -863,7 +863,7 @@ code {
   max-height: 200px;
   background: transparent;
 }
-.composer textarea:focus-visible {
+.composer :is(textarea, .composer-input):focus-visible {
   outline-offset: -4px;
 }
 .composer-controls {
@@ -1324,7 +1324,7 @@ code {
   .composer-area {
     padding: 12px 12px calc(8px + env(safe-area-inset-bottom));
   }
-  .composer textarea {
+  .composer :is(textarea, .composer-input) {
     padding: 12px 14px;
     min-height: 64px;
   }
@@ -1702,7 +1702,7 @@ code {
   .composer-area {
     padding: 8px 8px calc(6px + env(safe-area-inset-bottom));
   }
-  .composer textarea {
+  .composer :is(textarea, .composer-input) {
     padding: 12px;
     min-height: 56px;
     max-height: min(160px, 25dvh);
@@ -1775,7 +1775,7 @@ code {
     display: block;
   }
 }
-.composer textarea {
+.composer :is(textarea, .composer-input) {
   resize: none;
 }
 .queue-peek {
@@ -2358,7 +2358,7 @@ code {
   .composer-area {
     padding: 6px 10px calc(6px + env(safe-area-inset-bottom));
   }
-  .composer textarea {
+  .composer :is(textarea, .composer-input) {
     min-height: 52px;
   }
   .composer-footer {
@@ -3267,4 +3267,18 @@ body,
   display: flex;
   align-items: center;
   min-height: 48px;
+}
+
+.composer-input {
+  width: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-y: auto;
+  cursor: text;
+  color: var(--text);
+}
+.composer-input[data-empty='true']::before {
+  content: attr(data-placeholder);
+  color: var(--muted);
+  pointer-events: none;
 }

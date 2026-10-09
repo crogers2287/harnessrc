@@ -34,7 +34,9 @@ export function SessionDrawer({
       if (event.touches.length !== 1) return;
       if (
         event.target instanceof Element &&
-        event.target.closest('button, a, input, textarea, select, summary, [role=button]')
+        event.target.closest(
+          'button, a, input, textarea, select, summary, [role=button], [contenteditable=true]',
+        )
       )
         return;
       const touch = event.touches[0];

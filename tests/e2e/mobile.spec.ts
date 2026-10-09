@@ -168,7 +168,7 @@ test('mobile attachments: photo and file previews, draft recovery, removal and d
   await expect(page.getByText(/KB · Ready/)).toHaveCount(2);
   await page.screenshot({ path: 'docs/screenshots/attachments-mobile.png' });
   await page.reload();
-  await expect(page.getByLabel('Instruction', { exact: true })).toHaveValue(
+  await expect(page.getByLabel('Instruction', { exact: true })).toHaveText(
     'Review these attachments',
   );
   await expect(page.getByText(/KB · Ready/)).toHaveCount(2);
@@ -177,7 +177,7 @@ test('mobile attachments: photo and file previews, draft recovery, removal and d
   await page.getByLabel('Instruction behavior').selectOption('queue');
   await page.getByRole('button', { name: 'Queue instruction', exact: true }).click();
   await expect(page.getByLabel('Message attachments')).toHaveCount(0);
-  await expect(page.getByLabel('Instruction', { exact: true })).toHaveValue('');
+  await expect(page.getByLabel('Instruction', { exact: true })).toHaveText('');
   const sentImage = page.locator('.sent-file > button > img');
   await expect(sentImage).toBeVisible();
   await sentImage.click();
@@ -311,7 +311,7 @@ test('live chat appends events without refetching history and preserves reading 
     );
     stream.send(JSON.stringify({ type: 'invalidate', sessions: [session] }));
   }
-  await expect(composer).toHaveValue('Keep this draft while messages arrive');
+  await expect(composer).toHaveText('Keep this draft while messages arrive');
   await expect(composer).toBeFocused();
   await expect
     .poll(() => page.locator('.conversation-scroll').evaluate((element) => element.scrollTop))
@@ -422,11 +422,11 @@ test('mobile opens chat first, defaults to Send, and supports edge swipe drawer 
   await expect.poll(async () => (await page.locator('#session-drawer').boundingBox())?.x).toBe(0);
   await page.screenshot({ path: 'docs/screenshots/swipe-drawer-mobile.png' });
   await page.keyboard.press('Escape');
-  await expect(page.getByLabel('Instruction', { exact: true })).toHaveValue(
+  await expect(page.getByLabel('Instruction', { exact: true })).toHaveText(
     'A draft survives navigation',
   );
   await page.reload();
-  await expect(page.getByLabel('Instruction', { exact: true })).toHaveValue(
+  await expect(page.getByLabel('Instruction', { exact: true })).toHaveText(
     'A draft survives navigation',
   );
   await expect(page.getByRole('dialog', { name: 'Sessions', exact: true })).not.toBeVisible();
@@ -509,13 +509,13 @@ test('Steer renders immediately, preserves the next draft, and keeps uncertain d
   await page.getByRole('button', { name: 'Steer active turn', exact: true }).click();
   await expect(page.locator('.outgoing-message')).toContainText('Focus on the mobile navigation');
   await expect(page.locator('.outgoing-message')).toContainText('Sending…');
-  await expect(draft).toHaveValue('');
+  await expect(draft).toHaveText('');
   await expect(draft).toBeFocused();
   await page.screenshot({ path: 'docs/screenshots/steer-sending-mobile.png' });
   await draft.fill('Next instruction stays here');
   release();
   await expect(page.locator('.outgoing-message')).toContainText('Sent');
-  await expect(draft).toHaveValue('Next instruction stays here');
+  await expect(draft).toHaveText('Next instruction stays here');
   await page.unroute('**/api/sessions/*/messages');
   await page.route('**/api/sessions/*/messages', (route) => route.abort());
   await page.getByRole('button', { name: 'Steer active turn', exact: true }).click();
@@ -626,7 +626,7 @@ test('mobile browser Back opens sessions from chat and preserves secondary navig
   await page.goBack();
   await expect(page.getByRole('dialog', { name: 'Sessions', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Close sessions', exact: true }).click();
-  await expect(page.getByLabel('Instruction', { exact: true })).toHaveValue(
+  await expect(page.getByLabel('Instruction', { exact: true })).toHaveText(
     'Keep this draft when I go back',
   );
   await page.getByRole('button', { name: 'Session details', exact: true }).click();
@@ -718,7 +718,7 @@ test('working composer accepts file and image steering through real touch target
   expect(response.request().postDataJSON().attachments).toHaveLength(2);
   expect(queued).toBe(0);
   await expect(page.locator('.outgoing-message').last()).toContainText('steer-note.txt');
-  await expect(draft).toHaveValue('');
+  await expect(draft).toHaveText('');
 });
 
 test('saved attachment bubble disappears when native history arrives and stays gone after reload', async ({
@@ -896,7 +896,7 @@ test('composer tracks a shrinking and panning Android visual viewport without a 
     expect(b!.y).toBeGreaterThan(top);
     await expect(page.locator('.conversation-header')).toBeHidden();
     await expect(page.locator('.chat-context-strip')).toBeHidden();
-    await expect(page.getByLabel('Instruction', { exact: true })).toHaveValue(
+    await expect(page.getByLabel('Instruction', { exact: true })).toHaveText(
       'Keep this draft above the keyboard',
     );
   }
@@ -1054,11 +1054,16 @@ test('clipboard screenshot uploads once, keeps draft text, and sends the attachm
   await page.screenshot({ path: 'docs/screenshots/clipboard-menu-mobile.png' });
   await page.getByRole('button', { name: 'Paste screenshot', exact: true }).click();
   await expect(page.getByText(/KB · Ready/)).toHaveCount(1);
-  await expect(page.getByLabel('Instruction', { exact: true })).toHaveValue(
+  await expect(page.getByLabel('Instruction', { exact: true })).toHaveText(
     'Look at this screenshot',
   );
   await expect(page.getByRole('img', { name: /Preview of Screenshot-/ })).toBeVisible();
   await page.screenshot({ path: 'docs/screenshots/clipboard-preview-mobile.png' });
+  // Android advertises image MIME support only for a richly editable field.
+  await expect(page.getByLabel('Instruction', { exact: true })).toHaveAttribute(
+    'contenteditable',
+    'true',
+  );
   // The normal browser paste gesture shares this upload path as well.
   await page.getByLabel('Instruction', { exact: true }).focus();
   await page.keyboard.press('Control+v');
@@ -1091,7 +1096,7 @@ test('clipboard denial or no image gives a usable photo fallback without losing 
   await page.getByRole('button', { name: 'Paste screenshot', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('Clipboard access was blocked');
   await expect(page.getByRole('button', { name: 'Photos', exact: true })).toBeVisible();
-  await expect(page.getByLabel('Instruction', { exact: true })).toHaveValue('Preserve me');
+  await expect(page.getByLabel('Instruction', { exact: true })).toHaveText('Preserve me');
   await page.evaluate(() =>
     Object.defineProperty(navigator.clipboard, 'read', {
       configurable: true,
@@ -1138,7 +1143,7 @@ test('voice records real browser audio, cleans into a draft, preserves typing an
   await page.getByRole('button', { name: 'Finish dictation', exact: true }).click();
   await expect(page.getByText('Transcribing and cleaning up…')).toBeVisible();
   await draft.fill('Typing while transcribing');
-  await expect(draft).toHaveValue(
+  await expect(draft).toHaveText(
     'Typing while transcribing\nKeep port 42. Do not send automatically.',
   );
   expect(await draft.evaluate((el) => el.clientHeight)).toBeGreaterThan(60);
@@ -1174,7 +1179,7 @@ test('voice permission refusal preserves the draft; service failure keeps audio 
   });
   await page.getByRole('button', { name: 'Dictate message', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('Microphone access was blocked');
-  await expect(page.getByLabel('Instruction', { exact: true })).toHaveValue('Keep my draft');
+  await expect(page.getByLabel('Instruction', { exact: true })).toHaveText('Keep my draft');
   await page.getByRole('button', { name: 'Dismiss voice input' }).click();
   await context.grantPermissions(['microphone']);
   await page.evaluate(() => {
@@ -1196,7 +1201,7 @@ test('voice permission refusal preserves the draft; service failure keeps audio 
   await page.waitForTimeout(400);
   await page.getByRole('button', { name: 'Finish dictation', exact: true }).click();
   await page.getByRole('button', { name: 'Retry transcription', exact: true }).click();
-  await expect(page.getByLabel('Instruction', { exact: true })).toHaveValue(
+  await expect(page.getByLabel('Instruction', { exact: true })).toHaveText(
     'Keep my draft\nRecovered dictation.',
   );
   expect(attempts).toBe(2);
@@ -1828,4 +1833,70 @@ test('session permission picker confirms native changes and displays failure', a
   await page.getByRole('button', { name: 'Apply permissions', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('Permissions changed');
   expect(changes).toBe(1);
+});
+
+test('composer keeps pasted text plain, supports multiline caret edits and Undo', async ({
+  page,
+  context,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await pair(page);
+  await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  const editor = page.getByRole('textbox', { name: 'Instruction', exact: true });
+  await editor.fill('Before OLD after');
+  await editor.evaluate((el) => {
+    const range = document.createRange();
+    range.setStart(el.firstChild!, 7);
+    range.setEnd(el.firstChild!, 10);
+    const selection = window.getSelection()!;
+    selection.removeAllRanges();
+    selection.addRange(range);
+  });
+  await page.evaluate(async () =>
+    navigator.clipboard.write([
+      new ClipboardItem({
+        'text/plain': new Blob(['first\nsecond'], { type: 'text/plain' }),
+        'text/html': new Blob(
+          ['<b>first</b><br><i>second</i><img src="https://invalid.example/track.png">'],
+          { type: 'text/html' },
+        ),
+      }),
+    ]),
+  );
+  await page.keyboard.press('Control+v');
+  await expect(editor).toHaveText('Before first\nsecond after', { useInnerText: true });
+  await expect(editor.locator('b,i,img')).toHaveCount(0);
+  await page.keyboard.press('Control+z');
+  await expect(editor).toHaveText('Before OLD after');
+  await page.keyboard.press('Control+Shift+z');
+  await expect(editor).toHaveText('Before first\nsecond after', { useInnerText: true });
+  await page.keyboard.press('Control+End');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('Third line');
+  await expect.poll(() => editor.innerText()).toBe('Before first\nsecond after\nThird line');
+  await page.reload();
+  await expect(editor).toHaveText('Before first\nsecond after\nThird line');
+});
+
+test('IME composition remains editable and does not submit on a composing shortcut', async ({
+  page,
+  context,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await pair(page);
+  await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
+  const editor = page.getByRole('textbox', { name: 'Instruction', exact: true });
+  await editor.fill('Draft ');
+  await editor.press('Control+End');
+  let submissions = 0;
+  page.on('request', (r) => {
+    if (r.method() === 'POST' && /\/(messages|tasks|steer)$/.test(r.url())) submissions++;
+  });
+  const cdp = await context.newCDPSession(page);
+  await cdp.send('Input.imeSetComposition', { text: '你好', selectionStart: 2, selectionEnd: 2 });
+  await page.keyboard.press('Control+Enter');
+  expect(submissions).toBe(0);
+  await cdp.send('Input.insertText', { text: '你好' });
+  await expect(editor).toHaveText('Draft 你好');
 });

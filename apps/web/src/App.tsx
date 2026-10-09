@@ -16,7 +16,7 @@ import {
 } from './session-filters.ts';
 import { InstallApp } from './InstallApp.tsx';
 import { DshModel } from './DshModel.tsx';
-import { TextArea } from '@harnessrc/ui';
+import { ComposerInput } from './ComposerInput.tsx';
 import { presentUserMessage, toolLabel } from '@harnessrc/protocol';
 import { OutgoingMessages, useOutgoing } from './outgoing.tsx';
 import { NewSession } from './NewSession.tsx';
@@ -609,7 +609,7 @@ function Conversation({
   const [receiptId, setReceiptId] = useState<string>();
   const [atBottom, setAtBottom] = useState(true);
   const scroll = useRef<HTMLDivElement>(null);
-  const composer = useRef<HTMLTextAreaElement>(null);
+  const composer = useRef<HTMLDivElement>(null);
   const composerArea = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const input = composer.current;
@@ -1077,33 +1077,20 @@ function Conversation({
               if (session.capabilities.attachFiles)
                 attachments.add(Array.from(e.dataTransfer.files));
             }}
-            onPaste={(e) => {
-              if (session.capabilities.attachFiles && e.clipboardData.files.length) {
-                e.preventDefault();
-                attachments.add(Array.from(e.clipboardData.files));
-              }
-            }}
           >
             {voice.panel}
             <AttachmentTray value={attachments} />
-            <label className="sr-only" htmlFor="composer">
-              Instruction
-            </label>
-            <TextArea
-              id="composer"
+            <ComposerInput
               ref={composer}
-              rows={1}
-              onInput={(e) => {
-                e.currentTarget.style.height = 'auto';
-                e.currentTarget.style.height = `${Math.min(e.currentTarget.scrollHeight, 160)}px`;
-              }}
+              allowFiles={session.capabilities.attachFiles}
+              onFiles={attachments.add}
               placeholder={
                 session.status === 'working' || pending.length
                   ? 'What should happen next?'
                   : 'Message your agent…'
               }
               value={draft}
-              onChange={(e) => setDraft(e.target.value)}
+              onChange={setDraft}
               onKeyDown={(e) => {
                 if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') submit(e);
               }}

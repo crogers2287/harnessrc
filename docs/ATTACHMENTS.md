@@ -1,6 +1,6 @@
 # File and image attachments
 
-Relay accepts up to 10 files per instruction, 20 MB per file, with a 1 GB gateway upload quota. Photos, camera capture and general files use the operating system/browser picker; desktop paste and drop are supported. PNG/JPEG/WebP/GIF selections have local previews. Other formats appear as filenames. The camera picker requires testing on the actual phone; browser emulation does not establish device-camera behavior.
+Relay accepts up to 10 files per instruction, 20 MB per file, with a 1 GB gateway upload quota. Photos, camera capture and general files use the operating system/browser picker; The chat composer uses a rich-editable field so Android Chrome can advertise keyboard image-paste support; paste files become draft attachments while message text stays plain. Desktop paste and drop and Attach → Paste screenshot remain supported. PNG/JPEG/WebP/GIF selections have local previews. Other formats appear as filenames. The camera picker requires testing on the actual phone; browser emulation does not establish device-camera behavior.
 
 Set `hosts[].localFiles: true` only when that host's agents share the gateway's filesystem and user access. Fred uses this mode. It is false by default: a forwarded remote Herdr socket does not make the gateway's local files accessible on another server.
 

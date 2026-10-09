@@ -108,3 +108,11 @@ Browser tests verify actual decoded image bytes, full-size preview, named downlo
 Chrome may skip programmatic history entries created without user activation. Mobile conversation roots now use the native CloseWatcher close-request channel when available, in addition to history for other browsers. It handles one close request by opening Sessions; it does not cancel repeated Back requests to trap the user. Secondary pages keep ordinary Back navigation. Desktop Escape exercises the same browser primitive, but physical Android Back remains a separate validation.
 
 Session details includes the native permission catalog and current selection, with pending, unsupported, failure and saved states. All changes require a session-specific checkbox and Apply; Full access has an explicit scope warning. Permissions remain adapter-driven. Dials and tokens are unchanged (variance 3, motion 2, density 4).
+
+### Android keyboard clipboard images
+
+The composer is now a rich-editable DOM field with a plain-text message contract. Chromium's Android IME adapter advertises `image/*` only when the focused element is richly editable; a textarea does not qualify, even if its JavaScript paste handler accepts files. See [Chromium ImeAdapterAndroid::GetSupportedMimeTypes](https://github.com/chromium/chromium/blob/main/content/browser/android/ime_adapter_android.cc). This addresses the keyboard's “Chrome does not support image pasting here” rejection before Relay received any paste event.
+
+Native paste files become ordinary draft attachments. Pasted text is inserted at the caret without HTML formatting or remote image loads; native Undo stays available. DOM text is synchronized only for external changes such as dictation/restored drafts, preserving keyboard composition and selections during normal typing. Ctrl/Meta+Enter ignores active IME composition; plain Enter creates a new line. Touch selection inside the editor cannot open the session drawer. The explicit Attach → Paste screenshot permission flow remains a fallback.
+
+Browser regression coverage uses real clipboard image bytes, text plus HTML, caret replacement, Undo/Redo, multiline restoration, IME composition, dictation and send/steer attachments. Physical Android keyboard image handoff still requires device confirmation; desktop emulation does not reproduce the Android input connection.
