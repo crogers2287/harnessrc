@@ -94,3 +94,11 @@ Session rows support a 500ms hold and a visible 48px overflow button. Moving mor
 Native DSH question cards provide radio/checkbox choices, descriptions, supporting Markdown, free text and batch submission. Answers address their native event ID, with no generic chat turn fallback. New browser regressions cover action-sheet interactions, renamed/pinned state, cancellation, keyboard header restoration and DSH answer payloads. Physical touchscreen hold/system-gesture and microphone testing remains separate.
 
 Live Chromium touch validation exposed a release-event bug that mouse tests missed: lifting the finger that opened the action sheet could also dismiss its backdrop. Backdrop dismissal now requires a fresh pointer-down outside the sheet. The session-actions E2E regression uses `Input.dispatchTouchEvent` for the hold and release.
+
+### Native media, history pages, and Claude tool hooks
+
+The response renderer now uses OpenUI's Image component inside keyboard-accessible preview controls, with explicit download and full-size native-dialog controls. DSH `deliverables/presented` events become artifact galleries. Local image Markdown resolves only through an authenticated event-scoped endpoint; a caller cannot supply an arbitrary path. The native DSH host serves bounded bytes using its own filesystem policy. This is structured artifact rendering, not an arbitrary model-generated JavaScript/UI execution runtime.
+
+History pages omit token fragments once their completed message exists, preserving the raw replay log. Loading older messages stops bottom pinning and reports errors. Wide Markdown tables scroll horizontally rather than compressing words into narrow columns. Claude goal task notices and usage diagnostics become collapsed activity rather than raw user-message XML.
+
+Browser tests verify actual decoded image bytes, full-size preview, named download, 390px overflow, collapsed notifications and earlier-history navigation. Live native Claude hook steering was verified on Fred; physical Android/iOS testing remains separate.

@@ -55,6 +55,12 @@ export class Store extends EventEmitter {
     this.db.exec(
       readFileSync(new URL('../../../migrations/011-claude-steering.sql', import.meta.url), 'utf8'),
     );
+    this.db.exec(
+      readFileSync(
+        new URL('../../../migrations/012-conversation-paging.sql', import.meta.url),
+        'utf8',
+      ),
+    );
   }
   transaction<T>(fn: () => T): T {
     this.db.exec('BEGIN IMMEDIATE');
@@ -153,6 +159,23 @@ export class Store extends EventEmitter {
             .all(id, before, limit)
             .reverse();
     return rows.map((r) => ({ ...JSON.parse(r.body as string), sequence: Number(r.sequence) }));
+  }
+  /** Completed native messages replace their streamed token events for history paging. */
+  conversationEvents(id: string, before: number, limit: number): Event[] {
+    return this.db
+      .prepare(
+        `
+      SELECT e.sequence,e.body FROM events e WHERE e.session_id=? AND e.sequence<?
+      AND NOT (json_extract(e.body,'$.kind')='assistant.delta' AND EXISTS (
+        SELECT 1 FROM events done WHERE done.session_id=e.session_id
+        AND json_extract(done.body,'$.kind')='assistant.message'
+        AND json_extract(done.body,'$.data.itemId')=json_extract(e.body,'$.data.itemId')
+      )) ORDER BY e.sequence DESC LIMIT ?
+    `,
+      )
+      .all(id, before, limit)
+      .reverse()
+      .map((r) => ({ ...JSON.parse(String(r.body)), sequence: Number(r.sequence) }));
   }
   tasks(id: string): Task[] {
     return this.db

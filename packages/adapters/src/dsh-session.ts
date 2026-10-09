@@ -53,6 +53,14 @@ export function dshEvents(input: unknown): SourceEvent[] {
       .join('\n');
   const replaced =
     e.surfaceOp === 'replace' ? (e.sourceEventSeqs ?? []).map((n) => `dsh:${n}`) : [];
+  if (e.type === 'deliverables/presented')
+    return [
+      {
+        ...base,
+        kind: 'artifact.created',
+        data: { title: 'Files from your agent', nativeFiles: d.files },
+      },
+    ];
   if (e.type === 'user/message')
     return [
       {
@@ -88,7 +96,7 @@ export function dshEvents(input: unknown): SourceEvent[] {
       {
         ...base,
         kind: 'tool.invocation',
-        data: { name: d.name ?? d.tool?.name ?? 'Tool', input: d.arguments ?? d.input },
+        data: { tool: d.name ?? d.tool?.name ?? 'Tool', input: d.arguments ?? d.input },
       },
     ];
   if (e.type === 'tool/result')

@@ -10,3 +10,6 @@ declare module '@openuidev/react-ui/IconButton' {
 declare module '@openuidev/react-ui/TextArea' {
   export { TextArea } from '@openuidev/react-ui';
 }
+declare module '@openuidev/react-ui/Image' {
+  export { Image } from '@openuidev/react-ui';
+}

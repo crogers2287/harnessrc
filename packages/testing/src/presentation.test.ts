@@ -70,3 +70,18 @@ test('Claude task notifications summarize activity and retain diagnostic fields 
   ])
     assert.deepEqual(presentUserMessage(text), { text });
 });
+
+test('Claude goal check-ins and usage diagnostics stay in collapsible activity, not user bubbles', () => {
+  const result = presentUserMessage(
+    '<task-notification><summary>Goal check-in: background work no longer running</summary></task-notification>\n<system-reminder>Continue the goal after background work.</system-reminder>',
+  );
+  assert.equal(result.activity?.title, 'Background task update');
+  assert.equal(result.activity?.summary, 'Goal check-in: background work no longer running');
+  assert.equal(result.activity?.details[0].value, 'Continue the goal after background work.');
+  const stats = presentUserMessage(
+    '<task-notification><status>completed</status><summary>Checks complete</summary><diagnostics>Used cache.</diagnostics><usage><agent_count>1</agent_count><subagent_tokens>102726</subagent_tokens></usage></task-notification>',
+  );
+  assert.equal(stats.activity?.title, 'Background task completed');
+  assert.ok(stats.activity?.details.some((d) => d.label === 'Usage' && d.value.includes('102726')));
+  assert.ok(stats.activity?.details.every((d) => !d.value.includes('<agent_count>')));
+});

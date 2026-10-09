@@ -169,3 +169,24 @@ export async function downloadAttachment(sessionId: string, fileId: string): Pro
   if (!response.ok) throw new Error('Attachment download failed');
   return response.blob();
 }
+
+export async function downloadNativeFile(
+  sessionId: string,
+  eventId: string,
+  index: number,
+): Promise<Blob> {
+  const url = `${transportOrigin}/api/sessions/${sessionId}/media/${eventId}/${index}`;
+  const send = () =>
+    fetch(url, {
+      credentials: transportOrigin ? 'omit' : 'same-origin',
+      signal: AbortSignal.timeout(35000),
+    });
+  let response = await send();
+  if (response.status === 401) {
+    await api('/api/auth/refresh', { method: 'POST' });
+    response = await send();
+  }
+  if (!response.ok)
+    throw new Error('File unavailable. Retry or ask the agent to publish it again.');
+  return response.blob();
+}

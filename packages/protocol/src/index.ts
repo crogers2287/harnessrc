@@ -222,3 +222,4 @@ export function matchesTaskReceipt(actual: unknown, taskId: string, expected: st
 }
 
 export { presentUserMessage, toolLabel } from './presentation.ts';
+export { nativeFiles, type NativeFile } from './media.ts';

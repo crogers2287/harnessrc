@@ -1,3 +1,5 @@
+import { NativeMedia, NativeMediaGallery } from './NativeMedia.tsx';
+import { nativeFiles } from '@harnessrc/protocol';
 import { notifyEvent } from './notifications.ts';
 import { DshQuestions } from './DshQuestions.tsx';
 import { SessionRow, sessionLabel } from './SessionActions.tsx';
@@ -81,9 +83,35 @@ function when(value: string) {
   if (ms < 86400000) return `${Math.floor(ms / 3600000)}h ago`;
   return new Date(value).toLocaleDateString();
 }
-function Mark({ text }: { text: string }) {
+function Mark({ text, event }: { text: string; event?: Event }) {
   return (
-    <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+    <Markdown
+      remarkPlugins={[remarkGfm]}
+      rehypePlugins={[rehypeHighlight]}
+      components={{
+        p: ({ children }) => <div className="markdown-paragraph">{children}</div>,
+        table: ({ children }) => (
+          <div
+            className="markdown-table-scroll"
+            tabIndex={0}
+            role="region"
+            aria-label="Scrollable table"
+          >
+            <table>{children}</table>
+          </div>
+        ),
+        img: ({ src, alt }) => {
+          const index = event
+            ? nativeFiles(event).findIndex((f) => f.path === src || encodeURI(f.path) === src)
+            : -1;
+          return event && index >= 0 ? (
+            <NativeMedia event={event} index={index} />
+          ) : (
+            <img src={src} alt={alt ?? ''} loading="lazy" />
+          );
+        },
+      }}
+    >
       {text}
     </Markdown>
   );
@@ -550,7 +578,9 @@ function Conversation({
   const events = useQuery<{ events: Event[] }>({
     queryKey: ['events', session.id],
     queryFn: () =>
-      api(`/api/sessions/${session.id}/events?before=${Number.MAX_SAFE_INTEGER}&limit=100`),
+      api(
+        `/api/sessions/${session.id}/events?before=${Number.MAX_SAFE_INTEGER}&limit=100&conversation=1`,
+      ),
   });
   const [history, setHistory] = useState<Event[]>([]);
   const [hasMore, setHasMore] = useState(true);
@@ -750,13 +780,19 @@ function Conversation({
   const loadOlder = async () => {
     if (loadingMore) return;
     setLoadingMore(true);
+    pinned.current = false;
+    setAtBottom(false);
     try {
       const first = merged[0]?.sequence ?? Number.MAX_SAFE_INTEGER;
       const result = await api<{ events: Event[] }>(
-        `/api/sessions/${session.id}/events?before=${first}&limit=100`,
+        `/api/sessions/${session.id}/events?before=${first}&limit=100&conversation=1`,
       );
       setHistory((old) => [...result.events, ...old]);
       setHasMore(result.events.length === 100);
+    } catch (error) {
+      setNotice(
+        error instanceof Error ? error.message : 'Could not load earlier messages. Try again.',
+      );
     } finally {
       setLoadingMore(false);
     }
@@ -1242,6 +1278,7 @@ function EventCard({ event }: { event: Event }) {
       <article className="artifact-card" aria-label="Generated artifact">
         <h3>{String(data.title ?? 'Generated file')}</h3>
         {text && <Mark text={text} />}
+        {Array.isArray(data.nativeFiles) && <NativeMediaGallery event={event} />}
         <div className="artifact-files">
           {Array.isArray(data.attachments) &&
             (data.attachments as { id: string; name: string; mime?: string }[]).map((file) => (
@@ -1315,7 +1352,7 @@ function EventCard({ event }: { event: Event }) {
             </div>
           ))}
           {presentation.command && <div className="message-command">{presentation.command}</div>}
-          <Mark text={text} />
+          <Mark text={text} event={event} />
           {Array.isArray(data.attachments) && (
             <div className="sent-attachments">
               {(data.attachments as { id: string; name: string; mime?: string }[]).map((file) => (

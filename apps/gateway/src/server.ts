@@ -1,3 +1,4 @@
+import { nativeFiles } from '@harnessrc/protocol';
 import { publishArtifact } from './artifacts.ts';
 import { VoiceService, MAX_VOICE_BYTES, voiceMimeSchema } from './voice.ts';
 import { DshAdapter } from '../../../packages/adapters/src/dsh-session.ts';
@@ -313,10 +314,15 @@ export async function createGateway(
       .object({
         after: z.coerce.number().int().min(0).default(0),
         before: z.coerce.number().int().min(1).optional(),
+        conversation: z.enum(['1']).optional(),
         limit: z.coerce.number().int().min(1).max(200).default(100),
       })
       .parse(req.query);
-    return { events: store.events(id, query.after, query.limit, query.before) };
+    return {
+      events: query.conversation
+        ? store.conversationEvents(id, query.before ?? Number.MAX_SAFE_INTEGER, query.limit)
+        : store.events(id, query.after, query.limit, query.before),
+    };
   });
   app.post(
     '/api/sessions/:id/artifacts',
@@ -480,6 +486,31 @@ export async function createGateway(
     if (body.order) runtime.queue.reorder(id, body.order);
     store.audit(req.device.id, 'queue.update', id, body);
     return { ok: true };
+  });
+  app.get('/api/sessions/:id/media/:eventId/:index', async (req, reply) => {
+    const { id, eventId, index } = z
+      .object({ id: z.string(), eventId: z.uuid(), index: z.coerce.number().int().min(0).max(31) })
+      .parse(req.params);
+    check(req, id, false);
+    const session = store.session(id);
+    const row = store.db
+      .prepare('SELECT body FROM events WHERE id=? AND session_id=?')
+      .get(eventId, id);
+    const event = row ? JSON.parse(String(row.body)) : undefined;
+    const file = event && nativeFiles(event)[index];
+    const host = runtime.dshHosts.get(session.hostId);
+    if (!file || !host || event.nativeSessionId !== session.nativeSessionId)
+      return reply.code(404).send({ error: 'Conversation file not found' });
+    const result = await host.native.file(file.path);
+    const image = /^(image\/(png|jpeg|webp|gif|avif))(;|$)/i.test(result.mime);
+    reply.header('Cache-Control', 'private, no-store');
+    reply.header('X-Content-Type-Options', 'nosniff');
+    reply.header('Content-Security-Policy', "sandbox; default-src 'none'");
+    reply.header(
+      'Content-Disposition',
+      `${image ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(file.path.split('/').pop() || 'file')}`,
+    );
+    return reply.type(image ? result.mime : 'application/octet-stream').send(result.bytes);
   });
   app.post('/api/interactions/:id/respond', async (req) => {
     const { id } = req.params as { id: string };

@@ -23,11 +23,23 @@ export function presentUserMessage(text: string): MessagePresentation {
         details: [],
       },
     };
-  const notification = text.match(/^\s*<task-notification>([\s\S]*?)<\/task-notification>\s*$/);
+  const notification = text.match(
+    /^\s*<task-notification>([\s\S]*?)<\/task-notification>\s*(?:<system-reminder>([\s\S]*?)<\/system-reminder>\s*)?$/,
+  );
   if (notification) {
     const fields: Record<string, string> = {};
     let valid = true;
-    const rest = notification[1].replace(
+    const body = notification[1].replace(
+      /<(usage|diagnostics)>([\s\S]*?)<\/\1>/g,
+      (_, key: string, value: string) => {
+        fields[key] = value
+          .replace(/<\/[^>]+>/g, '; ')
+          .replace(/<([^>]+)>/g, '$1: ')
+          .trim();
+        return '';
+      },
+    );
+    const rest = body.replace(
       /<(task-id|tool-use-id|output-file|status|summary|task-type)>([\s\S]*?)<\/\1>/g,
       (_, key: string, value: string) => {
         if (key in fields) valid = false;
@@ -35,7 +47,7 @@ export function presentUserMessage(text: string): MessagePresentation {
         return '';
       },
     );
-    if (valid && !rest.trim() && fields.summary && fields.status) {
+    if (valid && !rest.trim() && fields.summary) {
       const titles: Record<string, string> = {
         completed: 'Background task completed',
         failed: 'Background task failed',
@@ -47,17 +59,20 @@ export function presentUserMessage(text: string): MessagePresentation {
         'output-file': 'Output file',
         'task-type': 'Task type',
         status: 'Status',
+        usage: 'Usage',
+        diagnostics: 'Diagnostics',
       };
       return {
         text: fields.summary,
         activity: {
-          title: Object.hasOwn(titles, fields.status)
-            ? titles[fields.status]
-            : 'Background task update',
+          title: titles[fields.status] ?? 'Background task update',
           summary: fields.summary,
-          details: Object.entries(fields)
-            .filter(([key]) => key !== 'summary')
-            .map(([key, value]) => ({ label: labels[key], value })),
+          details: [
+            ...Object.entries(fields)
+              .filter(([key]) => key !== 'summary')
+              .map(([key, value]) => ({ label: labels[key], value })),
+            ...(notification[2] ? [{ label: 'Context', value: notification[2].trim() }] : []),
+          ],
         },
       };
     }

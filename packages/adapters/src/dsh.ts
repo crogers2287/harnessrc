@@ -59,6 +59,40 @@ export class DshClient {
     }
     return data.result.value;
   }
+  /** Read only an already-authorized conversation file through the native host. */
+  async file(path: string) {
+    const url = new URL('/api/file', this.endpoint);
+    url.searchParams.set('path', path);
+    const response = await fetch(url, {
+      headers: { Cookie: await this.credential() },
+      redirect: 'error',
+      signal: AbortSignal.timeout(30000),
+    });
+    if (!response.ok) throw new Error(`DSH file unavailable (${response.status})`);
+    const max = 20 * 1024 * 1024;
+    if (Number(response.headers.get('content-length')) > max) {
+      await response.body?.cancel();
+      throw new Error('File exceeds 20 MB');
+    }
+    const reader = response.body!.getReader();
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.length;
+        if (size > max) throw new Error('File exceeds 20 MB');
+        chunks.push(value);
+      }
+    } finally {
+      await reader.cancel();
+    }
+    return {
+      bytes: Buffer.concat(chunks),
+      mime: response.headers.get('content-type') ?? 'application/octet-stream',
+    };
+  }
   list() {
     return this.call('session/list', { _request: {} });
   }

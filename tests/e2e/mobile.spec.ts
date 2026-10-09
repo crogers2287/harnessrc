@@ -1615,3 +1615,124 @@ test('notifications ignore ended-session floods and deduplicate native events ac
   await page.waitForTimeout(200);
   expect(await page.evaluate(() => (window as any).testNotifications)).toHaveLength(0);
 });
+
+test('native image references render OpenUI previews with full-size view and download', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const png = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jXioAAAAASUVORK5CYII=',
+    'base64',
+  );
+  await page.route('**/api/sessions/*/media/*/0', (r) =>
+    r.fulfill({ contentType: 'image/png', body: png }),
+  );
+  await page.route('**/api/sessions/*/events?*', async (r) => {
+    const sessionId = new URL(r.request().url()).pathname.split('/')[3];
+    await r.fulfill({
+      json: {
+        events: [
+          {
+            id: 'f9c8b6c5-a983-4878-a9c4-122837a11cd3',
+            sourceId: 'native-picture',
+            sessionId,
+            nativeSessionId: 'native',
+            source: 'dsh',
+            sequence: 1,
+            kind: 'assistant.message',
+            timestamp: new Date().toISOString(),
+            data: {
+              text: 'Here is your generated portrait.\n\n![Portrait from Comfy](/work/portrait.png)',
+            },
+          },
+        ],
+      },
+    });
+  });
+  await pair(page);
+  await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
+  const preview = page.getByRole('button', { name: 'View Portrait from Comfy' });
+  await expect(preview).toBeVisible();
+  expect(
+    await preview
+      .locator('img')
+      .evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0),
+  ).toBe(true);
+  await preview.click();
+  await expect(page.getByRole('dialog', { name: 'Preview Portrait from Comfy' })).toBeVisible();
+  const downloaded = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download image', exact: true }).click();
+  expect((await downloaded).suggestedFilename()).toBe('portrait.png');
+  await page.getByRole('button', { name: 'Close image preview' }).click();
+  await page.screenshot({ path: '/tmp/relay-native-media-mobile.png' });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test('Claude task metadata is collapsed and earlier conversation paging requests completed messages', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  let older = 0;
+  await page.route('**/api/sessions/*/events?*', async (r) => {
+    const url = new URL(r.request().url());
+    expect(url.searchParams.get('conversation')).toBe('1');
+    const sessionId = url.pathname.split('/')[3];
+    const base = {
+      sessionId,
+      nativeSessionId: 'native',
+      source: 'claude',
+      timestamp: new Date().toISOString(),
+    };
+    if (Number(url.searchParams.get('before')) < Number.MAX_SAFE_INTEGER) {
+      older++;
+      await r.fulfill({
+        json: {
+          events: [
+            {
+              ...base,
+              id: 'old-message',
+              sourceId: 'old',
+              sequence: 1,
+              kind: 'user.message',
+              data: { text: 'Earlier conversation recovered' },
+            },
+          ],
+        },
+      });
+      return;
+    }
+    await r.fulfill({
+      json: {
+        events: Array.from({ length: 100 }, (_, i) => ({
+          ...base,
+          id: `history-${i}`,
+          sourceId: `history-${i}`,
+          sequence: i + 100,
+          kind: 'user.message',
+          data: {
+            text:
+              i === 99
+                ? '<task-notification><summary>Background checks finished</summary></task-notification><system-reminder>Internal continuation context</system-reminder>'
+                : `Earlier instruction ${i}`,
+          },
+        })),
+      },
+    });
+  });
+  await pair(page);
+  await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
+  await expect(
+    page
+      .locator('.native-activity summary')
+      .getByText('Background checks finished', { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.locator('.user-message').filter({ hasText: '<task-notification>' }),
+  ).toHaveCount(0);
+  await page.locator('.conversation-scroll').evaluate((el) => {
+    el.scrollTop = 0;
+  });
+  await page.getByRole('button', { name: 'Load earlier messages' }).click();
+  await expect(page.getByText('Earlier conversation recovered', { exact: true })).toBeVisible();
+  expect(older).toBe(1);
+});
