@@ -48,6 +48,8 @@ test('DSH discovery, paginated history, native model selection, steering and rec
   const { join } = await import('node:path');
   const { Store } = await import('@harnessrc/storage');
   const { DshHost } = await import('../../../apps/gateway/src/dsh-host.ts');
+  const { Runtime } = await import('../../../apps/gateway/src/runtime.ts');
+  const { configSchema } = await import('../../../apps/gateway/src/config.ts');
   const { WebSocketServer } = await import('ws');
   const { eventually } = await import('./helpers.ts');
   const directory = await mkdtemp(join(tmpdir(), 'dsh-fixture-'));
@@ -181,6 +183,13 @@ test('DSH discovery, paginated history, native model selection, steering and rec
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   const endpoint = `http://127.0.0.1:${(server.address() as any).port}`;
   const store = new Store(':memory:');
+  const runtime = new Runtime(
+    store,
+    configSchema.parse({
+      dataDir: directory,
+      hosts: [{ id: 'unused', name: 'Unused', socket: '/unused' }],
+    }),
+  );
   let host = new DshHost({ id: 'dsh-host', name: 'Fred DSH', endpoint, tokenFile }, store);
   try {
     await host.refresh();
@@ -190,8 +199,12 @@ test('DSH discovery, paginated history, native model selection, steering and rec
     assert.equal(session.capabilities.steerActiveTurn, true);
     assert.equal(session.capabilities.answerQuestion, false);
     const adapter = host.adapters.get(session.id)!;
-    adapter.watch(session);
-    const history = await adapter.read(session);
+    // Simulate launch discovery before the scheduler has adopted the adapter.
+    runtime.dshHosts.set('dsh-host', host);
+    assert.equal(runtime.adapters.has(session.id), false);
+    await runtime.prepareConversation(session.id);
+    assert.equal(runtime.adapters.get(session.id), adapter);
+    const history = store.events(session.id);
     assert.deepEqual(
       history.map((e) => e.kind),
       ['user.message', 'assistant.message', 'turn.completed'],

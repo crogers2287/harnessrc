@@ -1,5 +1,4 @@
 import { DshHost } from './dsh-host.ts';
-import { DshAdapter } from '../../../packages/adapters/src/dsh-session.ts';
 import { CodexLinks } from './codex-links.ts';
 import { CodexDaemon } from '../../../packages/adapters/src/codex-daemon.ts';
 import { EventEmitter } from 'node:events';
@@ -411,9 +410,15 @@ export class Runtime extends EventEmitter {
     }
   }
   async prepareConversation(id: string) {
-    const adapter = this.adapters.get(id);
-    if (!(adapter instanceof DshAdapter)) return;
     const s = this.store.session(id);
+    const host = this.dshHosts.get(s.hostId);
+    if (!host) return;
+    // Discovery publishes sessions before the next scheduler tick copies their
+    // adapters. Opening a newly launched chat must still load and watch history.
+    if (!host.adapters.has(id)) await host.refresh();
+    const adapter = host.adapters.get(id);
+    if (!adapter) throw new Error('DSH conversation is not available yet. Reopen the session.');
+    this.adapters.set(id, adapter);
     adapter.watch(s);
     for (const e of await adapter.read(s)) this.store.event(s, e);
   }

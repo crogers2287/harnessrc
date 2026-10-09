@@ -37,3 +37,5 @@ Validate with `systemctl --user is-active dsh-w6800`, the native web model picke
 DSH native question/approval replies, interruption, attachments and reasoning controls are not yet connected to Relay. Those capabilities remain disabled; pending questions block dispatch and must be answered in DSH. The existing DSH web host owns its lifecycle, independently of phone connections. Optional host plugins can still report their own configuration errors. Relay does not claim full DSH parity.
 
 Protocol verified against Fred's installed MIT-licensed source: `packages/api/session-controller`, `packages/client/connection`, and compact assistant stream definitions in `packages/llm/llm`. No third-party implementation code was copied.
+
+New sessions are selected directly with **New session → Agent → DSH**. Relay automatically selects the configured DSH connection, then offers its permitted folders and exact provider models. Conversation preparation obtains the adapter directly from native host discovery, including the interval before the background scheduler adopts it; newly launched chats therefore load history and begin watching immediately.
