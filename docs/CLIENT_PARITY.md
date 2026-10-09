@@ -60,3 +60,9 @@ Existing CLI Codex sessions now receive native `item/tool/requestUserInput` card
 Live verification used an isolated Codex thread: a genuine request_user_input question appeared, replayed on a second connection after reconnect, accepted the exact structured answer and emitted resolution. Separate profile and mode changes were confirmed through native read-back on that test thread. User sessions were not used for test mutations.
 
 Validation: 104 backend tests pass; TypeScript, ESLint, production web build, Android unit tests, lint, debug/test APKs and signed 0.1.4 build pass. Two phone-size browser regressions verify independent Plan confirmation and exact Codex question responses with no chat submission. Native emulator results and release status are recorded in ANDROID.md. Physical-phone checks remain outstanding.
+
+### Codex embedded image previews
+
+Codex native tool output containing inline PNG/JPEG/WebP/GIF data is imported as an `artifact.created` attachment. Both clients use their existing authenticated preview/download flow; installed APK 0.1.4 needs no update. Native source IDs prevent duplicate transcript entries on replay, artifact request fingerprints prevent duplicate files, and native timestamps are retained. Base64 is removed from persisted event data. No model-provided URL is fetched and no arbitrary filesystem path is read. Historical images are backfilled during transcript replay and may appear at the end of existing history. Existing transcript size and attachment quota limits still apply.
+
+Validation: 105 backend tests, TypeScript, ESLint, production web build, Android unit/lint/debug build, and the phone-size browser artifact preview/download/replay regression pass. No Android UI code changed; physical-device verification remains outstanding.

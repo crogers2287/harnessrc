@@ -105,8 +105,44 @@ export function normalizeCodex(record: any, index: number): SourceEvent[] {
           input: p.arguments ?? p.input,
         }),
       ];
-    if (p.type === 'function_call_output' || p.type === 'custom_tool_call_output')
-      return [source(record, p.id ?? prefix, 'tool.output', { toolId: p.call_id, text: p.output })];
+    if (p.type === 'function_call_output' || p.type === 'custom_tool_call_output') {
+      const blocks = Array.isArray(p.output) ? p.output : [];
+      const images: { url: string; imageIndex: number }[] = blocks.flatMap(
+        (block: any, imageIndex: number) =>
+          block.type === 'input_image' &&
+          typeof block.image_url === 'string' &&
+          /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+={0,2}$/.test(block.image_url)
+            ? [{ url: block.image_url, imageIndex }]
+            : [],
+      );
+      // Binary payloads are imported into attachment storage, never raw event JSON.
+      const sanitized = blocks.length
+        ? {
+            ...record,
+            payload: {
+              ...p,
+              output: blocks.map((b: any) =>
+                b.type === 'input_image' ? { type: b.type, image_url: '[Image preview]' } : b,
+              ),
+            },
+          }
+        : record;
+      return [
+        source(sanitized, p.id ?? prefix, 'tool.output', {
+          toolId: p.call_id,
+          text: blocks.length
+            ? textContent(blocks) || (images.length ? 'Image preview' : '')
+            : p.output,
+        }),
+        ...images.map(({ url, imageIndex }) => ({
+          sourceId: `${p.id ?? prefix}:image:${imageIndex}`,
+          timestamp:
+            typeof record.timestamp === 'string' ? record.timestamp : new Date(0).toISOString(),
+          kind: 'artifact.created' as const,
+          data: { title: 'Image preview', nativeImageDataUrl: url, toolId: p.call_id },
+        })),
+      ];
+    }
     if (p.type === 'reasoning' && Array.isArray(p.summary) && p.summary.length)
       return [
         source(record, p.id ?? prefix, 'reasoning.summary', {

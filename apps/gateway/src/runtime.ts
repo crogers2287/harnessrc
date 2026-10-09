@@ -1,3 +1,4 @@
+import { importNativeImage } from './artifacts.ts';
 import { ClaudeSteering } from './claude-steering.ts';
 import { DshHost } from './dsh-host.ts';
 import { CodexLinks } from './codex-links.ts';
@@ -340,6 +341,10 @@ export class Runtime extends EventEmitter {
         if (!adapter) continue;
         try {
           for (const e of await adapter.read(s)) {
+            if (e.kind === 'artifact.created' && typeof e.data.nativeImageDataUrl === 'string') {
+              importNativeImage(this.store, this.attachments, s, e);
+              continue;
+            }
             if (e.kind === 'user.message') {
               let task: { id: string; prompt: string; attachments: string[] } | undefined =
                 this.store

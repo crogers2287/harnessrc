@@ -66,3 +66,60 @@ test('artifacts publish once, survive restart, enforce owner and permission, and
     await f.close();
   }
 });
+
+test('native Codex image results become authenticated previews without base64 transcript leaks or replay duplicates', async () => {
+  const { normalizeCodex } = await import('../../adapters/src/transcripts.ts');
+  const { importNativeImage } = await import('../../../apps/gateway/src/artifacts.ts');
+  const f = await fixture({ startRuntime: false });
+  try {
+    const image =
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aP1sAAAAASUVORK5CYII=';
+    const record = {
+      timestamp: '2026-10-09T12:00:00Z',
+      type: 'response_item',
+      payload: {
+        type: 'custom_tool_call_output',
+        call_id: 'image-call',
+        output: [
+          { type: 'input_text', text: 'Rendered preview' },
+          { type: 'input_image', image_url: `data:image/png;base64,${image}` },
+        ],
+      },
+    };
+    const events = normalizeCodex(record, 12);
+    assert.equal(events.length, 2);
+    assert.equal(events[0].data.text, 'Rendered preview');
+    assert.ok(!JSON.stringify(events[0]).includes(image));
+    const imported = importNativeImage(
+      f.gateway.store,
+      f.gateway.runtime.attachments,
+      f.session,
+      events[1],
+    );
+    assert.equal(imported.timestamp, record.timestamp);
+    assert.equal(
+      importNativeImage(f.gateway.store, f.gateway.runtime.attachments, f.session, events[1]).id,
+      imported.id,
+    );
+    assert.ok(!JSON.stringify(imported).includes(image));
+    const file = (imported.data.attachments as any[])[0];
+    const url = `/api/sessions/${f.session.id}/attachments/${file.id}`;
+    const response = await f.gateway.app.inject({ url, headers: f.headers });
+    assert.equal(response.statusCode, 200, response.body);
+    assert.equal(file.mime, 'image/png');
+    assert.equal(response.headers['content-type'], 'application/octet-stream');
+    assert.deepEqual(response.rawPayload, Buffer.from(image, 'base64'));
+    assert.equal((await f.gateway.app.inject({ url })).statusCode, 401);
+    assert.equal(f.gateway.runtime.attachments.list(f.session).length, 1);
+    assert.throws(
+      () =>
+        importNativeImage(f.gateway.store, f.gateway.runtime.attachments, f.session, {
+          ...events[1],
+          data: { nativeImageDataUrl: 'https://private/image.png' },
+        }),
+      /encoding/,
+    );
+  } finally {
+    await f.close();
+  }
+});
