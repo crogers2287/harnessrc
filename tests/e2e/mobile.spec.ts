@@ -1141,6 +1141,7 @@ test('voice records real browser audio, cleans into a draft, preserves typing an
   await expect(draft).toHaveValue(
     'Typing while transcribing\nKeep port 42. Do not send automatically.',
   );
+  expect(await draft.evaluate((el) => el.clientHeight)).toBeGreaterThan(60);
   expect(submissions).toBe(0);
   await page.getByText('Original transcription', { exact: true }).click();
   await expect(

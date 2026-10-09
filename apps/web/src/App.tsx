@@ -606,6 +606,12 @@ function Conversation({
   const composer = useRef<HTMLTextAreaElement>(null);
   const composerArea = useRef<HTMLDivElement>(null);
   useEffect(() => {
+    const input = composer.current;
+    if (!input) return;
+    input.style.height = 'auto';
+    input.style.height = `${Math.min(input.scrollHeight, 160)}px`;
+  }, [draft]);
+  useEffect(() => {
     const area = composerArea.current;
     const pane = area?.closest<HTMLElement>('.main-pane');
     if (!area || !pane) return;
