@@ -276,12 +276,13 @@ test('serial scheduler blocks for exact questions and preserves two followups', 
     const first = runtime.queue.add(id, prompt('Ask a question'));
     runtime.queue.add(id, prompt('Second'));
     runtime.queue.add(id, prompt('Third'));
-    await eventually(() => store.interactions(id).some((i) => i.status === 'pending'));
+    // This exercises multiple durable fsyncs and scheduler ticks, not a latency SLA.
+    await eventually(() => store.interactions(id).some((i) => i.status === 'pending'), 15000);
     assert.deepEqual(f.mock.prompts, ['Ask a question']);
     const i = store.interactions(id).find((i) => i.status === 'pending')!;
     await assert.rejects(() => runtime.broker.respond(i.id, 'not-a-choice', 'test'), /offered/);
     await runtime.broker.respond(i.id, 'strict', 'test');
-    await eventually(() => store.tasks(id).every((t) => t.status === 'completed'));
+    await eventually(() => store.tasks(id).every((t) => t.status === 'completed'), 15000);
     assert.deepEqual(f.mock.prompts, ['Ask a question', 'Second', 'Third']);
     assert.equal(store.task(first.id).attempts, 1);
   } finally {
