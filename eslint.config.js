@@ -5,6 +5,8 @@ export default ts.config(
     ignores: [
       'node_modules/**',
       'apps/web/dist/**',
+      'apps/android/**/build/**',
+      'apps/android/.gradle/**',
       'artifacts/**',
       'playwright-report/**',
       'test-results/**',

@@ -7,3 +7,9 @@ apps/web/dist/
 artifacts/
 test-results/
 playwright-report/
+apps/android/.gradle/
+apps/android/.kotlin/
+apps/android/local.properties
+apps/android/**/build/
+*.jks
+*.keystore

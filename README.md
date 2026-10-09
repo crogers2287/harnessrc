@@ -1,8 +1,12 @@
 # Relay — conversational remote over Herdr
 
-A self-hosted React PWA and Fastify gateway for persistent coding agents. Herdr owns processes, panes, workspaces, and lifecycle; Relay stores structured conversations, exact native interactions, and queued work. Original terminal sessions remain usable.
+A self-hosted React PWA, native Android app, and Fastify gateway for persistent coding agents. Herdr owns processes, panes, workspaces, and lifecycle; Relay stores structured conversations, exact native interactions, and queued work. Original terminal sessions remain usable.
 
 **Phase 1 implementation with mock-backed validation.** Existing Claude/Codex CLI sessions are discovered automatically and accept chat messages and durable queued follow-ups through Herdr. The inbox groups by agent and shows session titles and full CWDs. Claude's documented PermissionRequest hook resolves actual permission decisions. A separate sole-writer Codex bridge, launched under Herdr, supports native turns, questions, approvals, steering, and durable queued work. It never attaches a second writer to an existing CLI thread. Live Fred CLI chat and serial queue dispatch have been verified. Key-free tailnet HTTP/WebSocket access is implemented; outside the tailnet, pairing remains required. Full native CLI question parity and physical Android/iOS verification remain outstanding. See the [capability matrix](docs/CAPABILITIES.md).
+
+## Native Android app
+
+Relay now has a Kotlin / Jetpack Compose Android client with a real Android editor, keyboard image paste, native file sharing and microphone recording. Download the signed APK from **Settings → Download Android APK** in the web app while connected to Tailscale. This is separate from the PWA. See [Android installation, build and verification](docs/ANDROID.md).
 
 ## Run the credential-free demo
 
@@ -37,7 +41,7 @@ npm run package
 
 ![Mobile permission review](docs/screenshots/approval-mobile.png)
 
-Monorepo: `apps/web`, `apps/gateway`, `packages/{protocol,herdr,adapters,interaction-broker,task-queue,client-sdk,ui,storage,testing}`. No terminal emulator, terminal scraping, private Claude Remote Control API, external broker, or duplicated Herdr supervision.
+Monorepo: `apps/web`, `apps/android`, `apps/gateway`, `packages/{protocol,herdr,adapters,interaction-broker,task-queue,client-sdk,ui,storage,testing}`. No terminal emulator, terminal scraping, private Claude Remote Control API, external broker, or duplicated Herdr supervision.
 
 ## Mobile chat and attachments
 
