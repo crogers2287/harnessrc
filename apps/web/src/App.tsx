@@ -561,7 +561,7 @@ function Conversation({
   const mode =
     behavior === 'queue'
       ? 'queue'
-      : session.status === 'working' && session.capabilities.steerActiveTurn
+      : ['working', 'blocked'].includes(session.status) && session.capabilities.steerActiveTurn
         ? 'steer'
         : 'send';
   const busyWithoutSteering = mode === 'send' && !['idle', 'done'].includes(session.status);

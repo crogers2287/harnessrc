@@ -1451,3 +1451,31 @@ test('cold mobile launch repairs a restored chat marker with no app back entry',
   await expect(fresh.getByRole('dialog', { name: 'Sessions', exact: true })).toBeVisible();
   await fresh.close();
 });
+
+test('an attention status does not disable a native steering-capable composer', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route('**/api/sessions', async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    data.sessions = data.sessions.map((s: any) =>
+      s.project === 'Atlas API'
+        ? {
+            ...s,
+            status: 'blocked',
+            connected: true,
+            capabilities: { ...s.capabilities, steerActiveTurn: true },
+          }
+        : s,
+    );
+    await route.fulfill({ json: data });
+  });
+  await pair(page);
+  await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
+  await page.getByLabel('Instruction', { exact: true }).fill('A follow-up for the active turn');
+  await expect(page.getByRole('button', { name: 'Steer active turn', exact: true })).toBeEnabled();
+  await expect(
+    page.getByText('This agent cannot be steered yet. Choose Queue to schedule a follow-up.'),
+  ).toHaveCount(0);
+});
