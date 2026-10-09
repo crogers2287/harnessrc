@@ -335,9 +335,11 @@ export function AttachmentTray({ value }: { value: ReturnType<typeof useAttachme
 export function SentAttachment({
   sessionId,
   file,
+  artifact = false,
 }: {
   sessionId: string;
   file: { id: string; name: string; mime?: string };
+  artifact?: boolean;
 }) {
   const [error, setError] = useState('');
   const [preview, setPreview] = useState('');
@@ -384,6 +386,11 @@ export function SentAttachment({
         {preview ? <img src={preview} alt="" /> : <Paperclip size={18} />}
         <span>{file.name}</span>
       </button>
+      {artifact && (
+        <button type="button" className="artifact-download" onClick={() => void download()}>
+          Download file
+        </button>
+      )}
       {error && (
         <p role="alert" className="error">
           {error}

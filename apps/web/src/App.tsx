@@ -108,7 +108,7 @@ export function App() {
       /* Optional storage. */
     }
   }, [filters]);
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(() => !!history.state?.relayDrawer);
   const [mobile, setMobile] = useState(() => matchMedia('(max-width: 767px)').matches);
   const openDrawer = () => {
     if (matchMedia('(max-width: 767px)').matches && !history.state?.relayDrawer)
@@ -225,7 +225,7 @@ export function App() {
       live.find((s) => s.id === saved) ??
       [...live].sort((a, b) => Date.parse(b.lastActivity) - Date.parse(a.lastActivity))[0];
     if (!session) return;
-    history.replaceState({}, '', `/?session=${session.id}`);
+    history.replaceState(history.state, '', `/?session=${session.id}`);
     setRoute({ session: session.id });
   }, [sessions, route]);
   useEffect(() => {
@@ -1221,6 +1221,19 @@ function EventCard({ event }: { event: Event }) {
   const text = presentation.text;
   const [copyError, setCopyError] = useState('');
   const [copied, setCopied] = useState(false);
+  if (event.kind === 'artifact.created')
+    return (
+      <article className="artifact-card" aria-label="Generated artifact">
+        <h3>{String(data.title ?? 'Generated file')}</h3>
+        {text && <Mark text={text} />}
+        <div className="artifact-files">
+          {Array.isArray(data.attachments) &&
+            (data.attachments as { id: string; name: string; mime?: string }[]).map((file) => (
+              <SentAttachment artifact key={file.id} sessionId={event.sessionId} file={file} />
+            ))}
+        </div>
+      </article>
+    );
   if (presentation.activity) {
     const activity = presentation.activity;
     return (

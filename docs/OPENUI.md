@@ -9,3 +9,5 @@ OpenUI 0.17.0's standalone declaration barrels use extensionless relative import
 Dependency review: npm audit reported five low-severity findings in the dependency chain for the unused KaTeX/math renderers at integration time. Those renderers are not imported by Relay. Do not describe the entire dependency tree as audit-clean. A future upgrade should recheck these advisories and the standalone declaration fix.
 
 The visual changes are paired with behavioral fixes: no invisible swipe overlay over buttons, gestures exclude interactive controls, native question envelopes render as question/answer context, clipboard errors are visible, HTTP requests have deadlines, and loss of live-update WebSockets does not by itself disable authenticated HTTP sends.
+
+Generated image/file delivery is now provided by Relay's [artifact protocol](ARTIFACTS.md), using authenticated binary publication and native chat cards. This does not enable OpenUI-generated interactive component trees. Harnesses may run their own generation pipelines and publish outputs without giving model-produced UI code access to Relay controls.

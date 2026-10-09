@@ -1,3 +1,4 @@
+import { prepareMobileHistory } from './navigation.ts';
 import { trackViewport } from './viewport.ts';
 import './install.ts';
 import React from 'react';
@@ -17,6 +18,7 @@ trackViewport();
 const client = new QueryClient({
   defaultOptions: { queries: { retry: false, refetchOnWindowFocus: true } },
 });
+prepareMobileHistory();
 void selectTransport().then(() => {
   createRoot(document.getElementById('root')!).render(
     <React.StrictMode>

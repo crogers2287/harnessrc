@@ -1390,3 +1390,64 @@ test('Claude commands and background notifications render as readable mobile cha
   await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'dark'));
   await page.screenshot({ path: 'docs/screenshots/native-command-cleanup-dark.png' });
 });
+
+test('generated artifacts arrive live, preview, download, and replay once', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await pair(page);
+  await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
+  const { sessions } = await page.evaluate(async () => (await fetch('/api/sessions')).json());
+  const session = sessions.find((s: any) => s.project === 'Atlas API');
+  const image = await readFile('apps/web/public/icon-512.png');
+  const query = new URLSearchParams({
+    requestId: crypto.randomUUID(),
+    generation: session.generation,
+    name: 'relay-preview.png',
+    mime: 'image/png',
+    title: 'Artifact delivery test',
+    caption: 'Preview fixture uploaded through the real artifact API.',
+  });
+  const url = `/api/sessions/${session.id}/artifacts?${query}`;
+  const publish = () =>
+    page.request.post(url, {
+      headers: { 'content-type': 'application/octet-stream', 'x-rc-request': '1' },
+      data: image,
+    });
+  const first = await publish();
+  expect(first.ok()).toBeTruthy();
+  const event = (await first.json()).event;
+  expect((await (await publish()).json()).event.id).toBe(event.id);
+  const card = page
+    .getByRole('article', { name: 'Generated artifact' })
+    .filter({ hasText: 'Artifact delivery test' });
+  await expect(card).toHaveCount(1);
+  await expect(card.locator('button img')).toBeVisible();
+  await card.getByRole('button', { name: 'relay-preview.png', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Preview relay-preview.png' });
+  await expect(dialog).toBeVisible();
+  const downloaded = page.waitForEvent('download');
+  await dialog.getByRole('button', { name: 'Download image', exact: true }).click();
+  const file = await downloaded;
+  expect(file.suggestedFilename()).toBe('relay-preview.png');
+  expect(await readFile((await file.path())!)).toEqual(image);
+  await page.getByRole('button', { name: 'Close image preview' }).click();
+  await page.reload();
+  await expect(card).toHaveCount(1);
+  await card.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: 'docs/screenshots/generated-artifact-mobile.png' });
+});
+
+test('cold mobile launch repairs a restored chat marker with no app back entry', async ({
+  page,
+  context,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await pair(page);
+  const fresh = await context.newPage();
+  await fresh.setViewportSize({ width: 390, height: 844 });
+  await fresh.addInitScript(() => history.replaceState({ relayChat: true }, '', location.href));
+  await fresh.goto('/');
+  await fresh.getByLabel('Instruction', { exact: true }).waitFor();
+  await fresh.goBack();
+  await expect(fresh.getByRole('dialog', { name: 'Sessions', exact: true })).toBeVisible();
+  await fresh.close();
+});

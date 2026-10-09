@@ -1,3 +1,4 @@
+import { publishArtifact } from './artifacts.ts';
 import { VoiceService, MAX_VOICE_BYTES, voiceMimeSchema } from './voice.ts';
 import { DshAdapter } from '../../../packages/adapters/src/dsh-session.ts';
 import { sendMessage } from './messages.ts';
@@ -317,6 +318,26 @@ export async function createGateway(
       .parse(req.query);
     return { events: store.events(id, query.after, query.limit, query.before) };
   });
+  app.post(
+    '/api/sessions/:id/artifacts',
+    {
+      bodyLimit: MAX_ATTACHMENT_BYTES,
+      config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
+    },
+    async (req) => {
+      const { id } = req.params as { id: string };
+      check(req, id, true);
+      if (!Buffer.isBuffer(req.body)) throw new Error('Expected binary artifact content');
+      return publishArtifact(
+        store,
+        runtime.attachments,
+        store.session(id),
+        req.device.id,
+        req.query,
+        req.body,
+      );
+    },
+  );
   app.get('/api/sessions/:id/attachments', async (req) => {
     const { id } = req.params as { id: string };
     check(req, id);

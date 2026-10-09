@@ -49,6 +49,9 @@ export class Store extends EventEmitter {
         'utf8',
       ),
     );
+    this.db.exec(
+      readFileSync(new URL('../../../migrations/010-artifacts.sql', import.meta.url), 'utf8'),
+    );
   }
   transaction<T>(fn: () => T): T {
     this.db.exec('BEGIN IMMEDIATE');

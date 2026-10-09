@@ -26,6 +26,7 @@ export const eventKinds = [
   'tool.output',
   'tool.completion',
   'file.change',
+  'artifact.created',
   'diff',
   'question',
   'approval.request',

@@ -68,3 +68,9 @@ The supplied Claude screenshots exposed command envelopes and background task re
 Presentation applies to existing history without altering stored events, native delivery, or message ordering. Only complete recognized envelopes are transformed; malformed envelopes, code fences and surrounding user prose remain verbatim. This is a React PWA change, not a native Android/iOS component. Local React guidance supported stable event keys, and Tailwind guidance supported constrained previews; the UX search produced no relevant disclosure match, so the repository's mobile hierarchy guidance was used.
 
 Validation: parser regression cases cover command arguments, output/error records, task metadata, malformed/partial messages, and ordinary code. Browser coverage exercises expansion/collapse and horizontal reflow from 320px to 1440px, with light/dark phone screenshots. Physical Android/iOS rendering remains unverified.
+
+## Artifact delivery and launch navigation — October 9
+
+Generated files now have an explicit artifact card with a large image preview, modal viewing, and a visible download action. The existing neutral/teal theme, system typography and 48px controls are retained. Publication uses the authenticated binary API and durable events; it does not turn generated text into executable UI. Browser regression coverage verifies live arrival, duplicate publication, preview, byte-for-byte downloads, and reload recovery.
+
+Cold mobile launch now establishes the drawer parent before transport/authentication work, including when an installed browser restores a `relayChat` marker without the original back stack. First Back opens sessions; Back from the base can still leave the app. Browser tests cover the restored-marker case, reload, drafts, and secondary navigation. Physical Android system Back remains a separate device check.
