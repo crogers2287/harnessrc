@@ -11,6 +11,7 @@ function fixture() {
     ['thread-b', 'Shared name'],
   ]);
   let active = 'thread-b';
+  let titlePrefix = '';
   let pid = 12;
   let registered: string | undefined;
   let duplicate = false;
@@ -24,7 +25,7 @@ function fixture() {
     pane_id: 'w1:p1',
     workspace_id: 'w1',
     agent_status: 'idle',
-    terminal_title_stripped: `${echo ? names.get(active) : 'Shared name'} | project`,
+    terminal_title_stripped: `${titlePrefix}${echo ? names.get(active) : 'Shared name'} | project`,
     agent_session: registered
       ? { agent: 'codex', kind: 'id', value: registered, source: 'herdr:codex' }
       : null,
@@ -72,6 +73,9 @@ function fixture() {
   const links = new CodexLinks('test', store, native);
   return {
     store,
+    attention: (enabled: boolean) => {
+      titlePrefix = enabled ? '[ ! ] Action Required | ' : '';
+    },
     client,
     agent,
     names,
@@ -238,6 +242,28 @@ test('periodic verification proves the known owner without scanning unrelated lo
     assert.equal(current[0].agent_session?.value, 'thread-b');
     assert.ok(f.writes.length > before, 'fresh nonce proof still occurs');
     assert.equal(scans, 0);
+  } finally {
+    f.store.close();
+  }
+});
+
+test('Codex action-required decoration preserves and recovers the proved native binding', async () => {
+  const f = fixture();
+  try {
+    f.attention(true);
+    const [initial] = await f.links.refresh(f.client, [f.agent()]);
+    assert.equal(initial.agent_session?.value, 'thread-b');
+    const session = sessionFromAgent('test', initial, 'project');
+    session.processIdentity = '10:12';
+    await f.links.assertDelivery(f.client, session);
+    f.attention(false);
+    const [normal] = await f.links.refresh(f.client, [f.agent()]);
+    assert.equal(normal.agent_session?.value, 'thread-b');
+    f.attention(true);
+    const [waiting] = await f.links.refresh(f.client, [f.agent()]);
+    assert.equal(waiting.agent_session?.value, 'thread-b');
+    f.switch('thread-a');
+    await assert.rejects(f.links.assertDelivery(f.client, session), /did not confirm/);
   } finally {
     f.store.close();
   }

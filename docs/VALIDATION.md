@@ -78,3 +78,7 @@ Regression coverage verifies live versus saved DSH filtering, native blocked-sta
 Keyboard regression tests keep the layout viewport fixed at 390×844 while independently changing visual viewport height and vertical offset. They assert that the composer and send target remain above the simulated keyboard and that the draft survives opening/closing. Installation tests cover manual guidance, deferred native prompting and appinstalled state. These are browser simulations; physical Android/iOS keyboards and installation remain separate device checks.
 
 Final local verification for this revision: TypeScript, ESLint and production build passed; 67 backend tests and 16 browser tests passed. Screenshots inspected: session-filters-mobile.png, visual-viewport-keyboard.png, install-app-mobile.png. Native receipt IDs override client clock skew; saved attachment cards also recover through a permission-checked durable receipt lookup when their native event is outside the current page.
+
+### Codex attention title recovery
+
+Codex's `[ ! ] Action Required | ` prefix is a status decoration, not a new native thread. Relay removes only that exact prefix when selecting and verifying title candidates. The native random nonce echo, foreground process identity, and per-delivery proof are unchanged. Regression coverage verifies discovery during attention, normal/attention transitions, and rejection when a terminal switches to another identically named thread.
