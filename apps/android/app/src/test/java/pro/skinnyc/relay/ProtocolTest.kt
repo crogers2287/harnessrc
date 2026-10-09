@@ -7,6 +7,27 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ProtocolTest {
+    @Test
+    fun sessionsSortWorkingFirstThenAttentionThenIdleByNewestActivity() {
+        fun session(id: String, status: String, time: String, pinned: Boolean = false) =
+            Session(
+                json("id" to id, "status" to status, "lastActivity" to time, "pinned" to pinned)
+            )
+        val rows =
+            listOf(
+                session("idle", "idle", "2026-10-09T15:00:00Z", true),
+                session("old", "working", "2026-10-09T10:00:00Z"),
+                session("ended", "ended", "2026-10-09T16:00:00Z"),
+                session("question", "blocked", "2026-10-09T11:00:00Z"),
+                session("new", "working", "2026-10-09T12:00:00Z"),
+            )
+        assertEquals(
+            listOf("new", "old", "question", "idle", "ended"),
+            sortedSessions(rows).map { it.id },
+        )
+        assertEquals(sortedSessions(rows), sortedSessions(rows.reversed()))
+    }
+
     private fun event(id: String, seq: Int, kind: String, text: String, item: String = "a") =
         ChatEvent(
             json(

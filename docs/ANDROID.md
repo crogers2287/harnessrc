@@ -61,3 +61,14 @@ Still requires a physical-phone pass for the user's keyboard, camera provider, m
 ![Native keyboard and composer](screenshots/android-native-keyboard.png)
 
 The screenshot uses isolated fixture conversation content. The Android input test actually advertises `image/*` and accepts `InputConnectionCompat.commitContent`; it is not a desktop paste simulation.
+
+### 0.1.1 interaction fixes
+
+- Reading older messages suspends automatic following immediately. New messages/tool events preserve the reading position; Latest messages resumes following. Delayed auto-scroll checks user intent again before moving.
+- Session drawer sorts working agents first, then sessions needing input, idle sessions, and saved/ended sessions. Each group uses newest activity first, with deterministic ties. Pins do not hide currently working agents below idle sessions.
+- Returning via the launcher does not open a share-import dialog. Only Android SEND/SEND_MULTIPLE intents trigger import; dismissed/consumed shares remain dismissed across activity recreation.
+- Back from a conversation opens the session drawer repeatedly, rather than backgrounding the app after the first use.
+
+Install the signed 0.1.1 APK over 0.1.0 to retain drafts and settings. Native changes require installing the APK update; refreshing the web app does not update the Android client.
+
+0.1.1 validation: nine unit tests and nine Android emulator integration tests passed, including preserved scroll offset across messages/tools/repeated idle refreshes, repeated Back, and launcher re-entry/recreation. Real Android SEND → Cancel → Home → launcher was also checked with UI Automator: the import dialog did not return. Android lint and signed release build passed. Physical-device confirmation remains outstanding.

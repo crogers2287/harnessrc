@@ -28,15 +28,33 @@ class MainActivity : ComponentActivity() {
                     ?.isVisible(androidx.core.view.WindowInsetsCompat.Type.ime()) == true
         }
         shared =
-            intent.takeIf {
-                it.action == Intent.ACTION_SEND || it.action == Intent.ACTION_SEND_MULTIPLE
+            (if (savedInstanceState != null)
+                    savedInstanceState.getParcelable<Intent>("pendingShare")
+                else intent)
+                ?.takeIf {
+                    it.action == Intent.ACTION_SEND || it.action == Intent.ACTION_SEND_MULTIPLE
+                }
+        setContent {
+            RelayTheme {
+                RelayApp(model, shared, keyboardVisible) {
+                    shared = null
+                    setIntent(Intent(this, MainActivity::class.java).setAction(Intent.ACTION_MAIN))
+                }
             }
-        setContent { RelayTheme { RelayApp(model, shared, keyboardVisible) { shared = null } } }
+        }
     }
 
-    override fun onNewIntent(intent: Intent) {
+    public override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        shared = intent
+        if (intent.action == Intent.ACTION_SEND || intent.action == Intent.ACTION_SEND_MULTIPLE) {
+            setIntent(intent)
+            shared = intent
+        }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putParcelable("pendingShare", shared)
+        super.onSaveInstanceState(outState)
     }
 
     override fun onStart() {

@@ -6,7 +6,6 @@
 package pro.skinnyc.relay
 
 import android.Manifest
-import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -28,9 +27,14 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.*
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.*
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
@@ -65,15 +69,13 @@ fun RelayApp(
     val scope = rememberCoroutineScope()
     var screen by rememberSaveable { mutableStateOf("") }
     var rowActions by remember { mutableStateOf<Session?>(null) }
-    var backOpened by remember { mutableStateOf(false) }
     var confirmShare by remember(shared) { mutableStateOf(shared != null) }
     val context = LocalContext.current
     BackHandler(enabled = screen.isNotEmpty()) { screen = "" }
-    BackHandler(enabled = screen.isEmpty() && drawer.isClosed) {
-        if (!backOpened) {
-            backOpened = true
-            scope.launch { drawer.open() }
-        } else (context as? Activity)?.moveTaskToBack(true)
+    BackHandler(enabled = screen.isEmpty()) {
+        scope.launch {
+            if (drawer.targetValue == DrawerValue.Closed) drawer.open() else drawer.close()
+        }
     }
     ModalNavigationDrawer(
         drawerState = drawer,
@@ -151,7 +153,7 @@ fun RelayApp(
                                     true,
                                 )
                         }
-                        .sortedByDescending { it.data.optBoolean("pinned") }
+                        .let(::sortedSessions)
                 LazyColumn(Modifier.weight(1f)) {
                     if (rows.isEmpty())
                         item {
@@ -175,7 +177,6 @@ fun RelayApp(
                                     onClick = {
                                         vm.choose(s.id)
                                         screen = ""
-                                        backOpened = false
                                         scope.launch { drawer.close() }
                                     },
                                     onLongClick = { rowActions = s },
@@ -411,28 +412,49 @@ fun Chat(vm: RelayModel, modifier: Modifier) {
     val rows = remember(vm.events) { conversationRows(vm.events) }
     val list = rememberLazyListState()
     val scope = rememberCoroutineScope()
-    var follow by remember(vm.selected) { mutableStateOf(true) }
-    LaunchedEffect(list) {
-        snapshotFlow { list.isScrollInProgress to list.canScrollForward }
-            .collect { (scrolling, more) -> if (scrolling) follow = !more }
-    }
-    LaunchedEffect(vm.selected) { follow = true }
+    var follow by rememberSaveable(vm.selected) { mutableStateOf(true) }
+    // Only a user's scroll can change follow intent. Programmatic scrolling and
+    // incoming layout changes must never turn it back on while reading history.
+    val readerScroll =
+        remember(vm.selected, list) {
+            object : NestedScrollConnection {
+                override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                    if (source == NestedScrollSource.Drag && available.y > 0f) follow = false
+                    return Offset.Zero
+                }
+
+                override fun onPostScroll(
+                    consumed: Offset,
+                    available: Offset,
+                    source: NestedScrollSource,
+                ): Offset {
+                    if (
+                        source == NestedScrollSource.Drag &&
+                            consumed.y < 0f &&
+                            !list.canScrollForward
+                    ) {
+                        follow = true
+                    }
+                    return Offset.Zero
+                }
+            }
+        }
     LaunchedEffect(
         rows.lastOrNull()?.id,
         rows.lastOrNull()?.text,
-        vm.interactions,
+        vm.interactions.map { it.str("id") to it.str("status") },
         vm.session?.status,
     ) {
         if (follow) {
             delay(60)
-            if (list.layoutInfo.totalItemsCount > 0)
+            if (follow && !list.isScrollInProgress && list.layoutInfo.totalItemsCount > 0)
                 list.scrollToItem(list.layoutInfo.totalItemsCount - 1)
         }
     }
     Box(modifier.fillMaxWidth()) {
         LazyColumn(
             state = list,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().nestedScroll(readerScroll).testTag("conversation"),
             contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {

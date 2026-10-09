@@ -52,6 +52,27 @@ data class Session(val data: JSONObject) {
     }
 }
 
+/** Working agents first; real activity breaks ties, independent of API ordering. */
+fun sortedSessions(sessions: List<Session>): List<Session> =
+    sessions.sortedWith(
+        compareBy<Session> {
+                when {
+                    it.status == "working" -> 0
+                    it.pending > 0 || it.status == "blocked" -> 1
+                    it.status == "ended" ||
+                        it.data.optBoolean("archived") ||
+                        it.data.str("presence") == "saved" -> 3
+                    else -> 2
+                }
+            }
+            .thenByDescending {
+                runCatching { java.time.Instant.parse(it.data.str("lastActivity")).toEpochMilli() }
+                    .getOrDefault(0L)
+            }
+            .thenByDescending { it.data.optBoolean("pinned") }
+            .thenBy { it.id }
+    )
+
 data class ChatEvent(val data: JSONObject) {
     val id = data.str("id")
     val sequence = data.optLong("sequence")

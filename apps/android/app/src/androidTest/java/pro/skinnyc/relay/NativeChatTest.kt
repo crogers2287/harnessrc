@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.core.content.FileProvider
@@ -34,6 +35,7 @@ class NativeChatTest {
     private val requests = CopyOnWriteArrayList<RecordedRequest>()
     @Volatile private var pendingQuestion: JSONObject? = null
     @Volatile private var rejectMessage = false
+    @Volatile private var liveSocket: okhttp3.WebSocket? = null
     private val ctx
         get() = ApplicationProvider.getApplicationContext<Context>()
 
@@ -53,6 +55,13 @@ class NativeChatTest {
                         return MockResponse()
                             .withWebSocketUpgrade(
                                 object : WebSocketListener() {
+                                    override fun onOpen(
+                                        webSocket: okhttp3.WebSocket,
+                                        response: okhttp3.Response,
+                                    ) {
+                                        liveSocket = webSocket
+                                    }
+
                                     override fun onClosing(
                                         webSocket: okhttp3.WebSocket,
                                         code: Int,
@@ -124,6 +133,76 @@ class NativeChatTest {
                 bitmap.recycle()
             }
         return FileProvider.getUriForFile(ctx, "${ctx.packageName}.files", file)
+    }
+
+    @Test
+    fun launcherResumeDoesNotImport() {
+        scenario.onActivity {
+            it.onNewIntent(Intent(it, MainActivity::class.java).setAction(Intent.ACTION_MAIN))
+        }
+        compose.onNodeWithText("Add to this conversation?").assertDoesNotExist()
+        scenario.recreate()
+        compose.onNodeWithText("Add to this conversation?").assertDoesNotExist()
+        assertFalse(requests.any { it.path?.endsWith("/messages") == true })
+    }
+
+    @Test
+    fun incomingMessagesAndToolsPreserveHistoryPositionUntilLatestIsTapped() {
+        compose.waitUntil(10000) { liveSocket != null }
+        fun emit(index: Int, kind: String = "assistant.message") {
+            val event =
+                JSONObject()
+                    .put("id", "scroll-$index")
+                    .put("sequence", index + 10)
+                    .put("sessionId", "test-session")
+                    .put("kind", kind)
+                    .put(
+                        "data",
+                        JSONObject()
+                            .put(
+                                "text",
+                                "History message $index\n" + "Readable history. ".repeat(30),
+                            ),
+                    )
+            liveSocket!!.send(JSONObject().put("type", "event").put("event", event).toString())
+        }
+        for (i in 1..25) emit(i)
+        Thread.sleep(800)
+        compose.waitForIdle()
+        compose.onNodeWithTag("conversation").performTouchInput { swipeDown() }
+        compose.waitForIdle()
+        fun position() =
+            compose
+                .onNodeWithTag("conversation")
+                .fetchSemanticsNode()
+                .config[SemanticsProperties.VerticalScrollAxisRange]
+                .value()
+        val before = position()
+        compose.onNodeWithContentDescription("Latest messages").assertExists()
+        emit(26)
+        emit(27, "tool.invocation")
+        Thread.sleep(500)
+        compose.waitForIdle()
+        assertEquals(before, position(), 0.001f)
+        // Periodic native state refreshes and turn completion must not restart following.
+        repeat(3) {
+            liveSocket!!.send(
+                JSONObject()
+                    .put("type", "invalidate")
+                    .put(
+                        "sessions",
+                        org.json.JSONArray().put(JSONObject(session).put("status", "idle")),
+                    )
+                    .toString()
+            )
+            Thread.sleep(400)
+            compose.waitForIdle()
+            assertEquals(before, position(), 0.001f)
+        }
+
+        compose.onNodeWithContentDescription("Latest messages").performClick()
+        compose.waitForIdle()
+        assertTrue(position() > before)
     }
 
     @Test
@@ -200,6 +279,9 @@ class NativeChatTest {
 
     @Test
     fun firstBackOpensDrawerAndSteerHasNoQueueRequest() {
+        scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
+        compose.onNodeWithText("New session").assertExists()
+        compose.onNodeWithContentDescription("Close sessions").performClick()
         scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
         compose.onNodeWithText("New session").assertExists()
         compose.onNodeWithContentDescription("Close sessions").performClick()
