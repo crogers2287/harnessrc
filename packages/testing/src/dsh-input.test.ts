@@ -142,7 +142,7 @@ test('DSH file/image steering preserves bytes and receipt identity, never queues
     assert.equal(
       (await post({ ...input, idempotencyKey: randomUUID(), attachments: [file.id, foreign.id] }))
         .statusCode,
-      409,
+      422,
     );
     assert.equal(uploads.length, 1);
     assert.equal(prompts().length, 1);

@@ -81,11 +81,11 @@ test('unsupported steering, blocked interaction, and ended turns never fall back
     f.gateway.store.saveSession(s);
     const input = { prompt: 'not a queued task', idempotencyKey: randomUUID() };
     const response = await post(f, input);
-    assert.equal(response.statusCode, 409);
+    assert.equal(response.statusCode, 422);
     assert.match(response.body, /does not support native steering/);
     assert.equal(f.gateway.store.tasks(s.id).length, 0);
     f.mock.status = 'blocked';
-    assert.equal((await post(f, { ...input, idempotencyKey: randomUUID() })).statusCode, 409);
+    assert.equal((await post(f, { ...input, idempotencyKey: randomUUID() })).statusCode, 422);
     assert.equal(f.gateway.store.tasks(s.id).length, 0);
     s.capabilities.steerActiveTurn = true;
     f.gateway.store.saveSession(s);
@@ -178,12 +178,12 @@ test('steering with uploads delivers file references once, protects saved upload
     assert.equal(
       (await post(f, { ...input, idempotencyKey: randomUUID(), attachments: [randomUUID()] }))
         .statusCode,
-      409,
+      422,
     );
     assert.equal(
       (await post(f, { ...input, prompt: 'x'.repeat(32000), idempotencyKey: randomUUID() }))
         .statusCode,
-      409,
+      422,
     );
   } finally {
     await f.close();
@@ -207,6 +207,7 @@ test('receipt lookup finds an attachment echo outside the current page and enfor
         new Date().toISOString(),
       );
     const url = `/api/sessions/${f.session.id}/message-receipts/${key}`;
+    assert.equal((await f.gateway.app.inject({ url, headers: f.headers })).json().confirmed, true);
     assert.equal(
       (await f.gateway.app.inject({ url, headers: f.headers })).json().nativeSeen,
       false,
@@ -228,6 +229,27 @@ test('receipt lookup finds an attachment echo outside the current page and enfor
       ).statusCode >= 400,
       true,
     );
+  } finally {
+    await f.close();
+  }
+});
+
+test('preflight rejection does not leave an uncertain receipt or block a safe later send', async () => {
+  const f = await fixture({ startRuntime: false });
+  try {
+    const adapter = f.gateway.runtime.adapters.get(f.session.id)!;
+    const original = adapter.turnState;
+    adapter.turnState = async () => {
+      throw new Error('Native state unavailable before delivery');
+    };
+    const key = randomUUID();
+    const response = await post(f, { prompt: 'Keep my draft', idempotencyKey: key });
+    assert.equal(response.statusCode, 422);
+    assert.equal(
+      f.gateway.store.db.prepare('SELECT status FROM message_receipts WHERE request_id=?').get(key),
+      undefined,
+    );
+    adapter.turnState = original;
   } finally {
     await f.close();
   }

@@ -80,3 +80,7 @@ Claude background-task notifications, including native result payloads, render a
 User messages display Sent and agent messages display Received with the source event date/time in the phone timezone and locale. Missing/invalid native timestamps are omitted rather than replaced with the current time. This is the recorded event time, not a new delivery receipt. Install 0.1.2 over the existing Android app.
 
 0.1.2 validation: 11 native unit tests and all 10 Android emulator integration tests passed, including task-result expansion and sent/received timestamps. The mobile web task-notification rendering test passed across the configured phone/tablet/desktop widths. An emulator System UI ANR initially obscured two native focus/clipboard tests; restarting that emulator component resolved the interference, and the complete suite then passed.
+
+### 0.1.3 send recovery
+
+A durable confirmed gateway receipt now resolves an uncertain Android send even when the native transcript echo has not arrived. Reconciliation preserves a newer draft and does not submit another message. The gateway marks failures before any delivery attempt as a definitive rejection (HTTP 422) and removes the unused receipt, keeping them out of uncertain-delivery recovery. Errors after a native delivery attempt retain the original idempotency key and remain uncertain. Existing CLI Codex question/approval routing is unchanged by this delivery fix.

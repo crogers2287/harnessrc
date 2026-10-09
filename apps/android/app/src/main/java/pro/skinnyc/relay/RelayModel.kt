@@ -292,9 +292,17 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
                 if (
                     selected == id &&
                         outgoing?.str("idempotencyKey") == key &&
-                        receipt.optBoolean("nativeSeen")
+                        (receipt.optBoolean("nativeSeen") || receipt.optBoolean("confirmed"))
                 ) {
+                    if (draft == pending.str("prompt")) draft = ""
+                    val sent = pending.optJSONArray("attachments") ?: JSONArray()
+                    attachments =
+                        attachments.filterNot { file ->
+                            (0 until sent.length()).any { sent.optString(it) == file.str("id") }
+                        }
                     outgoing = null
+                    error = ""
+                    notice = "Delivery confirmed"
                     saveDraft()
                 }
             }
@@ -465,7 +473,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 if (selected == id) {
-                    if (e is ApiFailure && e.status in listOf(400, 401, 403, 413, 429))
+                    if (e is ApiFailure && e.status in listOf(400, 401, 403, 413, 422, 429))
                         outgoing = null
                     else
                         outgoing =
@@ -502,7 +510,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
                 "attachments" to pending.optJSONArray("attachments"),
             ),
             pending.str("mode"),
-            draft,
+            pending.str("prompt"),
         )
     }
 

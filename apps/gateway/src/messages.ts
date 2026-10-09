@@ -31,6 +31,7 @@ export async function sendMessage(
   store.db
     .prepare("INSERT INTO message_receipts VALUES(?,?,?,?,'sending',NULL,?)")
     .run(value.idempotencyKey, deviceId, sessionId, hash, new Date().toISOString());
+  let deliveryAttempted = false;
   try {
     const session = store.session(sessionId);
     await runtime.assertBinding(session);
@@ -64,6 +65,7 @@ export async function sendMessage(
         store.db
           .prepare('INSERT INTO message_attachments VALUES(?,?,?)')
           .run(value.idempotencyKey, id, value.prompt);
+      deliveryAttempted = true;
       await adapter.steer(
         session,
         prompt,
@@ -72,6 +74,7 @@ export async function sendMessage(
       );
       result = { mode: 'steer' };
     } else if (state === 'idle' || state === 'done') {
+      deliveryAttempted = true;
       result = { mode: 'send', task: await runtime.queue.sendNow(sessionId, value) };
     } else throw new Error('The agent is not ready for a message. Your message was not queued.');
     store.db
@@ -82,6 +85,15 @@ export async function sendMessage(
     });
     return result;
   } catch (error) {
+    if (!deliveryAttempted) {
+      store.db
+        .prepare('DELETE FROM message_attachments WHERE request_id=?')
+        .run(value.idempotencyKey);
+      store.db.prepare('DELETE FROM message_receipts WHERE request_id=?').run(value.idempotencyKey);
+      throw Object.assign(error instanceof Error ? error : new Error('Message was not sent'), {
+        statusCode: 422,
+      });
+    }
     store.db
       .prepare("UPDATE message_receipts SET status='uncertain' WHERE request_id=?")
       .run(value.idempotencyKey);

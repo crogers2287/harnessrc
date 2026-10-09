@@ -500,7 +500,7 @@ export async function createGateway(
     check(req, id);
     z.uuid().parse(requestId);
     const receipt = store.db
-      .prepare('SELECT result FROM message_receipts WHERE request_id=? AND session_id=?')
+      .prepare('SELECT result,status FROM message_receipts WHERE request_id=? AND session_id=?')
       .get(requestId, id);
     if (!receipt) return { nativeSeen: false };
     const result = JSON.parse(String(receipt.result ?? '{}'));
@@ -512,7 +512,7 @@ export async function createGateway(
       AND (json_extract(body,'$.data.taskId')=? OR json_extract(body,'$.data.requestId')=?) LIMIT 1`,
       )
       .get(id, nativeId, nativeId);
-    return { nativeSeen: !!echo };
+    return { nativeSeen: !!echo, confirmed: receipt.status === 'confirmed' };
   });
   app.post('/api/sessions/:id/messages', async (req) => {
     const { id } = req.params as { id: string };

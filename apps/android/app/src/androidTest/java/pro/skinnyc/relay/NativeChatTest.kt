@@ -35,6 +35,7 @@ class NativeChatTest {
     private val requests = CopyOnWriteArrayList<RecordedRequest>()
     @Volatile private var pendingQuestion: JSONObject? = null
     @Volatile private var rejectMessage = false
+    @Volatile private var receiptConfirmed = false
     @Volatile private var liveSocket: okhttp3.WebSocket? = null
     private val ctx
         get() = ApplicationProvider.getApplicationContext<Context>()
@@ -89,7 +90,8 @@ class NativeChatTest {
                             path.contains("/dictation?") ->
                                 """{"text":"Please check the image and fix the layout.","original":"please uh check the image and fix the layout","cleaned":true}"""
                             path.endsWith("/messages") -> """{"mode":"steer"}"""
-                            path.contains("message-receipts") -> """{"nativeSeen":false}"""
+                            path.contains("message-receipts") ->
+                                """{"nativeSeen":false,"confirmed":$receiptConfirmed}"""
                             else -> "{}"
                         }
                     return MockResponse()
@@ -133,6 +135,32 @@ class NativeChatTest {
                 bitmap.recycle()
             }
         return FileProvider.getUriForFile(ctx, "${ctx.packageName}.files", file)
+    }
+
+    @Test
+    fun confirmedReceiptUnlocksComposerWithoutResendingOrLosingNewDraft() {
+        rejectMessage = true
+        scenario.onActivity { find(it.window.decorView)!!.setText("Original request") }
+        compose.onNodeWithContentDescription("Steer instruction").performClick()
+        compose.waitUntil(15000) {
+            compose.onAllNodesWithText("Retry safely").fetchSemanticsNodes().isNotEmpty()
+        }
+        scenario.onActivity { find(it.window.decorView)!!.setText("New draft stays here") }
+        receiptConfirmed = true
+        scenario.close()
+        scenario = ActivityScenario.launch(MainActivity::class.java)
+        compose.waitUntil(15000) {
+            requests.any { it.path?.contains("message-receipts") == true } &&
+                compose
+                    .onAllNodes(hasContentDescription("Steer instruction") and isEnabled())
+                    .fetchSemanticsNodes()
+                    .isNotEmpty()
+        }
+        compose.onNodeWithContentDescription("Steer instruction").assertIsEnabled()
+        scenario.onActivity {
+            assertEquals("New draft stays here", find(it.window.decorView)!!.text.toString())
+        }
+        assertEquals(1, requests.count { it.path?.endsWith("/messages") == true })
     }
 
     @Test
@@ -467,6 +495,7 @@ class NativeChatTest {
         }
         assertEquals(1, requests.count { it.path?.endsWith("/messages") == true })
         rejectMessage = false
+        scenario.onActivity { find(it.window.decorView)!!.setText("Keep this newer draft") }
         compose.onNodeWithText("Retry safely").performScrollTo().performClick()
         compose.waitUntil(15000) { requests.count { it.path?.endsWith("/messages") == true } == 2 }
         val sent =
@@ -474,5 +503,9 @@ class NativeChatTest {
                 .filter { it.path?.endsWith("/messages") == true }
                 .map { JSONObject(it.body.readUtf8()) }
         assertEquals(sent[0].getString("idempotencyKey"), sent[1].getString("idempotencyKey"))
+        compose.waitForIdle()
+        scenario.onActivity {
+            assertEquals("Keep this newer draft", find(it.window.decorView)!!.text.toString())
+        }
     }
 }
