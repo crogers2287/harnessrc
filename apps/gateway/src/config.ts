@@ -1,3 +1,4 @@
+import { dshHostSchema } from './dsh-host.ts';
 import { launchProfileSchema } from './launch.ts';
 import { z } from 'zod';
 import { homedir } from 'node:os';
@@ -5,6 +6,7 @@ import path from 'node:path';
 import { readFileSync } from 'node:fs';
 const home = homedir();
 export const configSchema = z.object({
+  dsh: z.array(dshHostSchema).default([]),
   dataDir: z.string().default('.data'),
   listen: z.string().default('127.0.0.1'),
   port: z.number().int().min(1).max(65535).default(4080),

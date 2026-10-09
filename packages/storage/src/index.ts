@@ -37,6 +37,12 @@ export class Store extends EventEmitter {
     this.db.exec(
       readFileSync(new URL('../../../migrations/003-codex-links.sql', import.meta.url), 'utf8'),
     );
+    this.db.exec(
+      readFileSync(
+        new URL('../../../migrations/008-steer-attachments.sql', import.meta.url),
+        'utf8',
+      ),
+    );
   }
   transaction<T>(fn: () => T): T {
     this.db.exec('BEGIN IMMEDIATE');

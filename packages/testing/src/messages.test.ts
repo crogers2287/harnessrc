@@ -141,3 +141,51 @@ test('lost message confirmation stays uncertain across gateway restart without r
     await f.close();
   }
 });
+
+test('steering with uploads delivers file references once, protects saved uploads, and never queues', async () => {
+  const f = await fixture({ startRuntime: false });
+  try {
+    f.mock.status = 'working';
+    const file = f.gateway.runtime.attachments.add(
+      f.session,
+      'review.txt',
+      'text/plain',
+      Buffer.from('STEER_FILE_OK'),
+    );
+    const input = {
+      prompt: 'Use this file now',
+      attachments: [file.id],
+      idempotencyKey: randomUUID(),
+    };
+    const result = await post(f, input);
+    assert.equal(result.statusCode, 200, result.body);
+    assert.equal(result.json().mode, 'steer');
+    const delivered = f.mock.events.filter(
+      (e) => e.kind === 'progress' && String(e.data.text).includes('review.txt'),
+    );
+    assert.equal(delivered.length, 1);
+    assert.match(String(delivered[0].data.text), /uploads\/.*\.txt/);
+    assert.equal(f.gateway.store.tasks(f.session.id).length, 0);
+    assert.throws(() => f.gateway.runtime.attachments.remove(f.session, file.id), /saved message/);
+    await f.restart();
+    assert.equal((await post(f, input)).statusCode, 200);
+    assert.equal(
+      f.mock.events.filter(
+        (e) => e.kind === 'progress' && String(e.data.text).includes('review.txt'),
+      ).length,
+      1,
+    );
+    assert.equal(
+      (await post(f, { ...input, idempotencyKey: randomUUID(), attachments: [randomUUID()] }))
+        .statusCode,
+      409,
+    );
+    assert.equal(
+      (await post(f, { ...input, prompt: 'x'.repeat(32000), idempotencyKey: randomUUID() }))
+        .statusCode,
+      409,
+    );
+  } finally {
+    await f.close();
+  }
+});

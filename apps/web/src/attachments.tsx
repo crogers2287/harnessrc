@@ -113,6 +113,25 @@ export function AttachmentPicker({
   add: (files: File[]) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const container = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const dismiss = (event: PointerEvent) => {
+      if (!container.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setOpen(false);
+        container.current?.querySelector('button')?.focus();
+      }
+    };
+    document.addEventListener('pointerdown', dismiss);
+    document.addEventListener('keydown', escape);
+    return () => {
+      document.removeEventListener('pointerdown', dismiss);
+      document.removeEventListener('keydown', escape);
+    };
+  }, [open]);
   const photos = useRef<HTMLInputElement>(null),
     camera = useRef<HTMLInputElement>(null),
     documents = useRef<HTMLInputElement>(null);
@@ -122,28 +141,48 @@ export function AttachmentPicker({
     setOpen(false);
   };
   return (
-    <div className="attachment-picker">
+    <div className="attachment-picker" ref={container}>
       <button
         type="button"
-        className="icon-button"
+        className="attach-button"
         aria-label="Add files or images"
+        title={disabled ? 'Maximum 10 attachments per message' : 'Add files or images'}
         aria-expanded={open}
         disabled={disabled}
         onClick={() => setOpen(!open)}
       >
-        <Paperclip size={21} />
+        <Paperclip size={21} aria-hidden="true" />
+        <span>Attach</span>
       </button>
       {open && (
         <div className="attachment-menu" role="group" aria-label="Attachment options">
-          <button type="button" onClick={() => photos.current?.click()}>
+          <button
+            type="button"
+            onClick={() => {
+              photos.current?.click();
+              setOpen(false);
+            }}
+          >
             <ImagePlus size={20} />
             Photos
           </button>
-          <button type="button" onClick={() => camera.current?.click()}>
+          <button
+            type="button"
+            onClick={() => {
+              camera.current?.click();
+              setOpen(false);
+            }}
+          >
             <Camera size={20} />
             Camera
           </button>
-          <button type="button" onClick={() => documents.current?.click()}>
+          <button
+            type="button"
+            onClick={() => {
+              documents.current?.click();
+              setOpen(false);
+            }}
+          >
             <FilePlus2 size={20} />
             Files
           </button>

@@ -91,7 +91,10 @@ export class Attachments {
   }
   remove(session: Session, id: string) {
     const row = this.get(session, id);
-    if (this.store.tasks(session.id).some((t) => t.attachments.includes(id)))
+    if (
+      this.store.tasks(session.id).some((t) => t.attachments.includes(id)) ||
+      this.store.db.prepare('SELECT 1 FROM message_attachments WHERE attachment_id=?').get(id)
+    )
       throw new Error('This attachment is part of a saved message');
     unlinkSync(path.join(this.root, String(row.filename)));
     this.store.db.prepare('DELETE FROM attachments WHERE id=?').run(id);

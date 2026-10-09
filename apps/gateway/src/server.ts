@@ -1,3 +1,4 @@
+import { DshAdapter } from '../../../packages/adapters/src/dsh-session.ts';
 import { sendMessage } from './messages.ts';
 import { randomUUID } from 'node:crypto';
 import { deliverSteer } from './steering.ts';
@@ -41,6 +42,7 @@ export async function createGateway(
     config.launchProfiles,
     runtime.clients,
     new Map(config.codexDaemons.map((d) => [d.hostId, d.socket])),
+    runtime.dshHosts,
   );
   launcher.recover();
   const tailnet = new TailnetAuth(options.tailnetLookup);
@@ -206,13 +208,25 @@ export async function createGateway(
     async (req) => {
       launchAdmin(req);
       const receipt = await launcher.launch(launchRequestSchema.parse(req.body), req.device.id);
-      void runtime.refresh(receipt.hostId);
+      if (runtime.dshHosts.has(receipt.hostId))
+        void runtime.dshHosts.get(receipt.hostId)!.refresh();
+      else void runtime.refresh(receipt.hostId);
       return receipt;
     },
   );
   app.get('/api/sessions', async (req) => ({ sessions: sessionViews(req.device) }));
   app.get('/api/hosts', async (req) => ({
-    hosts: [...runtime.clients.values()].map((c) =>
+    hosts: [
+      ...runtime.clients.values(),
+      ...[...runtime.dshHosts.values()].map((h) => ({
+        host: {
+          id: h.config.id,
+          name: h.config.name,
+          connected: h.connected,
+          diagnostic: h.diagnostic,
+        },
+      })),
+    ].map((c) =>
       req.device.admin ? c.host : { id: c.host.id, name: c.host.name, connected: c.host.connected },
     ),
   }));
@@ -228,6 +242,7 @@ export async function createGateway(
   app.get('/api/sessions/:id/events', async (req) => {
     const { id } = req.params as { id: string };
     check(req, id);
+    await runtime.prepareConversation(id);
     const query = z
       .object({
         after: z.coerce.number().int().min(0).default(0),
@@ -289,6 +304,39 @@ export async function createGateway(
     runtime.attachments.remove(store.session(id), file);
     store.audit(req.device.id, 'attachment.remove', id, { attachmentId: file });
     return { ok: true };
+  });
+  app.get('/api/sessions/:id/models', async (req) => {
+    const { id } = req.params as { id: string };
+    check(req, id);
+    const adapter = runtime.adapters.get(id);
+    if (!(adapter instanceof DshAdapter)) throw new Error('Native model selection unavailable');
+    await runtime.assertBinding(store.session(id));
+    const catalog = (await adapter.native.models()) as Record<string, unknown>;
+    const row = await adapter.row(store.session(id));
+    return { ...catalog, current: row.projections?.values.modelSelection?.next };
+  });
+  app.post('/api/sessions/:id/model', async (req) => {
+    const { id } = req.params as { id: string };
+    check(req, id, true);
+    const value = z
+      .object({
+        provider: z.string().min(1).max(160),
+        model: z.string().min(1).max(160),
+        reasoningEffort: z.string().max(80).optional(),
+      })
+      .strict()
+      .parse(req.body);
+    const adapter = runtime.adapters.get(id);
+    if (!(adapter instanceof DshAdapter)) throw new Error('Native model selection unavailable');
+    await runtime.assertBinding(store.session(id));
+    const result = await adapter.native.selectModel(
+      store.session(id).nativeSessionId,
+      value.provider,
+      value.model,
+      value.reasoningEffort,
+    );
+    store.audit(req.device.id, 'session.model', id, value);
+    return result;
   });
   app.post('/api/sessions/:id/messages', async (req) => {
     const { id } = req.params as { id: string };

@@ -59,3 +59,27 @@ export class DshClient {
     });
   }
 }
+
+/** Exchange the native host's private launch token; keep its cookie only in memory. */
+export function dshCredential(endpoint: string, tokenFile: string) {
+  let token = '',
+    cookie = '';
+  return async () => {
+    const { readFile, stat } = await import('node:fs/promises');
+    const info = await stat(tokenFile);
+    if (info.uid !== process.getuid?.() || info.mode & 0o077)
+      throw new Error('DSH token file must be private to the gateway account');
+    const next = (await readFile(tokenFile, 'utf8')).trim();
+    if (!/^[A-Za-z0-9_-]{43}$/.test(next)) throw new Error('DSH login token is unavailable');
+    if (token === next && cookie) return cookie;
+    const url = new URL('/', endpoint);
+    url.searchParams.set('token', next);
+    const response = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(10000) });
+    const value = response.headers.get('set-cookie')?.split(';')[0];
+    if (![302, 303].includes(response.status) || !value?.startsWith('dsh-auth-'))
+      throw new Error('DSH native login failed');
+    token = next;
+    cookie = value;
+    return cookie;
+  };
+}

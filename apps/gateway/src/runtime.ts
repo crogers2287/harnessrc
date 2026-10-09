@@ -1,3 +1,5 @@
+import { DshHost } from './dsh-host.ts';
+import { DshAdapter } from '../../../packages/adapters/src/dsh-session.ts';
 import { CodexLinks } from './codex-links.ts';
 import { CodexDaemon } from '../../../packages/adapters/src/codex-daemon.ts';
 import { EventEmitter } from 'node:events';
@@ -18,6 +20,7 @@ import { TaskQueue } from '@harnessrc/task-queue';
 import { InteractionBroker } from '@harnessrc/interaction-broker';
 import type { Config } from './config.ts';
 export class Runtime extends EventEmitter {
+  dshHosts = new Map<string, DshHost>();
   clients = new Map<string, HerdrClient>();
   private codexLinks = new Map<string, CodexLinks>();
   adapters = new Map<string, Adapter>();
@@ -56,6 +59,11 @@ export class Runtime extends EventEmitter {
         daemon.hostId,
         new CodexLinks(daemon.hostId, store, new CodexDaemon(daemon.socket)),
       );
+    for (const host of config.dsh ?? []) {
+      if (this.clients.has(host.id) || this.dshHosts.has(host.id))
+        throw new Error('DSH host IDs must be unique');
+      this.dshHosts.set(host.id, new DshHost(host, store));
+    }
     this.attachments = new Attachments(store, config.dataDir);
     this.queue = new TaskQueue(
       store,
@@ -79,6 +87,7 @@ export class Runtime extends EventEmitter {
     );
   }
   async assertBinding(s: Session) {
+    if (this.dshHosts.has(s.hostId)) return this.dshHosts.get(s.hostId)!.assertBinding(s);
     await this.clients.get(s.hostId)!.assertBinding(s);
     if (s.processIdentity) {
       const { process_info } = await this.clients
@@ -306,21 +315,53 @@ export class Runtime extends EventEmitter {
     this.tickBusy = true;
     try {
       for (const id of this.clients.keys()) await this.refresh(id);
+      for (const host of this.dshHosts.values()) {
+        await host.refresh();
+        for (const [id, a] of host.adapters) this.adapters.set(id, a);
+      }
       for (const s of this.store.sessions().filter((s) => s.connected)) {
         const adapter = this.adapters.get(s.id);
         if (!adapter) continue;
         try {
           for (const e of await adapter.read(s)) {
             if (e.kind === 'user.message') {
-              const task = this.store
-                .tasks(s.id)
-                .find(
-                  (t) =>
-                    t.attachments.length &&
-                    t.generation === s.generation &&
-                    Date.parse(e.timestamp) >= Date.parse(t.createdAt) &&
-                    matchesTaskReceipt(e.data.text, t.id, this.attachments.prompt(s, t)),
-                );
+              let task: { id: string; prompt: string; attachments: string[] } | undefined =
+                this.store
+                  .tasks(s.id)
+                  .find(
+                    (t) =>
+                      t.attachments.length &&
+                      t.generation === s.generation &&
+                      Date.parse(e.timestamp) >= Date.parse(t.createdAt) &&
+                      matchesTaskReceipt(e.data.text, t.id, this.attachments.prompt(s, t)),
+                  );
+              if (!task) {
+                const match = String(e.data.text ?? '').match(/\[Relay request ([a-f0-9-]{36})\]/);
+                if (match) {
+                  const refs = this.store.db
+                    .prepare(
+                      `SELECT m.attachment_id, m.prompt, r.created_at
+                    FROM message_attachments m JOIN message_receipts r ON r.request_id=m.request_id
+                    WHERE m.request_id=? AND r.session_id=?`,
+                    )
+                    .all(match[1], s.id);
+                  if (refs.length) {
+                    const candidate = {
+                      id: match[1],
+                      prompt: String(refs[0].prompt),
+                      attachments: refs.map((r) => String(r.attachment_id)),
+                    };
+                    if (
+                      matchesTaskReceipt(
+                        e.data.text,
+                        candidate.id,
+                        this.attachments.prompt(s, candidate),
+                      )
+                    )
+                      task = candidate;
+                  }
+                }
+              }
               if (task)
                 e.data = {
                   ...e.data,
@@ -368,7 +409,15 @@ export class Runtime extends EventEmitter {
       this.tickBusy = false;
     }
   }
+  async prepareConversation(id: string) {
+    const adapter = this.adapters.get(id);
+    if (!(adapter instanceof DshAdapter)) return;
+    const s = this.store.session(id);
+    adapter.watch(s);
+    for (const e of await adapter.read(s)) this.store.event(s, e);
+  }
   async stop() {
+    for (const host of this.dshHosts.values()) host.close();
     clearInterval(this.interval);
     for (const c of this.clients.values()) c.stop();
     while (this.tickBusy || this.refreshing.size) await new Promise((r) => setTimeout(r, 10));

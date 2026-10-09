@@ -2587,3 +2587,85 @@ code {
 .composer:focus-within {
   box-shadow: 0 0 0 1px var(--focus);
 }
+/* Composer actions have separate, stable touch targets even with the keyboard open. */
+.attach-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 48px;
+  min-width: 48px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--soft);
+  color: var(--text);
+  font-size: 0.8125rem;
+  touch-action: manipulation;
+}
+.attach-button[aria-expanded='true'],
+.attach-button:active {
+  background: var(--border);
+}
+.attachment-menu {
+  display: flex;
+  gap: 4px;
+  min-width: 272px;
+  padding: 8px;
+  border-radius: 20px;
+  box-shadow: 0 8px 32px #0003;
+}
+.attachment-menu button {
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  min-height: 76px;
+  min-width: 80px;
+  border-radius: 14px;
+  font-size: 0.8125rem;
+  touch-action: manipulation;
+}
+.composer-controls {
+  gap: 8px;
+}
+.composer-mode {
+  min-width: 0;
+  flex: 1;
+}
+.composer-mode select {
+  min-height: 48px;
+  width: 100%;
+  padding-left: 4px;
+}
+.composer .send-button {
+  flex-shrink: 0;
+  touch-action: manipulation;
+}
+.composer .send-button:active:not(:disabled) {
+  transform: scale(0.94);
+}
+@media (max-width: 359px) {
+  .attach-button span {
+    display: none;
+  }
+}
+.composer .send-button {
+  display: grid;
+  place-items: center;
+  border: 0;
+  margin: 0;
+  line-height: 1;
+}
+.composer .send-button svg {
+  display: block;
+  margin: 0;
+  width: 22px;
+  height: 22px;
+}
+.composer .send-button:disabled {
+  opacity: 0.4;
+}
+.composer-footer {
+  min-height: 0;
+  margin: 4px 0 0;
+}

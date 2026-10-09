@@ -640,3 +640,83 @@ test('mobile browser Back opens sessions from chat and preserves secondary navig
   await page.goBack();
   await expect(page.getByRole('dialog', { name: 'Sessions', exact: true })).not.toBeVisible();
 });
+
+test('working composer accepts file and image steering through real touch targets with a reduced keyboard viewport', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 520 });
+  await pair(page);
+  await page.getByRole('button', { name: /Atlas API/ }).click();
+  const draft = page.getByLabel('Instruction', { exact: true });
+  // Earlier interaction tests leave this mock working; create a turn if run independently.
+  if (await page.getByRole('button', { name: 'Send message', exact: true }).isVisible()) {
+    await draft.fill('Keep working for steering UI test');
+    await page.getByRole('button', { name: 'Send message', exact: true }).click();
+  }
+  await expect(page.getByRole('button', { name: 'Steer active turn', exact: true })).toBeVisible();
+  const touch = await page.context().newCDPSession(page);
+  await touch.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+  const tap = async (name: string) => {
+    const button = page.getByRole('button', { name, exact: true });
+    const b = (await button.boundingBox())!;
+    expect(b.height).toBeGreaterThanOrEqual(48);
+    const x = b.x + b.width / 2,
+      y = b.y + b.height / 2;
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  };
+  for (let i = 0; i < 4; i++) {
+    await draft.focus();
+    await tap('Add files or images');
+    await expect(page.getByRole('button', { name: 'Files', exact: true })).toBeVisible();
+    await tap('Add files or images');
+  }
+  await tap('Add files or images');
+  await page.screenshot({ path: 'docs/screenshots/attach-keyboard-mobile.png' });
+  const chooser = page.waitForEvent('filechooser');
+  await tap('Files');
+  await (
+    await chooser
+  ).setFiles({
+    name: 'steer-note.txt',
+    mimeType: 'text/plain',
+    buffer: Buffer.from('STEER_UPLOAD_PROOF'),
+  });
+  await expect(page.getByText(/KB · Ready/)).toBeVisible();
+  await tap('Add files or images');
+  const photos = page.waitForEvent('filechooser');
+  await tap('Photos');
+  await (
+    await photos
+  ).setFiles({
+    name: 'steer-image.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=',
+      'base64',
+    ),
+  });
+  await expect(page.getByText(/KB · Ready/)).toHaveCount(2);
+  await draft.fill('Use these attachments in the active turn');
+  const button = page.getByRole('button', { name: 'Steer active turn', exact: true });
+  const b = (await button.boundingBox())!,
+    icon = (await button.locator('svg').boundingBox())!;
+  expect(Math.abs(b.x + b.width / 2 - (icon.x + icon.width / 2))).toBeLessThan(1);
+  expect(Math.abs(b.y + b.height / 2 - (icon.y + icon.height / 2))).toBeLessThan(1);
+  await page.screenshot({ path: 'docs/screenshots/steer-attachments-mobile.png' });
+  let queued = 0;
+  page.on('request', (r) => {
+    if (r.method() === 'POST' && r.url().endsWith('/tasks')) queued++;
+  });
+  const sent = page.waitForResponse(
+    (r) => r.url().endsWith('/messages') && r.request().method() === 'POST',
+  );
+  await tap('Steer active turn');
+  const response = await sent;
+  expect(response.ok()).toBe(true);
+  expect((await response.json()).mode).toBe('steer');
+  expect(response.request().postDataJSON().attachments).toHaveLength(2);
+  expect(queued).toBe(0);
+  await expect(page.locator('.outgoing-message').last()).toContainText('steer-note.txt');
+  await expect(draft).toHaveValue('');
+});

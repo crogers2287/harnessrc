@@ -50,11 +50,21 @@ export async function sendMessage(
         throw new Error(
           'This agent does not support native steering. Choose Queue explicitly for a later turn.',
         );
-      if (value.attachments.length)
-        throw new Error(
-          'Native steering currently accepts text only. Your files and message were not queued.',
-        );
-      await adapter.steer(session, value.prompt);
+      if (value.attachments.length && !session.capabilities.attachFiles)
+        throw new Error('This agent cannot receive attachments. Your message was not queued.');
+      const prompt = runtime.attachments.prompt(session, {
+        id: value.idempotencyKey,
+        prompt: value.prompt,
+        attachments: value.attachments,
+      });
+      if (prompt.length > 32000)
+        throw new Error('Message and file references exceed the agent input limit');
+      // Retain uploads before native delivery, including when the acknowledgement is lost.
+      for (const id of value.attachments)
+        store.db
+          .prepare('INSERT INTO message_attachments VALUES(?,?,?)')
+          .run(value.idempotencyKey, id, value.prompt);
+      await adapter.steer(session, prompt);
       result = { mode: 'steer' };
     } else if (state === 'idle' || state === 'done') {
       result = { mode: 'send', task: await runtime.queue.sendNow(sessionId, value) };

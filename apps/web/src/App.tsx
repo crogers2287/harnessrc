@@ -1,4 +1,5 @@
-import { Button, TextArea } from '@harnessrc/ui';
+import { DshModel } from './DshModel.tsx';
+import { TextArea } from '@harnessrc/ui';
 import { presentUserMessage, toolLabel } from '@harnessrc/protocol';
 import { OutgoingMessages, useOutgoing } from './outgoing.tsx';
 import { NewSession } from './NewSession.tsx';
@@ -47,9 +48,14 @@ type Detail = { session: SessionView; interactions: Interaction[]; tasks: Task[]
 type Route = { session?: string; view?: string; interaction?: string };
 const getRoute = (): Route => Object.fromEntries(new URLSearchParams(location.search));
 const agentLabel = (harness: string) =>
-  ({ claude: 'Claude Code', codex: 'Codex', hermes: 'Hermes', opencode: 'OpenCode', omp: 'OMP' })[
-    harness
-  ] ?? harness;
+  ({
+    claude: 'Claude Code',
+    codex: 'Codex',
+    hermes: 'Hermes',
+    opencode: 'OpenCode',
+    omp: 'OMP',
+    dsh: 'DSH',
+  })[harness] ?? harness;
 const previewText = (text: string) =>
   text
     .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
@@ -680,7 +686,13 @@ function Conversation({
     if (mode !== 'queue') {
       setReceiptId(undefined);
       setNotice('');
-      outgoing.begin(submission.current.key, prompt);
+      outgoing.begin(
+        submission.current.key,
+        prompt,
+        attachments.files
+          .filter((f) => f.id)
+          .map((f) => ({ id: f.id!, name: f.name, mime: f.mime })),
+      );
       setDraft('');
       composer.current?.focus({ preventScroll: true });
       if (composer.current) composer.current.style.height = 'auto';
@@ -888,6 +900,7 @@ function Conversation({
           ))}
         </div>
         <OutgoingMessages
+          sessionId={session.id}
           items={outgoing.items}
           restore={(text) => setDraft((current) => (current ? `${current}\n${text}` : text))}
           dismiss={outgoing.dismiss}
@@ -993,10 +1006,7 @@ function Conversation({
             />
             <div className="composer-controls">
               {session.capabilities.attachFiles && (
-                <AttachmentPicker
-                  disabled={send.isPending || attachments.files.length >= 10 || mode === 'steer'}
-                  add={attachments.add}
-                />
+                <AttachmentPicker disabled={attachments.files.length >= 10} add={attachments.add} />
               )}
               <div className="composer-mode">
                 <Layers size={16} aria-hidden="true" />
@@ -1010,8 +1020,7 @@ function Conversation({
                   <option value="queue">Queue for later</option>
                 </select>
               </div>
-              <Button
-                size="large"
+              <button
                 className="send-button"
                 type="submit"
                 disabled={
@@ -1040,7 +1049,7 @@ function Conversation({
                         : 'Send'}
                 </span>
                 <ArrowUp size={22} aria-hidden="true" />
-              </Button>
+              </button>
             </div>
           </form>
         ) : (
@@ -1111,6 +1120,12 @@ function WorkingIndicator({ harness, events }: { harness: string; events: Event[
   );
 }
 function conversationItems(events: Event[]): Event[] {
+  const replaced = new Set(
+    events.flatMap((e) =>
+      Array.isArray(e.data.replacesEventSourceIds) ? e.data.replacesEventSourceIds : [],
+    ),
+  );
+  events = events.filter((e) => !replaced.has(e.sourceId));
   const completed = new Set(
     events.filter((e) => e.kind === 'assistant.message' && e.data.itemId).map((e) => e.data.itemId),
   );
@@ -1625,6 +1640,7 @@ function SessionDetails({ session: s }: { session: SessionView }) {
     <div className="page-content">
       <h3>{s.project}</h3>
       <Status status={s.status} />
+      {s.harness === 'dsh' && s.capabilities.sendMessage && <DshModel session={s} />}
       <dl className="details-list">
         {[
           ['Agent', s.harness],

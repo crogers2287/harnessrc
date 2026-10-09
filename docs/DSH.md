@@ -1,19 +1,39 @@
-# DSH native integration status
+# DSH native web integration
 
-DSH is **not yet an enabled Relay harness**. The native Typert client in `packages/adapters/src/dsh.ts` implements authenticated session enumeration, model catalog reads, exact provider/model selection and prompt admission with explicit `steer`/`queue` mode and caller-owned request IDs. It does not launch an extra host or create another session writer. Its contract tests run against an isolated HTTP fixture.
+Relay connects to the existing DSH web host. It discovers native sessions automatically, imports ordered structured history, follows assistant text over the native multiplexed WebSocket, sends idle messages, steers active turns, and reconciles queued work by native request ID. Model selection in session details uses DSH's actual provider/model catalog. Launch profiles can create a native DSH session with a chosen folder, preset and model. No extra DSH host or second session writer is started. Herdr continues supervising its existing CLI sessions; DSH web sessions are explicitly external to Herdr.
 
-The protocol was checked against Fred's installed source in `deepseek-harness/packages/api/session-controller` and `packages/client/connection`: POST `/api/session/<method>`, client-request/server-response envelopes, correlated rpcId, and named payload args. DSH's source is MIT licensed; no DSH implementation was copied into Relay. The transport requires the existing host's authenticated cookie, obtained by an authorized native login. Redirects are refused to avoid forwarding credentials; remote endpoints require HTTPS. Cookies are retrieved through a callback and never logged or persisted by this client.
+## Configuration
 
-## Target confirmed
+```json
+{
+  "dsh": [{
+    "id": "fred-dsh", "name": "Fred · DSH",
+    "endpoint": "http://127.0.0.1:3080",
+    "tokenFile": "/run/user/1000/dsh-w6800/token"
+  }],
+  "launchProfiles": [{
+    "id": "dsh-cfrproxy", "hostId": "fred-dsh",
+    "label": "DSH · CFRproxy", "harness": "dsh",
+    "provider": "CFRproxy", "dshProvider": "cfrproxy",
+    "defaultModel": "codex/gpt-6.1-sol",
+    "workspaceId": "fred-dsh", "roots": ["/home/crogers2287"],
+    "allowCustomModel": false
+  }]
+}
+```
 
-The user confirmed that DSH is used through its web app. Integrate with that existing native host as an externally supervised session source; do not migrate it to Herdr or launch a second writer. Herdr continues owning its existing CLI sessions.
+Merge entries with existing configuration. The token file must belong to the gateway account with mode 0600. Relay exchanges the native launch token for a native cookie kept only in memory, and detects token rotation after host restart. Never expose that token to clients or commit it. Remote endpoints require HTTPS. Session routes enforce Relay read/control grants, existing native identity and availability. Native model changes apply to the next model request; the current request keeps its model. DSH also persists its selected model as the native global default.
 
-## Deployment blockers on Fred
+## Fred repair, October 8
 
-- Port 3080 is owned by the existing system `dsh-web.service`, while the older user `dsh-w6800.service` repeatedly attempts to bind the same port. Relay has not stopped either service or replaced the active host.
-- The active host returns HTTP 401 without its authentication. The old bootstrap token file `/run/user/1000/dsh-w6800/token` is absent; no DSH credential is registered in the shared agent keychain. No existing credential was overwritten or synthesized.
-- Existing DSH sessions need authoritative mapping to their Herdr process, or an explicitly represented externally supervised native host. Session title and CWD are insufficient proof of ownership. No write capability is advertised until that mapping and authenticated host access work.
+Two services competed for port 3080. The system `dsh-web.service` ran a source checkout while user `dsh-w6800.service` repeatedly restarted. The system service was disabled and the built-runtime user service became the sole owner. Its supervisor now captures the full native login token and redacts it from output. The existing native credentials store remains the authority for CFRproxy access.
 
-## Remaining implementation
+`~/.dsh/profiles/web/model-catalog.patch.yml` was not loaded by Cordis: the effective profile overlay is `cordis.patch.yml`. The overlay was installed, pointed at Fred's local CFRproxy `/v1` endpoint, and populated from its actual `/v1/models` catalog. The previous endpoint was a restricted single-model route. A backup precedes the route change. Do not substitute unqualified aliases for native catalog IDs.
 
-After authenticated access is available, implement native history/follow normalization (including compact assistant streams and replacement semantics), discovery/ownership validation, exact pending interactions, and expose the native model catalog in the launch/settings UI. Verify a harmless isolated session through Send, Steer and model selection before enabling DSH controls. Transport tests alone do not establish live support.
+Validate with `systemctl --user is-active dsh-w6800`, the native web model picker, then Relay's DSH filter and session model settings. Integration fixtures cover pagination, stream indices, exact model/provider transport, native steer mode, restart deduplication and removed sessions.
+
+## Limits
+
+DSH native question/approval replies, interruption, attachments and reasoning controls are not yet connected to Relay. Those capabilities remain disabled; pending questions block dispatch and must be answered in DSH. The existing DSH web host owns its lifecycle, independently of phone connections. Optional host plugins can still report their own configuration errors. Relay does not claim full DSH parity.
+
+Protocol verified against Fred's installed MIT-licensed source: `packages/api/session-controller`, `packages/client/connection`, and compact assistant stream definitions in `packages/llm/llm`. No third-party implementation code was copied.

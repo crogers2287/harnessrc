@@ -1,3 +1,4 @@
+import type { DshHost } from './dsh-host.ts';
 import { CodexDaemon } from '../../../packages/adapters/src/codex-daemon.ts';
 import { realpath, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
@@ -10,7 +11,7 @@ export const launchProfileSchema = z.object({
   id: z.string().regex(/^[a-z0-9-]+$/),
   hostId: z.string(),
   label: z.string(),
-  harness: z.enum(['claude', 'codex', 'pi', 'omp', 'opencode', 'hermes']),
+  harness: z.enum(['claude', 'codex', 'pi', 'omp', 'opencode', 'hermes', 'dsh']),
   provider: z.string().default('Harness default'),
   modelsEndpoint: z.string().url().optional(),
   defaultModel: z
@@ -18,6 +19,8 @@ export const launchProfileSchema = z.object({
     .regex(/^[a-zA-Z0-9][a-zA-Z0-9._:/@+-]*$/)
     .optional(),
   codexProvider: z.string().optional(),
+  dshProvider: z.string().default('cfrproxy'),
+  dshPreset: z.string().optional(),
   workspaceId: z.string(),
   roots: z.array(z.string()).min(1),
   args: z.array(z.string()).default([]),
@@ -57,6 +60,7 @@ export class Launcher {
     private profiles: LaunchProfile[],
     private clients: Map<string, HerdrClient>,
     private codexSockets = new Map<string, string>(),
+    private dshHosts = new Map<string, DshHost>(),
   ) {}
   profile(id: string) {
     const p = this.profiles.find((p) => p.id === id);
@@ -101,12 +105,30 @@ export class Launcher {
         models: await this.models(p),
         allowCustomModel: p.allowCustomModel,
         defaultModel: p.defaultModel,
-        connected: this.clients.get(p.hostId)?.host.connected ?? false,
+        connected:
+          this.dshHosts.get(p.hostId)?.connected ??
+          this.clients.get(p.hostId)?.host.connected ??
+          false,
       })),
     );
   }
   private modelCache = new Map<string, { at: number; models: { id: string; name: string }[] }>();
   async models(p: LaunchProfile) {
+    if (p.harness === 'dsh') {
+      const host = this.dshHosts.get(p.hostId);
+      if (!host?.connected) return [];
+      const catalog = z
+        .object({
+          groups: z.array(
+            z.object({
+              id: z.string(),
+              models: z.array(z.object({ id: z.string(), name: z.string() })),
+            }),
+          ),
+        })
+        .parse(await host.native.models());
+      return catalog.groups.find((g) => g.id === p.dshProvider)?.models ?? [];
+    }
     if (!p.modelsEndpoint) return p.models;
     const cached = this.modelCache.get(p.id);
     if (cached && Date.now() - cached.at < 60000) return cached.models;
@@ -144,7 +166,9 @@ export class Launcher {
     }
     const p = this.profile(input.profileId);
     const client = this.clients.get(p.hostId);
-    if (!client?.host.connected) throw new Error('Host is disconnected');
+    const dsh = this.dshHosts.get(p.hostId);
+    if (!(p.harness === 'dsh' ? dsh?.connected : client?.host.connected))
+      throw new Error('Host is disconnected');
     const { resolved } = await this.directory(p.id, input.cwd);
     if (
       input.model &&
@@ -180,6 +204,29 @@ export class Launcher {
     });
     try {
       const selectedModel = input.model || p.defaultModel;
+      if (p.harness === 'dsh') {
+        if (!dsh) throw new Error('DSH host unavailable');
+        const nativeId = `session-${input.requestId}`;
+        await dsh.native.call('session/create', {
+          request: {
+            sessionId: nativeId,
+            cwd: resolved,
+            ...(p.dshPreset ? { agentPreset: p.dshPreset } : {}),
+          },
+        });
+        receipt.nativeSessionId = nativeId;
+        receipt.terminalId = `dsh:${nativeId}`;
+        save();
+        if (selectedModel) await dsh.native.selectModel(nativeId, p.dshProvider, selectedModel);
+        await dsh.native.call('session/rename', {
+          request: { sessionId: nativeId, title: input.name },
+        });
+        await dsh.native.prompt(nativeId, input.requestId, input.prompt, 'queue');
+        receipt.status = 'started';
+        save();
+        return receipt;
+      }
+      if (!client) throw new Error('Herdr host unavailable');
       const socket = this.codexSockets.get(p.hostId);
       if (p.harness === 'codex' && socket) {
         // Allocate a NEW native thread only. Its first and only interactive CLI is
