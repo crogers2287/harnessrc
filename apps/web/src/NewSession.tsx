@@ -79,6 +79,8 @@ export function NewSession({
   const profiles = useQuery<{ profiles: Profile[] }>({
     queryKey: ['launch-profiles'],
     queryFn: () => api('/api/launch/profiles'),
+    refetchOnMount: 'always',
+    refetchInterval: 30000,
   });
   const list = profiles.data?.profiles ?? [];
   const profile = list.find((p) => p.id === draft.profileId) ?? list[0];
@@ -185,16 +187,47 @@ export function NewSession({
           {profile && (
             <>
               <fieldset disabled={frozen}>
-                {[...new Set(list.map((p) => p.hostId))].length > 1 && (
+                <label>
+                  Agent
+                  <select
+                    value={profile.harness}
+                    onChange={(e) =>
+                      chooseProfile(
+                        list.find(
+                          (p) => p.hostId === profile.hostId && p.harness === e.target.value,
+                        ) ?? list.find((p) => p.harness === e.target.value)!,
+                      )
+                    }
+                  >
+                    {[...new Set(list.map((p) => p.harness))].map((h) => (
+                      <option key={h} value={h}>
+                        {labels[h] ?? h}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {[
+                  ...new Set(
+                    list.filter((p) => p.harness === profile.harness).map((p) => p.hostId),
+                  ),
+                ].length > 1 && (
                   <label>
                     Host
                     <select
                       value={profile.hostId}
                       onChange={(e) =>
-                        chooseProfile(list.find((p) => p.hostId === e.target.value)!)
+                        chooseProfile(
+                          list.find(
+                            (p) => p.hostId === e.target.value && p.harness === profile.harness,
+                          )!,
+                        )
                       }
                     >
-                      {[...new Set(list.map((p) => p.hostId))].map((host) => (
+                      {[
+                        ...new Set(
+                          list.filter((p) => p.harness === profile.harness).map((p) => p.hostId),
+                        ),
+                      ].map((host) => (
                         <option key={host}>{host}</option>
                       ))}
                     </select>
@@ -277,29 +310,6 @@ export function NewSession({
                     )}
                   </div>
                 )}
-                <label>
-                  Agent
-                  <select
-                    value={profile.harness}
-                    onChange={(e) =>
-                      chooseProfile(
-                        list.find(
-                          (p) => p.hostId === profile.hostId && p.harness === e.target.value,
-                        )!,
-                      )
-                    }
-                  >
-                    {[
-                      ...new Set(
-                        list.filter((p) => p.hostId === profile.hostId).map((p) => p.harness),
-                      ),
-                    ].map((h) => (
-                      <option key={h} value={h}>
-                        {labels[h] ?? h}
-                      </option>
-                    ))}
-                  </select>
-                </label>
                 <label>
                   Provider
                   <select

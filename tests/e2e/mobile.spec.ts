@@ -936,3 +936,151 @@ test('Settings offers install help, invokes a captured native installer once, an
   await expect(page.getByText('Relay is installed on this device.')).toBeVisible();
   await page.screenshot({ path: 'docs/screenshots/install-app-mobile.png' });
 });
+
+test('DSH is selectable without discovering a separate host and launches the chosen model', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await pair(page);
+  await page.route('**/api/launch/profiles', (route) =>
+    route.fulfill({
+      json: {
+        profiles: [
+          {
+            id: 'codex',
+            hostId: 'fred',
+            harness: 'codex',
+            provider: 'Account',
+            connected: true,
+            models: [],
+            allowCustomModel: false,
+          },
+          {
+            id: 'dsh-cfrproxy',
+            hostId: 'fred-dsh',
+            harness: 'dsh',
+            provider: 'CFRproxy',
+            connected: true,
+            models: [
+              { id: 'codex/gpt-6.1-sol', name: 'Sol' },
+              { id: 'gpt-6-astra', name: 'Astra' },
+            ],
+            allowCustomModel: false,
+          },
+        ],
+      },
+    }),
+  );
+  await page.route('**/api/launch/folders?*', async (route) => {
+    expect(new URL(route.request().url()).searchParams.get('profileId')).toBe('dsh-cfrproxy');
+    await route.fulfill({
+      json: { path: '/home/developer/project', parent: null, directories: [], truncated: false },
+    });
+  });
+  let launched: any;
+  await page.route('**/api/launch', async (route) => {
+    launched = route.request().postDataJSON();
+    await route.fulfill({
+      json: {
+        requestId: launched.requestId,
+        status: 'started',
+        hostId: 'fred-dsh',
+        terminalId: 'dsh:new',
+      },
+    });
+  });
+  await page.getByRole('button', { name: 'New session', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Agent', exact: true }).selectOption('dsh');
+  await expect(page.getByRole('combobox', { name: 'Provider', exact: true })).toContainText(
+    'CFRproxy',
+  );
+  await page.getByRole('button', { name: 'Choose a folder on fred-dsh' }).click();
+  await page.getByRole('button', { name: 'Use this folder' }).click();
+  await page.getByLabel('Model', { exact: true }).selectOption('gpt-6-astra');
+  await page.getByLabel('First message').fill('Review the mobile interface');
+  await page.locator('.new-session-scroll').evaluate((el) => {
+    el.scrollTop = 0;
+  });
+  await page.screenshot({ path: 'docs/screenshots/dsh-launch-mobile.png' });
+  await page.getByRole('button', { name: 'Start session', exact: true }).click();
+  await expect(page.getByText('Agent started. Connecting its conversation…')).toBeVisible();
+  expect(launched).toMatchObject({
+    profileId: 'dsh-cfrproxy',
+    cwd: '/home/developer/project',
+    model: 'gpt-6-astra',
+    prompt: 'Review the mobile interface',
+  });
+});
+
+test('clipboard screenshot uploads once, keeps draft text, and sends the attachment', async ({
+  page,
+  context,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await pair(page);
+  await page.getByRole('button', { name: /Atlas API/ }).click();
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.evaluate(async () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 20;
+    canvas.height = 20;
+    canvas.getContext('2d')!.fillRect(0, 0, 20, 20);
+    const blob = await new Promise<Blob>((resolve) =>
+      canvas.toBlob((b) => resolve(b!), 'image/png'),
+    );
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+  });
+  await page.getByLabel('Instruction', { exact: true }).fill('Look at this screenshot');
+  await page.getByRole('button', { name: 'Add files or images' }).click();
+  await page.screenshot({ path: 'docs/screenshots/clipboard-menu-mobile.png' });
+  await page.getByRole('button', { name: 'Paste screenshot', exact: true }).click();
+  await expect(page.getByText(/KB · Ready/)).toHaveCount(1);
+  await expect(page.getByLabel('Instruction', { exact: true })).toHaveValue(
+    'Look at this screenshot',
+  );
+  await expect(page.getByRole('img', { name: /Preview of Screenshot-/ })).toBeVisible();
+  await page.screenshot({ path: 'docs/screenshots/clipboard-preview-mobile.png' });
+  // The normal browser paste gesture shares this upload path as well.
+  await page.getByLabel('Instruction', { exact: true }).focus();
+  await page.keyboard.press('Control+v');
+  await expect(page.getByText(/KB · Ready/)).toHaveCount(2);
+  await page.getByLabel('Instruction behavior').selectOption('queue');
+  const response = page.waitForResponse(
+    (r) => r.url().endsWith('/tasks') && r.request().method() === 'POST',
+  );
+  await page.getByRole('button', { name: 'Queue instruction', exact: true }).click();
+  expect((await response).request().postDataJSON().attachments).toHaveLength(2);
+  await expect(page.getByLabel('Message attachments')).toHaveCount(0);
+});
+
+test('clipboard denial or no image gives a usable photo fallback without losing the draft', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 740 });
+  await pair(page);
+  await page.getByRole('button', { name: /Atlas API/ }).click();
+  await page.getByLabel('Instruction', { exact: true }).fill('Preserve me');
+  await page.evaluate(() =>
+    Object.defineProperty(navigator.clipboard, 'read', {
+      configurable: true,
+      value: async () => {
+        throw new DOMException('Denied', 'NotAllowedError');
+      },
+    }),
+  );
+  await page.getByRole('button', { name: 'Add files or images' }).click();
+  await page.getByRole('button', { name: 'Paste screenshot', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('Clipboard access was blocked');
+  await expect(page.getByRole('button', { name: 'Photos', exact: true })).toBeVisible();
+  await expect(page.getByLabel('Instruction', { exact: true })).toHaveValue('Preserve me');
+  await page.evaluate(() =>
+    Object.defineProperty(navigator.clipboard, 'read', {
+      configurable: true,
+      value: async () => [],
+    }),
+  );
+  await page.getByRole('button', { name: 'Paste screenshot', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('No image was shared');
+  await expect(page.getByLabel('Message attachments')).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});

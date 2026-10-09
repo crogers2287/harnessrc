@@ -2608,9 +2608,11 @@ code {
   background: var(--border);
 }
 .attachment-menu {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 4px;
-  min-width: 272px;
+  width: min(272px, calc(100vw - 40px));
+  min-width: 0;
   padding: 8px;
   border-radius: 20px;
   box-shadow: 0 8px 32px #0003;
@@ -2863,4 +2865,11 @@ body,
 .agent-choices button {
   padding-inline: 8px;
   font-size: 0.8125rem;
+}
+
+.clipboard-error {
+  grid-column: 1 / -1;
+  margin: 4px 8px;
+  font-size: 0.8125rem;
+  color: var(--text);
 }

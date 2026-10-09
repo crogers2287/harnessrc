@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import { Camera, FilePlus2, ImagePlus, Paperclip, X, RotateCcw } from 'lucide-react';
+import {
+  Camera,
+  ClipboardPaste,
+  FilePlus2,
+  ImagePlus,
+  Paperclip,
+  X,
+  RotateCcw,
+} from 'lucide-react';
 import { api, uploadFile, downloadAttachment } from '@harnessrc/client-sdk';
 export type DraftFile = {
   key: string;
@@ -113,6 +121,9 @@ export function AttachmentPicker({
   add: (files: File[]) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [pasting, setPasting] = useState(false);
+  const [pasteError, setPasteError] = useState('');
+  const pastingRef = useRef(false);
   const container = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -140,6 +151,49 @@ export function AttachmentPicker({
     input.value = '';
     setOpen(false);
   };
+  const pasteScreenshot = async () => {
+    if (disabled || pastingRef.current) return;
+    setPasteError('');
+    if (!navigator.clipboard?.read) {
+      setPasteError(
+        'This browser cannot read clipboard images. Choose Photos to attach your screenshot.',
+      );
+      return;
+    }
+    pastingRef.current = true;
+    setPasting(true);
+    try {
+      // Read only after this explicit tap; never inspect the clipboard on focus.
+      const items = await navigator.clipboard.read();
+      const images: File[] = [];
+      for (const item of items) {
+        const type = item.types.find((t) =>
+          ['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(t),
+        );
+        if (!type) continue;
+        const blob = await item.getType(type);
+        images.push(
+          new File([blob], `Screenshot-${Date.now()}-${images.length + 1}.${type.split('/')[1]}`, {
+            type,
+          }),
+        );
+      }
+      if (!images.length) {
+        setPasteError(
+          'No image was shared by the clipboard. Copy a screenshot first, or choose Photos.',
+        );
+        return;
+      }
+      add(images);
+      setOpen(false);
+      container.current?.querySelector('button')?.focus();
+    } catch {
+      setPasteError('Clipboard access was blocked. Allow paste in your browser, or choose Photos.');
+    } finally {
+      pastingRef.current = false;
+      setPasting(false);
+    }
+  };
   return (
     <div className="attachment-picker" ref={container}>
       <button
@@ -156,6 +210,14 @@ export function AttachmentPicker({
       </button>
       {open && (
         <div className="attachment-menu" role="group" aria-label="Attachment options">
+          <button
+            type="button"
+            disabled={disabled || pasting}
+            onClick={() => void pasteScreenshot()}
+          >
+            <ClipboardPaste size={20} aria-hidden="true" />
+            {pasting ? 'Reading clipboard…' : 'Paste screenshot'}
+          </button>
           <button
             type="button"
             onClick={() => {
@@ -186,6 +248,11 @@ export function AttachmentPicker({
             <FilePlus2 size={20} />
             Files
           </button>
+          {pasteError && (
+            <p className="clipboard-error" role="alert">
+              {pasteError}
+            </p>
+          )}
         </div>
       )}
       <input
