@@ -3198,6 +3198,8 @@ body,
   width: 100%;
   height: 100%;
   object-fit: contain;
+  /* Chromium otherwise retains a stale image clip when virtual rows move. */
+  transform: translateZ(0);
 }
 .native-media-placeholder {
   aspect-ratio: 4/3;
