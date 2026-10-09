@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { IncomingMessage } from 'node:http';
 import { z } from 'zod';
 
 const responseSchema = z.object({
@@ -88,9 +89,9 @@ export class DshClient {
             'Content-Length': '0',
           },
         },
-        (res) => {
+        (res: IncomingMessage) => {
           let text = '';
-          res.on('data', (chunk) => {
+          res.on('data', (chunk: Buffer) => {
             if (text.length < 1024) text += chunk.toString();
           });
           res.on('end', () => resolve(res.statusCode === 400 && text === 'sessionId is required'));
