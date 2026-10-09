@@ -1,3 +1,5 @@
+import { trackViewport } from './viewport.ts';
+import './install.ts';
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -11,13 +13,7 @@ import { selectTransport } from '@harnessrc/client-sdk';
 
 const savedTheme = localStorage.getItem('relay-theme') ?? 'system';
 document.documentElement.dataset.theme = savedTheme;
-// Mobile browsers may resize only the visual viewport when the keyboard opens.
-const resizeViewport = () => {
-  if (window.visualViewport && window.visualViewport.scale === 1)
-    document.documentElement.style.setProperty('--app-height', `${window.visualViewport.height}px`);
-};
-window.visualViewport?.addEventListener('resize', resizeViewport);
-resizeViewport();
+trackViewport();
 const client = new QueryClient({
   defaultOptions: { queries: { retry: false, refetchOnWindowFocus: true } },
 });

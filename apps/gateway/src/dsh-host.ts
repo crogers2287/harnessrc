@@ -60,6 +60,7 @@ export class DshHost {
           cwd: row.cwd ?? '',
           status: dshStatus(row),
           ownership: 'observed',
+          presence: row.agentAvailable ? 'live' : 'saved',
           capabilities: capabilities([
             'readConversation',
             'streamConversation',

@@ -221,7 +221,7 @@ test('mobile audit: dense inbox, missing chat binding, and keyboard-sized compos
   );
   await page.goto('/');
   await openSessions(page);
-  await page.getByLabel('Filter by agent').selectOption('codex');
+  await page.getByRole('button', { name: /^Codex, 10 sessions$/ }).click();
   await expect(page.locator('.inbox-heading .count')).toHaveText('10');
   await page.screenshot({ path: 'docs/screenshots/inbox-dense-mobile.png' });
   await page.getByRole('button', { name: /Project 1:/ }).click();
@@ -719,4 +719,220 @@ test('working composer accepts file and image steering through real touch target
   expect(queued).toBe(0);
   await expect(page.locator('.outgoing-message').last()).toContainText('steer-note.txt');
   await expect(draft).toHaveValue('');
+});
+
+test('saved attachment bubble disappears when native history arrives and stays gone after reload', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await pair(page);
+  const { sessions } = await page.evaluate(async () => (await fetch('/api/sessions')).json());
+  const s = sessions[0];
+  const now = new Date().toISOString();
+  await page.evaluate(
+    ({ id, now }) =>
+      sessionStorage.setItem(
+        `relay-outgoing:${id}`,
+        JSON.stringify([
+          {
+            key: 'browser-key',
+            prompt: 'Check this screenshot',
+            attachments: [{ id: 'saved-photo', name: 'screen.png', mime: 'image/png' }],
+            started: now,
+            state: 'confirmed',
+          },
+        ]),
+      ),
+    { id: s.id, now },
+  );
+  await page.route('**/events?*', (r) =>
+    r.fulfill({
+      json: {
+        events: [
+          {
+            id: 'native-photo',
+            sourceId: 'native-photo',
+            sequence: 999999,
+            sessionId: s.id,
+            nativeSessionId: s.nativeSessionId,
+            source: s.harness,
+            kind: 'user.message',
+            timestamp: now,
+            data: {
+              taskId: 'different-native-task',
+              text: 'Check this screenshot',
+              attachments: [{ id: 'saved-photo', name: 'screen.png', mime: 'image/png' }],
+            },
+          },
+        ],
+      },
+    }),
+  );
+  await page.evaluate((id) => {
+    const key = `relay-outgoing:${id}`;
+    const items = JSON.parse(sessionStorage.getItem(key)!);
+    items.push({
+      ...items[0],
+      key: crypto.randomUUID(),
+      prompt: 'Old card outside this history page',
+    });
+    sessionStorage.setItem(key, JSON.stringify(items));
+  }, s.id);
+  await page.route('**/message-receipts/*', (r) => r.fulfill({ json: { nativeSeen: true } }));
+  await page.goto('/?session=' + s.id);
+  await expect(page.getByText('Check this screenshot', { exact: true })).toHaveCount(1);
+  await expect(page.locator('.outgoing-message')).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByText('Check this screenshot', { exact: true })).toHaveCount(1);
+  await expect(page.locator('.outgoing-message')).toHaveCount(0);
+});
+
+test('DSH drawer separates saved history, combines filters, resets and preserves selection', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await pair(page);
+  const { sessions } = await page.evaluate(async () => (await fetch('/api/sessions')).json());
+  const s = sessions[0];
+  const items = [
+    {
+      ...s,
+      id: 'filter-live',
+      harness: 'dsh',
+      presence: 'live',
+      status: 'working',
+      sessionName: 'DSH live API',
+      cwd: '/projects/api',
+      model: 'gpt-6-astra',
+    },
+    {
+      ...s,
+      id: 'filter-saved',
+      harness: 'dsh',
+      presence: 'saved',
+      status: 'idle',
+      sessionName: 'DSH saved website',
+      cwd: '/projects/web',
+    },
+    {
+      ...s,
+      id: 'filter-codex',
+      harness: 'codex',
+      presence: 'live',
+      status: 'idle',
+      sessionName: 'Codex API',
+    },
+  ];
+  await page.route('**/api/sessions', (r) => r.fulfill({ json: { sessions: items } }));
+  await page.routeWebSocket('**/ws', (socket) =>
+    socket.send(JSON.stringify({ type: 'invalidate', sessions: items })),
+  );
+  await page.goto('/');
+  await openSessions(page);
+  await page.getByRole('button', { name: 'DSH, 1 sessions', exact: true }).click();
+  await expect(page.locator('.session-row')).toHaveCount(1);
+  await expect(page.locator('.session-row')).toContainText('DSH live API');
+  await page.getByRole('button', { name: /^History/ }).click();
+  await expect(page.locator('.session-row')).toHaveCount(1);
+  await expect(page.locator('.session-row')).toContainText('DSH saved website');
+  await expect(page.locator('.session-row')).toContainText('Saved session');
+  await expect(page.locator('.session-row .unread')).toHaveCount(0);
+  await page.getByRole('button', { name: /^Live/ }).click();
+  await page.getByRole('button', { name: /^DSH,/ }).click();
+  await page.getByLabel('Search sessions').fill('astra api');
+  await page.getByText('Filters', { exact: true }).click();
+  await page.getByLabel('Filter by status').selectOption('working');
+  await page.getByLabel('Filter by directory').selectOption('/projects/api');
+  await expect(page.locator('.session-row')).toHaveCount(1);
+  await page.getByText('Filters (2)', { exact: true }).click();
+  await page.screenshot({ path: 'docs/screenshots/session-filters-mobile.png' });
+  await page.reload();
+  await openSessions(page);
+  await expect(page.getByRole('button', { name: /^DSH,/ })).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: 'Clear session filters' }).click();
+  await expect(page.locator('.session-row')).toHaveCount(2);
+  await expect(page.getByLabel('Search sessions')).toHaveValue('');
+  const a = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();
+  expect(a.violations).toEqual([]);
+});
+
+test('composer tracks a shrinking and panning Android visual viewport without a window resize', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() => {
+    const viewport = Object.assign(new EventTarget(), {
+      height: 844,
+      width: 390,
+      offsetTop: 0,
+      offsetLeft: 0,
+      scale: 1,
+    });
+    Object.defineProperty(window, 'visualViewport', { value: viewport, configurable: true });
+  });
+  await pair(page);
+  await page.getByRole('button', { name: /Atlas API/ }).click();
+  await page.getByLabel('Instruction', { exact: true }).fill('Keep this draft above the keyboard');
+  for (const [height, top] of [
+    [500, 0],
+    [380, 65],
+    [410, 30],
+  ]) {
+    await page.evaluate(
+      ({ height, top }) => {
+        Object.assign(window.visualViewport!, { height, offsetTop: top });
+        window.visualViewport!.dispatchEvent(new Event('resize'));
+        window.visualViewport!.dispatchEvent(new Event('scroll'));
+      },
+      { height, top },
+    );
+    await expect
+      .poll(async () => {
+        const r = await page.locator('.composer').boundingBox();
+        return Math.round(r!.y + r!.height);
+      })
+      .toBeLessThanOrEqual(height + top);
+    const b = await page.locator('.send-button').boundingBox();
+    expect(b!.y).toBeGreaterThan(top);
+    await expect(page.getByLabel('Instruction', { exact: true })).toHaveValue(
+      'Keep this draft above the keyboard',
+    );
+  }
+  await page.screenshot({ path: 'docs/screenshots/visual-viewport-keyboard.png' });
+  await page.evaluate(() => {
+    Object.assign(window.visualViewport!, { height: 844, offsetTop: 0 });
+    window.visualViewport!.dispatchEvent(new Event('resize'));
+  });
+  await expect
+    .poll(async () => Math.round((await page.locator('.app').boundingBox())!.height))
+    .toBe(844);
+});
+
+test('Settings offers install help, invokes a captured native installer once, and observes installation', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await pair(page);
+  await page.getByRole('button', { name: 'Settings', exact: true }).first().click();
+  await page.getByRole('button', { name: 'How to install Relay', exact: true }).click();
+  await expect(page.locator('.install-instructions')).toBeVisible();
+  await page.evaluate(() => {
+    (window as any).installCalls = 0;
+    const e = new Event('beforeinstallprompt', { cancelable: true });
+    Object.assign(e, {
+      prompt: async () => {
+        (window as any).installCalls++;
+        return { outcome: 'accepted' };
+      },
+    });
+    window.dispatchEvent(e);
+  });
+  await page.getByRole('button', { name: 'Install Relay', exact: true }).click();
+  await expect(
+    page.getByText('Installation accepted. Your browser will finish adding Relay.'),
+  ).toBeVisible();
+  expect(await page.evaluate(() => (window as any).installCalls)).toBe(1);
+  await page.evaluate(() => window.dispatchEvent(new Event('appinstalled')));
+  await expect(page.getByText('Relay is installed on this device.')).toBeVisible();
+  await page.screenshot({ path: 'docs/screenshots/install-app-mobile.png' });
 });

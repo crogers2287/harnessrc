@@ -1,14 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
+import { api } from '@harnessrc/client-sdk';
 import { z } from 'zod';
 import { SentAttachment } from './attachments.tsx';
 import type { Event } from '@harnessrc/protocol';
-export type Outgoing = {
-  key: string;
-  prompt: string;
-  attachments?: { id: string; name: string; mime: string }[];
-  started: string;
-  state: 'sending' | 'confirmed' | 'uncertain';
-};
+import { hasNativeEcho, type Outgoing } from './delivery.ts';
 export function useOutgoing(sessionId: string, events: Event[]) {
   const [items, setItems] = useState<Outgoing[]>(() => {
     try {
@@ -16,6 +11,7 @@ export function useOutgoing(sessionId: string, events: Event[]) {
         .array(
           z.object({
             key: z.string(),
+            nativeRequestId: z.string().optional(),
             prompt: z.string(),
             attachments: z
               .array(z.object({ id: z.string(), name: z.string(), mime: z.string() }))
@@ -30,6 +26,26 @@ export function useOutgoing(sessionId: string, events: Event[]) {
       return [];
     }
   });
+  const checked = useRef(new Set<string>());
+  useEffect(() => {
+    // A stale saved card may refer to history older than the current transcript page.
+    for (const item of items) {
+      if (
+        item.state === 'sending' ||
+        checked.current.has(item.key) ||
+        !z.uuid().safeParse(item.key).success
+      )
+        continue;
+      checked.current.add(item.key);
+      void api(`/api/sessions/${sessionId}/message-receipts/${item.key}`)
+        .then((result) => {
+          if (result.nativeSeen) setItems((old) => old.filter((x) => x.key !== item.key));
+        })
+        .catch(() => {
+          /* Native events can still reconcile this card after reconnect. */
+        });
+    }
+  }, [items, sessionId]);
   useEffect(() => {
     try {
       sessionStorage.setItem(`relay-outgoing:${sessionId}`, JSON.stringify(items));
@@ -38,33 +54,20 @@ export function useOutgoing(sessionId: string, events: Event[]) {
     }
   }, [items, sessionId]);
   useEffect(() => {
-    // Only remove the local delivery card when native history contains the submitted text.
-    // This is a display reconciliation, never evidence for queue dispatch or interaction routing.
-    const echoes = events.filter((e) => e.kind === 'user.message');
     setItems((old) => {
-      const remaining = old.filter(
-        (item) =>
-          !echoes.some(
-            (e) =>
-              Date.parse(e.timestamp) >= Date.parse(item.started) - 1000 &&
-              (e.data.taskId === item.key ||
-                String(e.data.text ?? '').includes(`[Relay request ${item.key}]`) ||
-                (!item.attachments?.length &&
-                  String(e.data.text ?? '').trim() === item.prompt.trim())),
-          ),
-      );
+      const remaining = old.filter((item) => !hasNativeEcho(item, events));
       return remaining.length === old.length ? old : remaining;
     });
-  }, [events]);
+  }, [events, items]);
   return {
-    items,
+    items: items.filter((item) => !hasNativeEcho(item, events)),
     begin: (key: string, prompt: string, attachments: Outgoing['attachments'] = []) =>
       setItems((old) => [
         ...old.filter((x) => x.key !== key),
         { key, prompt, attachments, started: new Date().toISOString(), state: 'sending' },
       ]),
-    finish: (key: string, state: Outgoing['state']) =>
-      setItems((old) => old.map((x) => (x.key === key ? { ...x, state } : x))),
+    finish: (key: string, state: Outgoing['state'], nativeRequestId?: string) =>
+      setItems((old) => old.map((x) => (x.key === key ? { ...x, state, nativeRequestId } : x))),
     dismiss: (key: string) => setItems((old) => old.filter((x) => x.key !== key)),
   };
 }

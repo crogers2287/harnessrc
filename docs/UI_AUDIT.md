@@ -50,3 +50,13 @@ The previous OpenUI release preserved too much of the old structure. The new com
 ## Mobile Back navigation
 
 Mobile conversations now have a session-drawer parent in browser history, including initial deep links and reloads. Android/browser Back from chat opens that drawer; Back from a secondary screen returns to chat; Back closes a manually opened drawer. The drawer close button returns to chat without discarding the draft. Desktop history remains unchanged. The browser test exercises real history traversal, reload, secondary navigation and retained draft text; physical Android system-button behavior remains a device check.
+
+## October 9: session collections, delivery receipts, keyboard and installation
+
+The DSH host listed 118 persisted sessions, only two with loaded agents. Relay previously labeled all of them idle. Native `agentAvailable` now supplies live/saved presence, and the drawer defaults to Live with a separate History collection. One-tap harness choices show counts; secondary filters cover status, host and directory. Search combines words across title, agent, model, host and CWD. Saved sessions have an explicit label and no misleading unread dot. Filter preferences survive reload; Clear removes combined filters.
+
+The reported double message had one native user event and one confirmed delivery receipt. Its optimistic card used the browser request ID while idle Send returned a different task ID. The UI now correlates both IDs, matches attachment identities for old cards, and checks an authenticated receipt endpoint when the real event is older than the loaded history page. None of these display checks sends or retries a message.
+
+The viewport follows both visual height and offset on resize and scroll. The app is anchored to that visible region, including Android keyboard panning without a layout-window resize. The Latest messages control tracks measured composer height. Browser tests simulate visual-only resize/pan; physical Android confirmation is still required. See [Chrome's viewport behavior](https://developer.chrome.com/blog/viewport-resize-behavior).
+
+Settings includes Install app, captures the browser's native install event before rendering, prevents repeat prompts, handles dismissal/error/installed states and provides manual browser instructions when native prompting is unavailable. See [the install event API](https://developer.mozilla.org/en-US/docs/Web/API/Window/beforeinstallprompt_event). Browser tests inject the event and verify the prompt is invoked once; they do not claim to exercise an OS installer.

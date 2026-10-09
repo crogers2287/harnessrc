@@ -338,6 +338,25 @@ export async function createGateway(
     store.audit(req.device.id, 'session.model', id, value);
     return result;
   });
+  app.get('/api/sessions/:id/message-receipts/:requestId', async (req) => {
+    const { id, requestId } = req.params as { id: string; requestId: string };
+    check(req, id);
+    z.uuid().parse(requestId);
+    const receipt = store.db
+      .prepare('SELECT result FROM message_receipts WHERE request_id=? AND session_id=?')
+      .get(requestId, id);
+    if (!receipt) return { nativeSeen: false };
+    const result = JSON.parse(String(receipt.result ?? '{}'));
+    const nativeId = result.task?.id ?? requestId;
+    const echo = store.db
+      .prepare(
+        `SELECT 1 FROM events WHERE session_id=?
+      AND json_extract(body,'$.kind')='user.message'
+      AND (json_extract(body,'$.data.taskId')=? OR json_extract(body,'$.data.requestId')=?) LIMIT 1`,
+      )
+      .get(id, nativeId, nativeId);
+    return { nativeSeen: !!echo };
+  });
   app.post('/api/sessions/:id/messages', async (req) => {
     const { id } = req.params as { id: string };
     check(req, id, true);

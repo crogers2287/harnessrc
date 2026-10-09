@@ -189,3 +189,46 @@ test('steering with uploads delivers file references once, protects saved upload
     await f.close();
   }
 });
+
+test('receipt lookup finds an attachment echo outside the current page and enforces session authorization', async () => {
+  const f = await fixture({ startRuntime: false });
+  try {
+    const key = randomUUID(),
+      nativeId = randomUUID();
+    f.gateway.store.db
+      .prepare('INSERT INTO message_receipts VALUES(?,?,?,?,?,?,?)')
+      .run(
+        key,
+        'device',
+        f.session.id,
+        'hash',
+        'confirmed',
+        JSON.stringify({ mode: 'send', task: { id: nativeId } }),
+        new Date().toISOString(),
+      );
+    const url = `/api/sessions/${f.session.id}/message-receipts/${key}`;
+    assert.equal(
+      (await f.gateway.app.inject({ url, headers: f.headers })).json().nativeSeen,
+      false,
+    );
+    f.gateway.store.event(f.session, {
+      sourceId: 'old-native-echo',
+      kind: 'user.message',
+      timestamp: new Date().toISOString(),
+      data: { taskId: nativeId, text: 'Old message' },
+    });
+    assert.equal((await f.gateway.app.inject({ url, headers: f.headers })).json().nativeSeen, true);
+    assert.equal((await f.gateway.app.inject({ url })).statusCode, 401);
+    assert.equal(
+      (
+        await f.gateway.app.inject({
+          url: `/api/sessions/other/message-receipts/${key}`,
+          headers: f.headers,
+        })
+      ).statusCode >= 400,
+      true,
+    );
+  } finally {
+    await f.close();
+  }
+});

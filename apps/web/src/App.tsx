@@ -1,3 +1,12 @@
+import { SessionFilters } from './SessionFilters.tsx';
+import {
+  agentLabel,
+  defaultFilters,
+  filterSessions,
+  isSaved,
+  type SessionFilters as FilterState,
+} from './session-filters.ts';
+import { InstallApp } from './InstallApp.tsx';
 import { DshModel } from './DshModel.tsx';
 import { TextArea } from '@harnessrc/ui';
 import { presentUserMessage, toolLabel } from '@harnessrc/protocol';
@@ -47,15 +56,6 @@ import { Status, IconButton, Empty } from '@harnessrc/ui';
 type Detail = { session: SessionView; interactions: Interaction[]; tasks: Task[] };
 type Route = { session?: string; view?: string; interaction?: string };
 const getRoute = (): Route => Object.fromEntries(new URLSearchParams(location.search));
-const agentLabel = (harness: string) =>
-  ({
-    claude: 'Claude Code',
-    codex: 'Codex',
-    hermes: 'Hermes',
-    opencode: 'OpenCode',
-    omp: 'OMP',
-    dsh: 'DSH',
-  })[harness] ?? harness;
 const previewText = (text: string) =>
   text
     .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
@@ -89,7 +89,23 @@ export function App() {
   const query = useQueryClient();
   const [route, setRoute] = useState(getRoute);
   const [connection, setConnection] = useState<'connected' | 'reconnecting'>('reconnecting');
-  const [search, setSearch] = useState('');
+  const [filters, setFilters] = useState<FilterState>(() => {
+    try {
+      return {
+        ...defaultFilters,
+        ...JSON.parse(sessionStorage.getItem('relay-session-filters') ?? '{}'),
+      };
+    } catch {
+      return defaultFilters;
+    }
+  });
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('relay-session-filters', JSON.stringify(filters));
+    } catch {
+      /* Optional storage. */
+    }
+  }, [filters]);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [mobile, setMobile] = useState(() => matchMedia('(max-width: 767px)').matches);
   const openDrawer = () => {
@@ -110,8 +126,6 @@ export function App() {
     media.addEventListener('change', changed);
     return () => media.removeEventListener('change', changed);
   }, []);
-  const [filter, setFilter] = useState('all');
-  const [agentFilter, setAgentFilter] = useState('all');
   const [read, setRead] = useState<Record<string, string>>({});
   const auth = useQuery({ queryKey: ['me'], queryFn: () => api('/api/auth/me') });
   const inbox = useQuery<{ sessions: SessionView[] }>({
@@ -203,7 +217,7 @@ export function App() {
   }, []);
   useEffect(() => {
     if (route.session || route.view || !sessions.length) return;
-    const live = sessions.filter((s) => s.status !== 'ended');
+    const live = sessions.filter((s) => !isSaved(s));
     const saved = localStorage.getItem('relay-last-session');
     const session =
       live.find((s) => s.id === saved) ??
@@ -234,15 +248,7 @@ export function App() {
     );
   if (!auth.data) return <Pair onPaired={() => void query.invalidateQueries()} />;
   const selected = sessions.find((s) => s.id === route.session);
-  const shown = sessions.filter(
-    (s) =>
-      s.status !== 'ended' &&
-      (agentFilter === 'all' || s.harness === agentFilter) &&
-      (filter === 'all' || (filter === 'attention' && s.pendingCount > 0) || s.status === filter) &&
-      `${s.project} ${s.sessionName ?? ''} ${s.tabName ?? ''} ${s.cwd} ${s.harness} ${s.hostId} ${s.status}`
-        .toLowerCase()
-        .includes(search.toLowerCase()),
-  );
+  const shown = filterSessions(sessions, filters);
   return (
     <div className={`app ${route.session || route.view ? 'has-detail' : ''}`}>
       <SessionDrawer open={drawerOpen} close={closeDrawer}>
@@ -258,6 +264,16 @@ export function App() {
         <div className="inbox-heading">
           <h2>Sessions</h2>
           <span className="count">{shown.length}</span>
+          {!!auth.data.device.admin && (
+            <button
+              className="new-session-trigger"
+              aria-label="New session"
+              onClick={() => navigate({ view: 'new' })}
+            >
+              <SquarePen size={20} aria-hidden="true" />
+              <span className="sr-only">New session</span>
+            </button>
+          )}
           <span className="host-health">
             <span
               className={connection === 'connected' ? 'online' : 'offline'}
@@ -266,53 +282,22 @@ export function App() {
             {connection === 'connected' ? 'Live updates' : 'Reconnecting'}
           </span>
         </div>
-        {!!auth.data.device.admin && (
-          <button className="new-session-trigger" onClick={() => navigate({ view: 'new' })}>
-            <SquarePen size={20} aria-hidden="true" />
-            New session
-          </button>
-        )}
         <label className="search">
           <Search size={18} aria-hidden="true" />
           <span className="sr-only">Search sessions</span>
           <input
             type="search"
             placeholder="Session, agent, directory, host…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            value={filters.search}
+            onChange={(e) => setFilters({ ...filters, search: e.target.value })}
           />
         </label>
-        <div className="inbox-filters">
-          <label>
-            <span className="sr-only">Filter by status</span>
-            <select
-              aria-label="Filter by status"
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-            >
-              <option value="all">All activity</option>
-              <option value="working">Working</option>
-              <option value="attention">Needs input</option>
-            </select>
-          </label>
-          <label className="agent-filter">
-            <span className="sr-only">Agent</span>
-            <select
-              aria-label="Filter by agent"
-              value={agentFilter}
-              onChange={(e) => setAgentFilter(e.target.value)}
-            >
-              <option value="all">All agents</option>
-              {[...new Set(sessions.filter((s) => s.status !== 'ended').map((s) => s.harness))]
-                .sort()
-                .map((h) => (
-                  <option key={h} value={h}>
-                    {agentLabel(h)}
-                  </option>
-                ))}
-            </select>
-          </label>
-        </div>
+        <SessionFilters
+          sessions={sessions}
+          value={filters}
+          onChange={setFilters}
+          count={shown.length}
+        />
         <div className="session-list">
           {[...new Set(shown.map((s) => s.harness))].sort().map((harness) => (
             <section
@@ -358,7 +343,11 @@ export function App() {
                             : 'Chat connection needs attention')}
                       </p>
                       <div className="row-bottom">
-                        <Status status={s.status} />
+                        {isSaved(s) ? (
+                          <span className="saved-session-label">Saved session</span>
+                        ) : (
+                          <Status status={s.status} />
+                        )}
                         <time dateTime={s.lastActivity}>{when(s.lastActivity)}</time>
                         {s.pendingCount > 0 && (
                           <span className="attention-count">
@@ -371,7 +360,7 @@ export function App() {
                         )}
                       </div>
                     </div>
-                    {read[s.id] !== s.lastActivity && (
+                    {!isSaved(s) && read[s.id] !== s.lastActivity && (
                       <span className="unread" aria-label="Unread activity" />
                     )}
                   </button>
@@ -381,7 +370,7 @@ export function App() {
           {shown.length === 0 && (
             <Empty title={sessions.length ? 'No matching sessions' : 'No sessions yet'}>
               {sessions.length
-                ? 'Try another project, host, or status.'
+                ? 'Change filters or switch between Live and History.'
                 : 'Existing Herdr sessions appear here automatically. Check host connectivity in Settings.'}
             </Empty>
           )}
@@ -569,6 +558,18 @@ function Conversation({
   const [atBottom, setAtBottom] = useState(true);
   const scroll = useRef<HTMLDivElement>(null);
   const composer = useRef<HTMLTextAreaElement>(null);
+  const composerArea = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const area = composerArea.current;
+    const pane = area?.closest<HTMLElement>('.main-pane');
+    if (!area || !pane) return;
+    const observer = new ResizeObserver(() => {
+      pane.style.setProperty('--composer-height', `${area.getBoundingClientRect().height}px`);
+      if (pinned.current && scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight;
+    });
+    observer.observe(area);
+    return () => observer.disconnect();
+  }, [route.view]);
   const restored = useRef(false);
   const pinned = useRef(true);
   const transcript = useRef<HTMLDivElement>(null);
@@ -643,7 +644,7 @@ function Conversation({
       setReceiptId(_result?.task?.id);
       if (submitted.mode === 'queue')
         setDraft((current) => (current === submitted.prompt ? '' : current));
-      else outgoing.finish(submitted.key, 'confirmed');
+      else outgoing.finish(submitted.key, 'confirmed', _result?.task?.id);
       attachments.clear(submitted.attachments);
       submission.current = undefined;
       setNotice(
@@ -940,7 +941,7 @@ function Conversation({
           Latest messages
         </button>
       )}
-      <div className="composer-area">
+      <div className="composer-area" ref={composerArea}>
         {!!detail.data?.tasks.some((t) => t.status === 'pending') && (
           <button
             type="button"
@@ -1639,7 +1640,11 @@ function SessionDetails({ session: s }: { session: SessionView }) {
   return (
     <div className="page-content">
       <h3>{s.project}</h3>
-      <Status status={s.status} />
+      {isSaved(s) ? (
+        <span className="saved-session-label">Saved session</span>
+      ) : (
+        <Status status={s.status} />
+      )}
       {s.harness === 'dsh' && s.capabilities.sendMessage && <DshModel session={s} />}
       <dl className="details-list">
         {[
@@ -1821,6 +1826,7 @@ function SettingsView({ admin, back }: { admin: boolean; back: () => void }) {
             </select>
           </label>
         </section>
+        <InstallApp />
         <section>
           <h3>Notifications</h3>
           <p>Get a notification when an agent needs input, a task completes, or a session fails.</p>

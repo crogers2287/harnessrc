@@ -2669,3 +2669,198 @@ code {
   min-height: 0;
   margin: 4px 0 0;
 }
+/* The keyboard may shrink AND pan the visual viewport without resizing the page. */
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
+}
+.app {
+  position: fixed;
+  top: var(--app-top, 0px);
+  left: 0;
+  right: 0;
+  min-height: 0;
+}
+.main-pane,
+.conversation-scroll {
+  min-height: 0;
+}
+:root[data-keyboard='true'] .composer-area {
+  padding-bottom: 6px;
+}
+:root[data-keyboard='true'] .composer-footer {
+  display: none;
+}
+:root[data-keyboard='true'] .composer .openui-textarea {
+  max-height: 90px;
+}
+@media (max-width: 767px) {
+  .app .sidebar {
+    top: var(--app-top, 0px);
+    bottom: auto;
+  }
+}
+.session-filters {
+  padding: 0 12px;
+  flex-shrink: 0;
+}
+.session-scope {
+  display: flex;
+  padding: 3px;
+  background: var(--soft);
+  border-radius: 14px;
+  gap: 4px;
+}
+.session-scope button {
+  flex: 1;
+  min-height: 48px;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--muted);
+}
+.session-scope button[aria-pressed='true'] {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 3px #0001;
+  font-weight: 600;
+}
+.session-scope span,
+.agent-choices span {
+  margin-left: 5px;
+  font-size: 0.75rem;
+}
+.agent-choices {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 8px 0 0;
+  scrollbar-width: thin;
+}
+.agent-choices button {
+  min-height: 48px;
+  white-space: nowrap;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  color: var(--muted);
+  background: transparent;
+  flex-shrink: 0;
+}
+.agent-choices button[aria-pressed='true'] {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--soft);
+  font-weight: 600;
+}
+.filter-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.filter-summary > span {
+  flex: 1;
+}
+.filter-summary button,
+.session-filter-options summary {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 48px;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+.session-filter-options[open] {
+  width: 100%;
+}
+.session-filter-options summary {
+  justify-content: end;
+  list-style: none;
+}
+.session-filter-fields {
+  display: grid;
+  gap: 10px;
+  padding: 0 0 12px;
+  max-height: 35vh;
+  overflow: auto;
+}
+.session-filter-fields label {
+  display: grid;
+  gap: 4px;
+  font-size: 0.8125rem;
+}
+.session-filter-fields select {
+  width: 100%;
+  min-width: 0;
+  min-height: 48px;
+  font-size: 16px;
+}
+.sidebar .session-cwd {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.sidebar .session-cwd code {
+  display: inline;
+  overflow-wrap: normal;
+  font-family: inherit;
+  font-size: 0.75rem;
+}
+.sidebar .session-cwd > span {
+  display: none;
+}
+.sidebar .session-row {
+  padding: 12px;
+}
+.sidebar .session-meta {
+  font-size: 0.75rem;
+}
+.sidebar .session-cwd {
+  margin-top: 4px;
+}
+.sidebar .new-session-trigger {
+  margin-top: 0;
+  margin-bottom: 4px;
+  min-height: 48px;
+}
+.saved-session-label {
+  color: var(--muted);
+}
+.install-app button,
+.install-app [role='status'] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.install-instructions {
+  margin-top: 12px;
+  line-height: 1.6;
+}
+.inbox-heading .new-session-trigger {
+  margin: 0 0 0 auto;
+  padding: 0;
+  width: 48px;
+  min-width: 48px;
+  justify-content: center;
+}
+@media (max-width: 767px) {
+  .sidebar .inbox-heading {
+    padding-right: 54px;
+  }
+}
+.main-pane .jump-latest {
+  bottom: calc(var(--composer-height, 140px) + 8px);
+}
+.agent-choices button {
+  padding-inline: 8px;
+  font-size: 0.8125rem;
+}

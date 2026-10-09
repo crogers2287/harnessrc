@@ -76,6 +76,7 @@ export const sessionSchema = z.object({
   paneName: z.string().optional(),
   cwd: z.string(),
   status: z.enum(['idle', 'working', 'blocked', 'done', 'unknown', 'offline', 'ended']),
+  presence: z.enum(['live', 'saved']).optional(),
   ownership: z.enum(['herdr-cli', 'gateway-native', 'observed']),
   capabilities: z.record(z.string(), z.boolean()),
   lastActivity: z.string(),
