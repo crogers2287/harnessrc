@@ -17,7 +17,10 @@ type Link = {
 function titleMatches(agent: Agent, name: string) {
   // Codex decorates its native title while waiting for user input. The
   // exact nonce echo and process checks remain the ownership proof.
-  const title = (agent.terminal_title_stripped ?? '').replace(/^\[ ! \] Action Required \| /, '');
+  const title = (agent.terminal_title_stripped ?? '').replace(
+    /^\[ [!. ] \] Action Required \| /,
+    '',
+  );
   return title === name || title.startsWith(`${name} | `);
 }
 function identity(info: any) {

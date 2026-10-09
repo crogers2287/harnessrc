@@ -73,8 +73,13 @@ function fixture() {
   const links = new CodexLinks('test', store, native);
   return {
     store,
-    attention: (enabled: boolean) => {
-      titlePrefix = enabled ? '[ ! ] Action Required | ' : '';
+    attention: (enabled: boolean | 'blink') => {
+      titlePrefix =
+        enabled === 'blink'
+          ? '[ . ] Action Required | '
+          : enabled
+            ? '[ ! ] Action Required | '
+            : '';
     },
     client,
     agent,
@@ -255,6 +260,8 @@ test('Codex action-required decoration preserves and recovers the proved native 
     assert.equal(initial.agent_session?.value, 'thread-b');
     const session = sessionFromAgent('test', initial, 'project');
     session.processIdentity = '10:12';
+    await f.links.assertDelivery(f.client, session);
+    f.attention('blink');
     await f.links.assertDelivery(f.client, session);
     f.attention(false);
     const [normal] = await f.links.refresh(f.client, [f.agent()]);
