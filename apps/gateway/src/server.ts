@@ -11,7 +11,7 @@ import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
 import websocket from '@fastify/websocket';
 import staticPlugin from '@fastify/static';
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, createReadStream, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { z, ZodError } from 'zod';
 import { MAX_ATTACHMENT_BYTES } from '../../../packages/storage/src/attachments.ts';
@@ -184,6 +184,31 @@ export async function createGateway(
       }));
   app.get('/api/connection', async () => ({ tailnetEndpoint: config.tailnet?.endpoint ?? null }));
   app.get('/health', async () => ({ ok: true }));
+  // APKs are operator-published artifacts, never arbitrary client-supplied paths.
+  const androidApk = path.join(config.dataDir, 'android', 'relay.apk');
+  app.get('/api/android', async () => {
+    if (!existsSync(androidApk)) return { available: false };
+    const manifest = z
+      .object({ version: z.string(), sha256: z.string().regex(/^[a-f0-9]{64}$/) })
+      .parse(
+        JSON.parse(readFileSync(path.join(config.dataDir, 'android', 'release.json'), 'utf8')),
+      );
+    return {
+      available: true,
+      ...manifest,
+      size: statSync(androidApk).size,
+      url: `${config.tailnet?.endpoint ?? config.origin}/api/android/apk`,
+    };
+  });
+  app.get('/api/android/apk', async (_req, reply) => {
+    if (!existsSync(androidApk))
+      return reply.code(404).send({ error: 'Android package not published' });
+    return reply
+      .type('application/vnd.android.package-archive')
+      .header('Content-Disposition', 'attachment; filename="Relay.apk"')
+      .header('Content-Length', statSync(androidApk).size)
+      .send(createReadStream(androidApk));
+  });
   app.post(
     '/api/auth/pair',
     { config: { rateLimit: { max: 5, timeWindow: '1 minute' } } },

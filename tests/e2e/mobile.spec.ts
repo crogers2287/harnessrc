@@ -1899,3 +1899,26 @@ test('IME composition remains editable and does not submit on a composing shortc
   await cdp.send('Input.insertText', { text: '你好' });
   await expect(editor).toHaveText('Draft 你好');
 });
+
+test('Settings exposes the published native Android APK separately from PWA installation', async ({
+  page,
+}) => {
+  await page.route('**/api/android', (route) =>
+    route.fulfill({
+      json: {
+        available: true,
+        version: '0.1.0',
+        url: 'https://fred.example.test/api/android/apk',
+      },
+    }),
+  );
+  await page.setViewportSize({ width: 390, height: 844 });
+  await pair(page);
+  await page.getByRole('button', { name: 'Settings', exact: true }).first().click();
+  const link = page.getByRole('link', { name: 'Download Android APK · 0.1.0' });
+  await expect(link).toBeVisible();
+  await expect(link).toHaveAttribute('href', 'https://fred.example.test/api/android/apk');
+  await expect(
+    page.getByRole('button', { name: 'How to install Relay', exact: true }),
+  ).toBeVisible();
+});
