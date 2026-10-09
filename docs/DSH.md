@@ -4,6 +4,10 @@ DSH is **not yet an enabled Relay harness**. The native Typert client in `packag
 
 The protocol was checked against Fred's installed source in `deepseek-harness/packages/api/session-controller` and `packages/client/connection`: POST `/api/session/<method>`, client-request/server-response envelopes, correlated rpcId, and named payload args. DSH's source is MIT licensed; no DSH implementation was copied into Relay. The transport requires the existing host's authenticated cookie, obtained by an authorized native login. Redirects are refused to avoid forwarding credentials; remote endpoints require HTTPS. Cookies are retrieved through a callback and never logged or persisted by this client.
 
+## Target confirmed
+
+The user confirmed that DSH is used through its web app. Integrate with that existing native host as an externally supervised session source; do not migrate it to Herdr or launch a second writer. Herdr continues owning its existing CLI sessions.
+
 ## Deployment blockers on Fred
 
 - Port 3080 is owned by the existing system `dsh-web.service`, while the older user `dsh-w6800.service` repeatedly attempts to bind the same port. Relay has not stopped either service or replaced the active host.

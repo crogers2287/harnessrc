@@ -46,3 +46,7 @@ OpenUI Button/IconButton/TextArea primitives now share Relay’s theme. The dark
 ## Chat composition revision
 
 The previous OpenUI release preserved too much of the old structure. The new composition replaces the four-line permanent header with a title/model disclosure and a compact status/directory strip, combines model/host information in shorter drawer rows, reduces the composer to text plus a reachable action row, and removes its permanent explanatory footer. A distinct neutral user-message surface and circular blue send control separate messages from actions. Both themes were reviewed with realistic chat content. A duplicate textarea focus outline discovered in the dark screenshot was removed in favor of one visible composer focus boundary. Native DSH support remains incomplete; see DSH.md for the implemented transport and actual deployment blockers.
+
+## Mobile Back navigation
+
+Mobile conversations now have a session-drawer parent in browser history, including initial deep links and reloads. Android/browser Back from chat opens that drawer; Back from a secondary screen returns to chat; Back closes a manually opened drawer. The drawer close button returns to chat without discarding the draft. Desktop history remains unchanged. The browser test exercises real history traversal, reload, secondary navigation and retained draft text; physical Android system-button behavior remains a device check.

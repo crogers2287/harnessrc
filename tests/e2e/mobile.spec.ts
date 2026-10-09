@@ -613,3 +613,30 @@ test('native question replies read like chat and repeated real touch taps reliab
     .analyze();
   expect(issues.violations).toEqual([]);
 });
+
+test('mobile browser Back opens sessions from chat and preserves secondary navigation and drafts', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await pair(page);
+  await page.getByRole('button', { name: /Atlas API/ }).click();
+  await page.getByLabel('Instruction', { exact: true }).fill('Keep this draft when I go back');
+  await page.reload();
+  await page.getByLabel('Instruction', { exact: true }).waitFor();
+  await page.goBack();
+  await expect(page.getByRole('dialog', { name: 'Sessions', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Close sessions', exact: true }).click();
+  await expect(page.getByLabel('Instruction', { exact: true })).toHaveValue(
+    'Keep this draft when I go back',
+  );
+  await page.getByRole('button', { name: 'Session details', exact: true }).click();
+  await page.goBack();
+  await expect(page.getByRole('dialog', { name: 'Sessions', exact: true })).not.toBeVisible();
+  await expect(page.getByLabel('Instruction', { exact: true })).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole('dialog', { name: 'Sessions', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: /Atlas API/ }).click();
+  await page.getByRole('button', { name: 'Open sessions', exact: true }).click();
+  await page.goBack();
+  await expect(page.getByRole('dialog', { name: 'Sessions', exact: true })).not.toBeVisible();
+});

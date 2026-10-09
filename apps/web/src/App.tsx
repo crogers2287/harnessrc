@@ -92,7 +92,10 @@ export function App() {
     setDrawerOpen(true);
   };
   const closeDrawer = () => {
-    if (history.state?.relayDrawer) history.back();
+    if (history.state?.relayDrawerBase) {
+      history.pushState({ relayChat: true }, '', location.href);
+      setDrawerOpen(false);
+    } else if (history.state?.relayDrawer) history.back();
     else setDrawerOpen(false);
   };
   useEffect(() => {
@@ -115,8 +118,16 @@ export function App() {
     const params = new URLSearchParams(
       Object.entries(next).filter(([, v]) => v !== undefined) as [string, string][],
     );
-    if (history.state?.relayDrawer) history.replaceState({}, '', params.size ? `/?${params}` : '/');
-    else history.pushState({}, '', params.size ? `/?${params}` : '/');
+    const url = params.size ? `/?${params}` : '/';
+    if (mobile && next.session && !next.view) {
+      // The drawer is the parent of a mobile conversation, including deep links.
+      if (history.state?.relayDrawer)
+        history.replaceState({ relayDrawer: true, relayDrawerBase: true }, '', url);
+      else history.pushState({ relayDrawer: true, relayDrawerBase: true }, '', url);
+      history.pushState({ relayChat: true }, '', url);
+    } else if (history.state?.relayDrawer && !history.state?.relayDrawerBase)
+      history.replaceState({}, '', url);
+    else history.pushState({}, '', url);
     setRoute(next);
     setDrawerOpen(false);
     if (next.session) localStorage.setItem('relay-last-session', next.session);
@@ -195,6 +206,19 @@ export function App() {
     history.replaceState({}, '', `/?session=${session.id}`);
     setRoute({ session: session.id });
   }, [sessions, route]);
+  useEffect(() => {
+    if (
+      !mobile ||
+      !auth.data ||
+      !route.session ||
+      route.view ||
+      history.state?.relayChat ||
+      history.state?.relayDrawer
+    )
+      return;
+    history.replaceState({ relayDrawer: true, relayDrawerBase: true }, '', location.href);
+    history.pushState({ relayChat: true }, '', location.href);
+  }, [mobile, auth.data, route]);
   useNotifications(sessions, !!auth.data);
   if (auth.isPending)
     return (
