@@ -154,7 +154,9 @@ export function AttachmentPicker({
   const pasteScreenshot = async () => {
     if (disabled || pastingRef.current) return;
     setPasteError('');
+    setOpen(false);
     if (!navigator.clipboard?.read) {
+      setOpen(true);
       setPasteError(
         'This browser cannot read clipboard images. Choose Photos to attach your screenshot.',
       );
@@ -179,6 +181,7 @@ export function AttachmentPicker({
         );
       }
       if (!images.length) {
+        setOpen(true);
         setPasteError(
           'No image was shared by the clipboard. Copy a screenshot first, or choose Photos.',
         );
@@ -188,6 +191,7 @@ export function AttachmentPicker({
       setOpen(false);
       container.current?.querySelector('button')?.focus();
     } catch {
+      setOpen(true);
       setPasteError('Clipboard access was blocked. Allow paste in your browser, or choose Photos.');
     } finally {
       pastingRef.current = false;
@@ -208,16 +212,20 @@ export function AttachmentPicker({
         <Paperclip size={21} aria-hidden="true" />
         <span>Attach</span>
       </button>
+      <button
+        type="button"
+        className="attach-button paste-button"
+        aria-label="Paste screenshot"
+        title="Paste screenshot from clipboard"
+        aria-busy={pasting}
+        disabled={disabled || pasting}
+        onClick={() => void pasteScreenshot()}
+      >
+        <ClipboardPaste size={21} aria-hidden="true" />
+        <span>{pasting ? 'Reading…' : 'Paste'}</span>
+      </button>
       {open && (
         <div className="attachment-menu" role="group" aria-label="Attachment options">
-          <button
-            type="button"
-            disabled={disabled || pasting}
-            onClick={() => void pasteScreenshot()}
-          >
-            <ClipboardPaste size={20} aria-hidden="true" />
-            {pasting ? 'Reading clipboard…' : 'Paste screenshot'}
-          </button>
           <button
             type="button"
             onClick={() => {

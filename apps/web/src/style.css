@@ -1605,6 +1605,9 @@ code {
 }
 .attachment-picker {
   position: relative;
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
 }
 .attachment-menu {
   position: absolute;
@@ -3281,4 +3284,10 @@ body,
   content: attr(data-placeholder);
   color: var(--muted);
   pointer-events: none;
+}
+
+/* Keep separate 48px attachment and clipboard targets beside the mode and send controls. */
+@media (max-width: 480px) {
+  .composer-controls .attach-button span { display: none; }
+  .composer-controls { gap: 4px; }
 }

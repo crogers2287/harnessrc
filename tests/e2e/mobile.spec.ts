@@ -1050,7 +1050,7 @@ test('clipboard screenshot uploads once, keeps draft text, and sends the attachm
     await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
   });
   await page.getByLabel('Instruction', { exact: true }).fill('Look at this screenshot');
-  await page.getByRole('button', { name: 'Add files or images' }).click();
+  await expect(page.getByRole('group', { name: 'Attachment options' })).toHaveCount(0);
   await page.screenshot({ path: 'docs/screenshots/clipboard-menu-mobile.png' });
   await page.getByRole('button', { name: 'Paste screenshot', exact: true }).click();
   await expect(page.getByText(/KB · Ready/)).toHaveCount(1);
@@ -1059,7 +1059,7 @@ test('clipboard screenshot uploads once, keeps draft text, and sends the attachm
   );
   await expect(page.getByRole('img', { name: /Preview of Screenshot-/ })).toBeVisible();
   await page.screenshot({ path: 'docs/screenshots/clipboard-preview-mobile.png' });
-  // Android advertises image MIME support only for a richly editable field.
+  // Rich editing is required for Android IME images, but Chrome also gates media insertion.
   await expect(page.getByLabel('Instruction', { exact: true })).toHaveAttribute(
     'contenteditable',
     'true',
@@ -1092,7 +1092,6 @@ test('clipboard denial or no image gives a usable photo fallback without losing 
       },
     }),
   );
-  await page.getByRole('button', { name: 'Add files or images' }).click();
   await page.getByRole('button', { name: 'Paste screenshot', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('Clipboard access was blocked');
   await expect(page.getByRole('button', { name: 'Photos', exact: true })).toBeVisible();
