@@ -1221,6 +1221,33 @@ function EventCard({ event }: { event: Event }) {
   const text = presentation.text;
   const [copyError, setCopyError] = useState('');
   const [copied, setCopied] = useState(false);
+  if (presentation.activity) {
+    const activity = presentation.activity;
+    return (
+      <details className="native-activity">
+        <summary>
+          <ChevronRight size={18} aria-hidden="true" />
+          <span>
+            <strong>{activity.title}</strong>
+            <span className="native-activity-preview">{activity.summary}</span>
+          </span>
+        </summary>
+        <div className="native-activity-body">
+          <p>{activity.summary}</p>
+          {activity.details.length > 0 && (
+            <dl>
+              {activity.details.map(({ label, value }) => (
+                <div key={label}>
+                  <dt>{label}</dt>
+                  <dd>{value}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+        </div>
+      </details>
+    );
+  }
   if (data.activityGroup) {
     const activities = data.activities as Event[];
     const calls = activities.filter((e) => e.kind === 'tool.invocation');
@@ -1258,6 +1285,7 @@ function EventCard({ event }: { event: Event }) {
               <p>{reply.question}</p>
             </div>
           ))}
+          {presentation.command && <div className="message-command">{presentation.command}</div>}
           <Mark text={text} />
           {Array.isArray(data.attachments) && (
             <div className="sent-attachments">
@@ -1273,7 +1301,7 @@ function EventCard({ event }: { event: Event }) {
             aria-label="Copy message"
             onClick={() =>
               void navigator.clipboard
-                .writeText(text)
+                .writeText([presentation.command, text].filter(Boolean).join('\n'))
                 .then(() => {
                   setCopyError('');
                   setCopied(true);

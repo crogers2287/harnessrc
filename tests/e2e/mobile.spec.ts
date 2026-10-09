@@ -1334,3 +1334,59 @@ test('DSH native questions render choices and submit the exact answer batch with
     });
   expect(messages).toBe(0);
 });
+
+test('Claude commands and background notifications render as readable mobile chat activity', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await pair(page);
+  const { sessions } = await page.evaluate(async () => (await fetch('/api/sessions')).json());
+  const session = sessions.find((s: any) => s.project === 'Atlas API') ?? sessions[0];
+  const texts = [
+    '<command-name>/goal</command-name><command-message>goal</command-message><command-args>Make the project production ready by morning.</command-args>',
+    '<local-command-stdout>Goal set: Make the project production ready by morning.</local-command-stdout>',
+    '<task-notification><task-id>background-check</task-id><tool-use-id>call-123</tool-use-id><output-file>/tmp/claude/session/tasks/background-check.output</output-file><status>completed</status><summary>Background integration checks completed (exit code 0)</summary></task-notification>',
+  ];
+  await page.route('**/events?*', (route) =>
+    route.fulfill({
+      json: {
+        events: texts.map((text, index) => ({
+          id: `native-command-${index}`,
+          sourceId: `claude-${index}`,
+          sequence: 9999990 + index,
+          sessionId: session.id,
+          nativeSessionId: session.nativeSessionId,
+          source: 'claude',
+          kind: 'user.message',
+          timestamp: new Date().toISOString(),
+          data: { text },
+        })),
+      },
+    }),
+  );
+  await page.reload();
+  await openSessions(page);
+  await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
+  await expect(page.locator('.message-command')).toHaveText('/goal');
+  await expect(page.locator('.user-message')).toHaveCount(1);
+  await expect(page.getByText('Background task completed', { exact: true })).toBeVisible();
+  await expect(
+    page.getByText(/<command-name>|<local-command-stdout>|<task-notification>/),
+  ).toHaveCount(0);
+  const details = page.locator('.native-activity').filter({ hasText: 'Background task completed' });
+  await expect(details.locator('dd').filter({ hasText: '/tmp/claude/' })).toBeHidden();
+  await details.locator('summary').click();
+  await expect(details.locator('dd').filter({ hasText: '/tmp/claude/' })).toBeVisible();
+  await details.locator('summary').click();
+  for (const width of [320, 390, 430, 768, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: 'docs/screenshots/native-command-cleanup-mobile.png' });
+  await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
+  await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'dark'));
+  await page.screenshot({ path: 'docs/screenshots/native-command-cleanup-dark.png' });
+});

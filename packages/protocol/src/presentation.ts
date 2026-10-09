@@ -1,8 +1,68 @@
 /** Render an exact native reply envelope as a conversation, without changing stored evidence. */
-export function presentUserMessage(text: string): {
+export type MessagePresentation = {
   text: string;
   replies?: { question: string; answer: string }[];
-} {
+  command?: string;
+  activity?: { title: string; summary: string; details: { label: string; value: string }[] };
+};
+export function presentUserMessage(text: string): MessagePresentation {
+  const command = text.match(
+    /^\s*<command-name>([^<>]+)<\/command-name>\s*<command-message>[^<>]*<\/command-message>\s*(?:<command-args>([\s\S]*?)<\/command-args>\s*)?$/,
+  );
+  if (command && /^\/[\w:-]+$/.test(command[1].trim()))
+    return { text: command[2]?.trim() ?? '', command: command[1].trim() };
+  const result = text.match(
+    /^\s*<local-command-(stdout|stderr)>([\s\S]*?)<\/local-command-\1>\s*$/,
+  );
+  if (result)
+    return {
+      text: result[2].trim(),
+      activity: {
+        title: result[1] === 'stderr' ? 'Command error' : 'Command result',
+        summary: result[2].trim() || 'No output',
+        details: [],
+      },
+    };
+  const notification = text.match(/^\s*<task-notification>([\s\S]*?)<\/task-notification>\s*$/);
+  if (notification) {
+    const fields: Record<string, string> = {};
+    let valid = true;
+    const rest = notification[1].replace(
+      /<(task-id|tool-use-id|output-file|status|summary|task-type)>([\s\S]*?)<\/\1>/g,
+      (_, key: string, value: string) => {
+        if (key in fields) valid = false;
+        fields[key] = value.trim();
+        return '';
+      },
+    );
+    if (valid && !rest.trim() && fields.summary && fields.status) {
+      const titles: Record<string, string> = {
+        completed: 'Background task completed',
+        failed: 'Background task failed',
+        killed: 'Background task stopped',
+      };
+      const labels: Record<string, string> = {
+        'task-id': 'Task',
+        'tool-use-id': 'Tool call',
+        'output-file': 'Output file',
+        'task-type': 'Task type',
+        status: 'Status',
+      };
+      return {
+        text: fields.summary,
+        activity: {
+          title: Object.hasOwn(titles, fields.status)
+            ? titles[fields.status]
+            : 'Background task update',
+          summary: fields.summary,
+          details: Object.entries(fields)
+            .filter(([key]) => key !== 'summary')
+            .map(([key, value]) => ({ label: labels[key], value })),
+        },
+      };
+    }
+  }
+
   const envelope = text.match(
     /^\s*<send_user_message_question_reply>\s*([\s\S]*?)\s*<\/send_user_message_question_reply>\s*$/,
   );

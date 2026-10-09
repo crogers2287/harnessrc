@@ -3060,3 +3060,74 @@ body,
 .pending-jump svg:last-child {
   margin-left: auto;
 }
+
+/* Native host records belong to activity, not to the user's chat bubbles. */
+.message-command {
+  color: var(--accent);
+  font-weight: 650;
+  margin-bottom: 8px;
+}
+.native-activity {
+  margin: 12px 0;
+  border-left: 2px solid var(--border);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.native-activity > summary {
+  min-height: 48px;
+  padding: 12px 16px;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  cursor: pointer;
+  list-style: none;
+}
+.native-activity > summary::-webkit-details-marker {
+  display: none;
+}
+.native-activity > summary > svg {
+  flex-shrink: 0;
+  margin-top: 3px;
+}
+.native-activity[open] > summary > svg {
+  transform: rotate(90deg);
+}
+.native-activity > summary strong {
+  display: block;
+  color: var(--text);
+  font-size: 14px;
+}
+.native-activity-preview {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: 14px;
+  margin-top: 4px;
+  line-height: 1.5;
+}
+.native-activity[open] .native-activity-preview {
+  display: none;
+}
+.native-activity-body {
+  padding: 0 16px 12px 44px;
+  font-size: 14px;
+}
+.native-activity-body p {
+  white-space: pre-wrap;
+  color: var(--text);
+  margin: 0 0 12px;
+}
+.native-activity-body dl {
+  margin: 0;
+}
+.native-activity-body dl > div {
+  margin-top: 8px;
+}
+.native-activity-body dt {
+  font-weight: 600;
+}
+.native-activity-body dd {
+  margin: 2px 0 0;
+  user-select: text;
+}
