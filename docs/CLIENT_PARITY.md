@@ -105,6 +105,10 @@ use that same tailnet access. Neither client exposes arbitrary server filesystem
 Validation: 111 backend tests, 2 targeted mobile browser tests, 16 native emulator
 tests, Android unit/lint/build. Physical-device download/install remains a user check.
 
+### Browser downloads from chat
+
+Native chat opens HTTP(S) links in the system browser, which does not inherit app credentials. When Tailscale is configured, unauthenticated GET/HEAD requests for APKs and published conversation attachments/media on the configured public host redirect to the configured private endpoint. Query parameters are discarded. The private endpoint still authenticates the Tailscale peer and enforces session read access. Other API requests and mutations continue to reject missing authentication. This gateway fix applies to existing Android installations and web links without an APK update.
+
 ### Codex bypass policy (Android 0.1.8)
 
 Codex sandbox access and approval policy are independent. The built-in Full access / bypass approvals choice now sets `permissions: ":danger-full-access"` and `approvalPolicy: "never"` together. Read-back must confirm both full access and approvals never; a full-access profile with on-request approvals is shown as a custom policy. Workspace and Read only restore on-request approvals. Custom native profiles are not assigned an inferred approval policy.

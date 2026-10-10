@@ -114,6 +114,22 @@ export async function createGateway(
         ? auth.tailnetDevice(req.tailnetNode)
         : auth.authenticate(req.cookies.rc_access);
     } catch {
+      // Browser navigation from native chat does not carry the app's credentials.
+      // Route only known downloads to the configured private ingress, which still
+      // authenticates the Tailscale peer and checks session access. Never forward tokens.
+      const download =
+        url === '/api/android/apk' ||
+        /^\/api\/sessions\/[A-Za-z0-9_-]+\/(?:attachments\/[A-Za-z0-9_.-]+|media\/[A-Za-z0-9_-]+\/\d+)$/.test(
+          url,
+        );
+      if (
+        config.tailnet &&
+        ['GET', 'HEAD'].includes(req.method) &&
+        download &&
+        req.headers.host === new URL(config.origin).host &&
+        req.headers.host !== new URL(config.tailnet.endpoint).host
+      )
+        return reply.redirect(new URL(url, config.tailnet.endpoint).href, 302);
       return reply.code(401).send({ error: 'Authentication required or expired' });
     }
   });
