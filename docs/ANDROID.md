@@ -100,3 +100,17 @@ New session now creates a folder directly in the configured home and selects it.
 Validation: 14 disposable-emulator integration tests pass, including the new folder/permission flow and existing Back, clipboard, dictation, interaction, draft and recovery tests. The first cold-boot run was blocked by an emulator System UI ANR; after clearing it the full suite passed. The launch flow also passed in dark mode. Unit tests, lint, debug/test builds and signed release build passed. Physical-phone and exhaustive live-harness launch verification remain separate.
 
 Screenshots: [Android launch](screenshots/launch-permissions-android.png), [dark mode](screenshots/launch-permissions-android-dark.png).
+
+### 0.1.6: links and native approval parity
+
+Markdown link taps now open the system browser, including APK downloads. Relative
+HTTP(S) links resolve against the configured gateway. Long-press still selects text;
+dragging does not follow a link. Executable/local URI schemes are rejected. Published
+image/file artifacts retain their existing in-app preview and Save controls; arbitrary
+local paths in prose are not downloadable files.
+
+The previous selectable TextView installed Android's selection movement method,
+which prevented Markwon from installing link handling. A selection-preserving view
+now distinguishes a short link tap from a drag or long press. Instrumentation verifies
+one browser launch per tap and retained text selection on long press. It also verifies
+Codex approval choices use only the interaction response endpoint.

@@ -94,3 +94,13 @@ these cards. Responses use the original JSON-RPC request ID and wait for native
 resolution, never send a chat turn. Command-specific `availableDecisions` is
 respected (some requests permit Cancel instead of Decline). Unsupported server
 request methods remain unsupported.
+
+### Chat links (Android 0.1.6)
+
+Web Markdown download links were already functional; a mobile browser regression
+now checks download filename and preserved conversation navigation. Android now
+opens HTTP(S) Markdown links through the system browser while preserving long-press
+selection. Android's release is still tailnet-authenticated; external-browser downloads
+use that same tailnet access. Neither client exposes arbitrary server filesystem paths.
+Validation: 111 backend tests, 2 targeted mobile browser tests, 16 native emulator
+tests, Android unit/lint/build. Physical-device download/install remains a user check.

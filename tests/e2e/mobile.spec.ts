@@ -2154,3 +2154,85 @@ test('new project folder and confirmed launch permissions work on a phone', asyn
   expect(launched.permissionConfirmed).toBe(true);
   expect(launched.cwd).toMatch(/\/Phone project$/);
 });
+
+test('Codex command approval exposes native choices and never sends a chat turn', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await pair(page);
+  await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
+  let submitted: any;
+  let sends = 0;
+  page.on('request', (r) => {
+    if (r.method() === 'POST' && /\/(messages|tasks|steer)$/.test(r.url())) sends++;
+  });
+  await page.route('**/api/sessions/*', async (route) => {
+    const data = await (await route.fetch()).json();
+    if (data.session)
+      data.interactions = submitted
+        ? []
+        : [
+            {
+              id: 'codex-approval',
+              metadata: {},
+              route: 'codex-native',
+              type: 'command-approval',
+              status: 'pending',
+              expiresAt: '2099-01-01T00:00:00Z',
+              prompt: 'touch example',
+              choices: [
+                { id: 'accept', label: 'Allow once' },
+                { id: 'cancel', label: 'Deny and stop turn' },
+              ],
+              responseSchema: { type: 'string', enum: ['accept', 'cancel'] },
+            },
+          ];
+    await route.fulfill({ json: data });
+  });
+  await page.route('**/api/interactions/codex-approval/respond', async (route) => {
+    submitted = route.request().postDataJSON();
+    await route.fulfill({ json: { ok: true } });
+  });
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Allow once', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Deny and stop turn' }).click();
+  await expect.poll(() => submitted).toEqual({ response: 'cancel' });
+  expect(sends).toBe(0);
+});
+
+test.describe('download links', () => {
+  test.use({ serviceWorkers: 'block' });
+  test('chat Markdown file links download without leaving the conversation', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await pair(page);
+    await page.route('**/api/sessions/*/events?*', async (route) => {
+      const data = await (await route.fetch()).json();
+      data.events = [
+        {
+          id: 'download-link',
+          sequence: 1,
+          kind: 'assistant.message',
+          timestamp: new Date().toISOString(),
+          data: { text: '[Download Relay](/api/android/apk)' },
+        },
+      ];
+      await route.fulfill({ json: data });
+    });
+    await page.route('**/api/android/apk', (route) =>
+      route.fulfill({
+        headers: {
+          'content-type': 'application/vnd.android.package-archive',
+          'content-disposition': 'attachment; filename="relay-test.apk"',
+        },
+        body: 'mock APK download',
+      }),
+    );
+    await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
+    await page.reload();
+    const url = page.url();
+    const download = page.waitForEvent('download');
+    await page.getByRole('link', { name: 'Download Relay', exact: true }).click();
+    expect((await download).suggestedFilename()).toBe('relay-test.apk');
+    expect(page.url()).toBe(url);
+  });
+});

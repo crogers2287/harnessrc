@@ -12,7 +12,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
-import android.widget.TextView
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -651,7 +650,7 @@ fun Message(vm: RelayModel, event: ChatEvent) {
                     else Modifier
                 )
         ) {
-            if (text.isNotBlank()) MarkdownText(text)
+            if (text.isNotBlank()) MarkdownText(text, vm.api.base)
             native.forEachIndexed { index, item ->
                 MediaCard(
                     vm,
@@ -714,18 +713,30 @@ fun SelectionContainerCompat(content: @Composable () -> Unit) {
 }
 
 @Composable
-fun MarkdownText(text: String) {
+fun MarkdownText(text: String, baseUrl: String = RelayApi.DEFAULT_ENDPOINT) {
     val context = LocalContext.current
-    val renderer = remember {
-        Markwon.builder(context)
-            .usePlugin(TablePlugin.create(context))
-            .usePlugin(StrikethroughPlugin.create())
-            .build()
-    }
+    val renderer =
+        remember(context, baseUrl) {
+            Markwon.builder(context)
+                .usePlugin(
+                    object : io.noties.markwon.AbstractMarkwonPlugin() {
+                        override fun configureConfiguration(
+                            builder: io.noties.markwon.MarkwonConfiguration.Builder
+                        ) {
+                            builder.linkResolver { view, link ->
+                                openChatLink(view.context, baseUrl, link)
+                            }
+                        }
+                    }
+                )
+                .usePlugin(TablePlugin.create(context))
+                .usePlugin(StrikethroughPlugin.create())
+                .build()
+        }
     val color = MaterialTheme.colorScheme.onSurface.toArgb()
     AndroidView(
         factory = {
-            TextView(it).apply {
+            SelectableMarkdownView(it).apply {
                 textSize = 17f
                 setTextIsSelectable(true)
                 setLineSpacing(4 * resources.displayMetrics.density, 1.12f)

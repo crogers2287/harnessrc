@@ -174,7 +174,7 @@ fun QuestionCard(vm: RelayModel, request: JSONObject) {
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary,
             )
-            MarkdownText(request.str("prompt"))
+            MarkdownText(request.str("prompt"), vm.api.base)
             metadata
                 .str("command")
                 .takeIf { it.isNotBlank() }
@@ -189,7 +189,7 @@ fun QuestionCard(vm: RelayModel, request: JSONObject) {
                     val selected = choices[qid] ?: emptyList()
                     if (questions.size > 1)
                         Text(q.str("question"), fontWeight = FontWeight.SemiBold)
-                    q.str("detail").takeIf { it.isNotBlank() }?.let { MarkdownText(it) }
+                    q.str("detail").takeIf { it.isNotBlank() }?.let { MarkdownText(it, vm.api.base) }
                     q.rows("options").forEach { option ->
                         val label = option.str("label")
                         Row(

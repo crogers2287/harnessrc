@@ -6,6 +6,8 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.core.content.FileProvider
@@ -546,6 +548,98 @@ class NativeChatTest {
         val body = JSONObject(requests.first { it.path == "/api/interactions/question-1/respond" }.body.readUtf8())
         assertEquals("Blue", body.getJSONObject("response").getJSONObject("answers").getJSONObject("color").getJSONArray("answers").getString(0))
         assertFalse(requests.any { it.path?.endsWith("/messages") == true })
+    }
+
+    @Test
+    fun codexCommandApprovalHasChoicesAndTargetsOnlyTheInteraction() {
+        pendingQuestion =
+            JSONObject(
+                """{"id":"question-1","type":"command-approval","route":"codex-native","status":"pending","expiresAt":"2099-01-01T00:00:00.000Z","prompt":"touch example","choices":[{"id":"accept","label":"Allow once"},{"id":"cancel","label":"Deny and stop turn"}]}"""
+            )
+        scenario.onActivity { it.model.reload() }
+        compose.waitUntil(15000) {
+            compose.onAllNodesWithText("Allow once").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText("Deny and stop turn").performScrollTo().performClick()
+        compose.waitUntil(15000) {
+            requests.any { it.path == "/api/interactions/question-1/respond" }
+        }
+        val body =
+            JSONObject(
+                requests.first { it.path == "/api/interactions/question-1/respond" }.body.readUtf8()
+            )
+        assertEquals("cancel", body.getString("response"))
+        assertFalse(requests.any { it.path?.endsWith("/messages") == true })
+    }
+
+    @Test
+    fun markdownLinkTapOpensDownloadAndLongPressKeepsSelection() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val filter =
+            IntentFilter(Intent.ACTION_VIEW).apply {
+                addCategory(Intent.CATEGORY_BROWSABLE)
+                addDataScheme("https")
+            }
+        val monitor =
+            instrumentation.addMonitor(
+                filter,
+                android.app.Instrumentation.ActivityResult(0, null),
+                true,
+            )
+        try {
+            scenario.onActivity { activity ->
+                activity.setContentView(
+                    androidx.compose.ui.platform.ComposeView(activity).apply {
+                        setContent {
+                            androidx.compose.foundation.layout.Box(
+                                androidx.compose.ui.Modifier.padding(top = 80.dp)
+                            ) {
+                                MarkdownText("[Download Relay](https://example.com/relay.apk)")
+                            }
+                        }
+                    }
+                )
+            }
+            compose.waitForIdle()
+            val matcher: org.hamcrest.Matcher<View> =
+                org.hamcrest.CoreMatchers.instanceOf(SelectableMarkdownView::class.java)
+            val coordinates =
+                androidx.test.espresso.action.CoordinatesProvider { view ->
+                    val text = view as android.widget.TextView
+                    val position = IntArray(2)
+                    view.getLocationOnScreen(position)
+                    floatArrayOf(
+                        position[0] + text.totalPaddingLeft + text.layout.getPrimaryHorizontal(5),
+                        position[1] + text.totalPaddingTop + text.layout.getLineBottom(0) / 2f,
+                    )
+                }
+            androidx.test.espresso.Espresso.onView(matcher)
+                .perform(
+                    androidx.test.espresso.action.GeneralClickAction(
+                        androidx.test.espresso.action.Tap.SINGLE,
+                        coordinates,
+                        androidx.test.espresso.action.Press.FINGER,
+                    )
+                )
+            assertEquals(1, monitor.hits)
+            androidx.test.espresso.Espresso.onView(matcher)
+                .perform(
+                    androidx.test.espresso.action.GeneralClickAction(
+                        androidx.test.espresso.action.Tap.LONG,
+                        coordinates,
+                        androidx.test.espresso.action.Press.FINGER,
+                    )
+                )
+            assertEquals("Long press must not open the link", 1, monitor.hits)
+            androidx.test.espresso.Espresso.onView(matcher).check { view, error ->
+                if (error != null) throw error
+                val text = view as android.widget.TextView
+                assertTrue(text.isTextSelectable)
+                assertTrue("Long press selects text", text.selectionEnd > text.selectionStart)
+            }
+        } finally {
+            instrumentation.removeMonitor(monitor)
+        }
     }
 
     @Test
