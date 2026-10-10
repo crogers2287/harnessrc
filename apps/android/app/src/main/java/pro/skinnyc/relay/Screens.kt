@@ -513,7 +513,10 @@ fun DetailsScreen(vm: RelayModel, back: () -> Unit) {
                     agentMode = vm.api.api("/api/sessions/${s.id}/mode")
                     if (s.harness == "dsh") models = vm.api.api("/api/sessions/${s.id}/models")
                 }
-                .onFailure { loadError = it.message ?: "Could not load settings" }
+                .onFailure {
+                    if (it is kotlinx.coroutines.CancellationException) throw it
+                    loadError = it.message ?: "Could not load settings"
+                }
     }
     Page("Session settings", back) {
         if (s == null) Text("Choose a session first.")
@@ -527,6 +530,7 @@ fun DetailsScreen(vm: RelayModel, back: () -> Unit) {
                     Text(if (kind == "mode") "Agent mode" else "Permissions", style = MaterialTheme.typography.titleMedium)
                     if (catalog.optBoolean("supported")) {
                         Text("Current: ${catalog.str("currentName").ifBlank { catalog.str("current") }}")
+                        if (catalog.str("reason").isNotBlank()) Text(catalog.str("reason"), style = MaterialTheme.typography.bodySmall)
                         catalog.rows("options").forEach { option ->
                             OutlinedButton(
                                 enabled = !vm.working && option.str("value") != catalog.str("current"),

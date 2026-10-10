@@ -8,9 +8,12 @@ function fixture() {
   let loaded = true;
   let owner = true;
   let confirm = true;
+  let applyApproval = true;
   const state = {
     thread: { id: 'thread' },
     activePermissionProfile: { id: ':workspace' },
+    approvalPolicy: 'on-request',
+    sandbox: { type: 'workspaceWrite' },
     collaborationMode: {
       mode: 'default',
       settings: { model: 'gpt-test', reasoning_effort: 'high' },
@@ -30,6 +33,7 @@ function fixture() {
             data: [
               { id: ':workspace', allowed: true },
               { id: ':full-access', allowed: true },
+              { id: ':danger-full-access', allowed: true },
               { id: 'forbidden', allowed: false },
             ],
           };
@@ -37,6 +41,12 @@ function fixture() {
           writes.push(params);
           if (confirm && params.permissions)
             state.activePermissionProfile = { id: params.permissions };
+          if (confirm && params.permissions === ':danger-full-access')
+            state.sandbox = { type: 'dangerFullAccess' };
+          if (confirm && params.permissions === ':workspace')
+            state.sandbox = { type: 'workspaceWrite' };
+          if (confirm && applyApproval && params.approvalPolicy)
+            state.approvalPolicy = params.approvalPolicy;
           if (confirm && params.collaborationMode)
             state.collaborationMode = params.collaborationMode;
           return {};
@@ -60,6 +70,9 @@ function fixture() {
     replace: () => {
       owner = false;
     },
+    ignoreApproval: () => {
+      applyApproval = false;
+    },
     unconfirmed: () => {
       confirm = false;
     },
@@ -69,7 +82,7 @@ test('Codex settings offer only allowed native profiles and verify applied permi
   const f = fixture();
   assert.deepEqual(
     (await f.settings.read(f.s, 'permissions')).options.map((o) => o.value),
-    [':workspace', ':full-access'],
+    [':workspace', ':full-access', ':danger-full-access'],
   );
   assert.equal(
     (await f.settings.set(f.s, 'permissions', ':full-access', ':workspace')).current,
@@ -134,5 +147,40 @@ test('Custom live policies remain editable and policy drift invalidates the conf
   assert.equal(
     (await f.settings.set(f.s, 'permissions', ':workspace', latest.current!)).current,
     ':workspace',
+  );
+});
+
+test('bypass sets and verifies both permissions and approval policy; leaving bypass restores prompts', async () => {
+  const f = fixture();
+  const applied = await f.settings.set(f.s, 'permissions', ':danger-full-access', ':workspace');
+  assert.equal(applied.current, ':danger-full-access');
+  assert.deepEqual(f.writes[0], {
+    threadId: 'thread',
+    permissions: ':danger-full-access',
+    approvalPolicy: 'never',
+  });
+  assert.equal(f.state.approvalPolicy, 'never');
+  await f.settings.set(f.s, 'permissions', ':workspace', ':danger-full-access');
+  assert.equal(f.state.approvalPolicy, 'on-request');
+});
+
+test('full sandbox with on-request is not labelled bypass and can be repaired', async () => {
+  const f = fixture();
+  f.state.activePermissionProfile.id = ':danger-full-access';
+  f.state.sandbox.type = 'dangerFullAccess';
+  const current = await f.settings.read(f.s, 'permissions');
+  assert.match(current.current!, /^custom:/);
+  assert.match(current.currentName!, /approvals on-request/);
+  assert.doesNotMatch(current.currentName!, /bypass/);
+  await f.settings.set(f.s, 'permissions', ':danger-full-access', current.current!);
+  assert.equal(f.state.approvalPolicy, 'never');
+});
+
+test('profile-only acknowledgement cannot falsely report successful bypass', async () => {
+  const f = fixture();
+  f.ignoreApproval();
+  await assert.rejects(
+    f.settings.set(f.s, 'permissions', ':danger-full-access', ':workspace'),
+    /not confirmed/,
   );
 });

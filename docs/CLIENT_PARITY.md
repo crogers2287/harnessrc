@@ -105,6 +105,12 @@ use that same tailnet access. Neither client exposes arbitrary server filesystem
 Validation: 111 backend tests, 2 targeted mobile browser tests, 16 native emulator
 tests, Android unit/lint/build. Physical-device download/install remains a user check.
 
+### Codex bypass policy (Android 0.1.8)
+
+Codex sandbox access and approval policy are independent. The built-in Full access / bypass approvals choice now sets `permissions: ":danger-full-access"` and `approvalPolicy: "never"` together. Read-back must confirm both full access and approvals never; a full-access profile with on-request approvals is shown as a custom policy. Workspace and Read only restore on-request approvals. Custom native profiles are not assigned an inferred approval policy.
+
+Both clients explain that changes affect subsequent turns. Existing running turns and pending approvals retain their previous policy; Relay does not automatically approve pending requests. Android also propagates normal settings-load coroutine cancellation instead of displaying it as a failure.
+
 ### Composer lifecycle (Android 0.1.7)
 
 Android consumes the submitted draft and its original transcription after durably

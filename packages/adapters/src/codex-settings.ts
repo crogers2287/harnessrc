@@ -18,6 +18,11 @@ const stateSchema = z.object({
     })
     .nullish(),
 });
+const builtinPolicies: Record<string, { approvalPolicy: string; sandbox: string }> = {
+  ':danger-full-access': { approvalPolicy: 'never', sandbox: 'dangerFullAccess' },
+  ':workspace': { approvalPolicy: 'on-request', sandbox: 'workspaceWrite' },
+  ':read-only': { approvalPolicy: 'on-request', sandbox: 'readOnly' },
+};
 /** Only used with the already-running daemon and a verified Herdr owner. No new process. */
 export class CodexSettings {
   constructor(
@@ -94,10 +99,9 @@ export class CodexSettings {
                 } as Record<string, string>
               )[p.id] ?? p.id,
             description:
-              p.description ??
-              (p.id === ':danger-full-access'
+              p.id === ':danger-full-access'
                 ? 'Allows commands outside the sandbox without normal approval prompts. Applies to subsequent turns.'
-                : 'Native permission profile for subsequent turns.'),
+                : (p.description ?? 'Native permission profile for subsequent turns.'),
           })),
       );
       cursor = result.nextCursor ?? undefined;
@@ -107,20 +111,29 @@ export class CodexSettings {
         seen.add(cursor);
       }
     } while (cursor);
+    const profile = state.activePermissionProfile?.id;
+    const builtin = profile ? builtinPolicies[profile] : undefined;
+    const sandboxType = (state.sandbox as { type?: string } | undefined)?.type;
+    const profileMatches =
+      !!profile &&
+      (!builtin ||
+        (state.approvalPolicy === builtin.approvalPolicy && sandboxType === builtin.sandbox));
     const current =
-      state.activePermissionProfile?.id ??
+      (profileMatches ? profile : undefined) ??
       `custom:${createHash('sha256')
-        .update(JSON.stringify([state.sandbox, state.approvalPolicy]))
+        .update(JSON.stringify([profile, state.sandbox, state.approvalPolicy]))
         .digest('hex')
         .slice(0, 24)}`;
     return {
       supported: options.length > 0,
       current,
-      currentName: state.activePermissionProfile
+      currentName: profileMatches
         ? (options.find((o) => o.value === state.activePermissionProfile!.id)?.name ??
-          state.activePermissionProfile.id)
+          state.activePermissionProfile!.id)
         : `Custom: ${typeof state.sandbox === 'object' && state.sandbox !== null ? (({ dangerFullAccess: 'Full access', workspaceWrite: 'Workspace', readOnly: 'Read only' } as Record<string, string>)[(state.sandbox as { type: string }).type] ?? 'host policy') : 'host policy'}, approvals ${typeof state.approvalPolicy === 'string' ? state.approvalPolicy : 'custom'}`,
       options,
+      reason:
+        'Applies to the next turn. A running turn and its pending approvals keep their existing policy.',
     };
   }
 
@@ -135,8 +148,10 @@ export class CodexSettings {
         statusCode: 400,
       });
     const params: Record<string, unknown> = { threadId: s.nativeSessionId };
-    if (kind === 'permissions') params.permissions = value;
-    else {
+    if (kind === 'permissions') {
+      params.permissions = value;
+      if (builtinPolicies[value]) params.approvalPolicy = builtinPolicies[value].approvalPolicy;
+    } else {
       const state = await this.state(s);
       if (!state.collaborationMode || state.collaborationMode.mode !== expected)
         throw new Error('Mode changed. Reload before applying.');

@@ -40,6 +40,9 @@ export function SessionPermissions({
   return (
     <section className="settings-section" aria-label={title}>
       <h3>{title}</h3>
+      {settings.data?.supported && settings.data.reason && (
+        <p className="helper">{settings.data.reason}</p>
+      )}
       <p className="helper">
         {kind === 'mode'
           ? 'Choose how the agent approaches subsequent turns.'
