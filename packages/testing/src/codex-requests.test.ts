@@ -62,3 +62,67 @@ test('disconnect makes delivery uncertain; wrong owner and unsupported native to
   r.disconnect();
   await assert.rejects(pending, /uncertain/);
 });
+
+test('native command approvals replay, expose only offered decisions and target the exact request', async () => {
+  const r = new CodexRequests();
+  const request = {
+    id: 6,
+    method: 'item/commandExecution/requestApproval',
+    params: {
+      threadId: 'thread',
+      turnId: 'turn',
+      itemId: 'command',
+      command: 'touch example',
+      cwd: '/project',
+      availableDecisions: [
+        'accept',
+        { acceptWithExecpolicyAmendment: { execpolicy_amendment: ['touch'] } },
+        'cancel',
+      ],
+    },
+  };
+  r.receive(request);
+  r.receive(request);
+  const [input] = r.list('thread');
+  assert.equal(r.list('thread').length, 1);
+  assert.equal(input.type, 'command-approval');
+  assert.deepEqual(
+    input.choices.map((c) => c.id),
+    ['accept', 'cancel'],
+  );
+  await assert.rejects(
+    r.respond('thread', input.nativeRequestId, 'decline', () => assert.fail()),
+    /offered/,
+  );
+  const frames: unknown[] = [];
+  const pending = r.respond('thread', input.nativeRequestId, 'accept', (f) => frames.push(f));
+  assert.deepEqual(frames, [{ id: 6, result: { decision: 'accept' } }]);
+  await assert.rejects(
+    r.respond('thread', input.nativeRequestId, 'accept', () => assert.fail()),
+    /already submitted/,
+  );
+  r.receive({ method: 'serverRequest/resolved', params: { threadId: 'thread', requestId: 6 } });
+  await pending;
+  assert.equal(r.list('thread').length, 0);
+});
+
+test('file approval can be denied without granting persistent permissions', async () => {
+  const r = new CodexRequests();
+  r.receive({
+    id: 8,
+    method: 'item/fileChange/requestApproval',
+    params: {
+      threadId: 'thread',
+      turnId: 'turn',
+      itemId: 'file',
+      reason: 'Edit project files',
+    },
+  });
+  const [input] = r.list('thread');
+  assert.equal(input.type, 'file-approval');
+  const pending = r.respond('thread', input.nativeRequestId, 'decline', (frame) => {
+    assert.deepEqual(frame, { id: 8, result: { decision: 'decline' } });
+  });
+  r.disconnect();
+  await assert.rejects(pending, /uncertain/);
+});

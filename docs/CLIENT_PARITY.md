@@ -84,3 +84,13 @@ Launch permissions are server-provided choices. Claude/Codex choices are trusted
 Existing session permissions and mode controls are at the top of Session settings. Codex and DSH support adapter-backed changes; existing Claude CLI permission changes remain unavailable without a safe native interface. Claude Plan/Accept edits/Bypass can be selected when creating a new session. This release requires APK 0.1.5 for the new native screens; web updates independently.
 
 Validation: 109 backend tests, production web build/typecheck/lint, Android unit/lint/debug and test builds, 14 emulator integration tests (including actual keyboard/clipboard paths), and mobile browser launch/settings regressions. Screenshots reviewed for native launch and keyboard layouts. Physical-device checks and live launch-policy verification across every harness remain outstanding.
+
+### Codex native approvals (2026-10-10)
+
+Existing Herdr-owned Codex sessions now forward native command/file approvals as
+interaction cards, alongside structured questions. Both clients render the offered
+one-time decisions; session-wide and persistent policy grants are not offered by
+these cards. Responses use the original JSON-RPC request ID and wait for native
+resolution, never send a chat turn. Command-specific `availableDecisions` is
+respected (some requests permit Cancel instead of Decline). Unsupported server
+request methods remain unsupported.

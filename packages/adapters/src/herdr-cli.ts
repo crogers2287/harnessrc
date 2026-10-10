@@ -39,6 +39,8 @@ export class HerdrCliAdapter implements Adapter {
   ) {
     Object.assign(this, settings);
     this.capabilities.answerQuestion = !!settings?.respond;
+    this.capabilities.approveAction = !!settings?.respond;
+    this.capabilities.rejectAction = !!settings?.respond;
     this.capabilities.attachFiles = !!attachmentPrompt;
     this.capabilities.steerActiveTurn = !!nativeSteer;
     this.capabilities.interruptTurn = !!nativeInterrupt;

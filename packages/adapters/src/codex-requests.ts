@@ -28,14 +28,19 @@ export class CodexRequests {
       return;
     }
     if (message.id === undefined || typeof message.params?.threadId !== 'string') return;
-    // Initial implementation handles structured questions only. Do not claim arbitrary tools/approvals.
-    if (message.method !== 'item/tool/requestUserInput') return;
+    const question = message.method === 'item/tool/requestUserInput';
+    const approval = [
+      'item/commandExecution/requestApproval',
+      'item/fileChange/requestApproval',
+    ].includes(message.method);
+    if (!question && !approval) return;
     if (
-      !Array.isArray(message.params.questions) ||
-      !message.params.questions.length ||
-      !message.params.questions.every(
-        (q: any) => typeof q.id === 'string' && typeof q.question === 'string',
-      )
+      question &&
+      (!Array.isArray(message.params.questions) ||
+        !message.params.questions.length ||
+        !message.params.questions.every(
+          (q: any) => typeof q.id === 'string' && typeof q.question === 'string',
+        ))
     )
       return;
     const input = codexRequestInteraction(message);
@@ -48,6 +53,7 @@ export class CodexRequests {
           message.params.turnId,
           message.params.itemId,
           message.params.questions,
+          ...(approval ? [message.method, message.params] : []),
         ]),
       )
       .digest('hex');
@@ -74,6 +80,9 @@ export class CodexRequests {
       throw new Error('Native question is no longer available');
     if (entry.sent)
       throw new Error('A response was already submitted; awaiting native confirmation');
+    const approval = entry.input.type.endsWith('approval');
+    if (approval && !entry.input.choices.some((choice) => choice.id === response))
+      throw new Error('Response must match an offered native decision');
     entry.sent = true;
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -82,7 +91,7 @@ export class CodexRequests {
       }, 5000);
       this.waiters.set(id, { resolve, reject, timer });
       try {
-        send({ id: entry.request.id, result: response });
+        send({ id: entry.request.id, result: approval ? { decision: response } : response });
       } catch (error) {
         clearTimeout(timer);
         this.waiters.delete(id);

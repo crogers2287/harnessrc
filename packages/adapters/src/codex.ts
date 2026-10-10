@@ -116,15 +116,22 @@ export function codexRequestInteraction(request: any): InteractionInput | undefi
       request.method,
     )
   ) {
-    /* Session-wide grants are intentionally not offered. */ return {
+    // Only offer one-time native decisions. Honor narrower per-request choices.
+    const allowed = Array.isArray(p.availableDecisions)
+      ? p.availableDecisions
+      : ['accept', 'decline', 'cancel'];
+    const choices = [
+      { id: 'accept', label: 'Allow once' },
+      { id: 'decline', label: 'Deny and continue' },
+      { id: 'cancel', label: 'Deny and stop turn' },
+    ].filter((choice) => allowed.includes(choice.id));
+    if (!choices.length) return undefined;
+    return {
       ...common,
       type: request.method.includes('commandExecution') ? 'command-approval' : 'file-approval',
       prompt: p.command ?? p.reason ?? 'Allow the proposed file changes?',
-      choices: [
-        { id: 'accept', label: 'Allow once' },
-        { id: 'decline', label: 'Deny' },
-      ],
-      responseSchema: { type: 'string', enum: ['accept', 'decline'] },
+      choices,
+      responseSchema: { type: 'string', enum: choices.map((choice) => choice.id) },
     };
   }
   if (request.method === 'item/tool/requestUserInput') {
