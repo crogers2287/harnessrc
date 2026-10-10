@@ -77,6 +77,25 @@ class ProtocolTest {
         )
 
     @Test
+    fun activityGroupsPreserveMessageBoundariesAndStableIdentity() {
+        val rows = listOf(
+            event("a", 1, "tool.invocation", "exec"),
+            event("b", 2, "tool.output", "result"),
+            event("c", 3, "reasoning.summary", "summary"),
+            event("d", 4, "assistant.message", "Done"),
+            event("e", 5, "tool.invocation", "read"),
+            event("f", 6, "artifact.created", "image"),
+            event("g", 7, "question", "Choose"),
+        )
+        val groups = groupConversationActivity(rows)
+        assertEquals(listOf(3, 1, 1, 1, 1), groups.map { it.size })
+        assertEquals(rows, groups.flatten())
+        assertEquals("a", groupConversationActivity(rows.take(2)).first().first().id)
+        assertEquals("a", groups.first().first().id)
+        assertTrue(groupConversationActivity(emptyList()).isEmpty())
+    }
+
+    @Test
     fun replayHasStableIdentityAndOrdering() {
         val a = event("a", 1, "user.message", "Same text")
         val b = event("b", 2, "user.message", "Same text")

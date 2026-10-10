@@ -576,6 +576,36 @@ class NativeChatTest {
     }
 
     @Test
+    fun activityDisclosureCollapsesDetailsAndKeepsExpansionWhenEventsArrive() {
+        val events = androidx.compose.runtime.mutableStateOf(listOf(
+            ChatEvent(json("id" to "tool1", "kind" to "tool.invocation", "data" to json("tool" to "exec", "text" to "echo test"))),
+            ChatEvent(json("id" to "tool2", "kind" to "tool.output", "data" to json("text" to "test"))),
+        ))
+        scenario.onActivity { activity ->
+            activity.setContentView(androidx.compose.ui.platform.ComposeView(activity).apply {
+                setContent {
+                    androidx.compose.material3.MaterialTheme {
+                        androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.padding(top = 80.dp)) {
+                            androidx.compose.material3.Text("Checking your project")
+                            ActivityGroup(activity.model, events.value)
+                            androidx.compose.material3.Text("Your project is ready")
+                        }
+                    }
+                }
+            })
+        }
+        compose.onNodeWithText("Agent activity · 2").assertIsDisplayed()
+        compose.onNodeWithText("exec").assertDoesNotExist()
+        compose.onNodeWithText("Agent activity · 2").performClick()
+        compose.onNodeWithText("exec").assertIsDisplayed()
+        compose.runOnIdle { events.value = events.value + ChatEvent(json("id" to "tool3", "kind" to "reasoning.summary", "data" to json("text" to "Verified"))) }
+        compose.onNodeWithText("exec").assertIsDisplayed()
+        compose.onNodeWithText("Agent activity · 3").performClick()
+        compose.onNodeWithText("exec").assertDoesNotExist()
+        compose.onNodeWithText("Your project is ready").assertIsDisplayed()
+    }
+
+    @Test
     fun markdownLinkTapOpensDownloadAndLongPressKeepsSelection() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val filter =

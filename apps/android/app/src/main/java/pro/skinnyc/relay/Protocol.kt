@@ -245,3 +245,18 @@ fun messageTimestamp(
                 )
         }
         .getOrNull()
+
+/** Adjacent native tool activity shares one stable disclosure; messages remain boundaries. */
+fun isGroupedActivity(event: ChatEvent) =
+    event.kind.startsWith("tool.") || event.kind == "reasoning.summary"
+
+fun groupConversationActivity(rows: List<ChatEvent>): List<List<ChatEvent>> {
+    val groups = mutableListOf<MutableList<ChatEvent>>()
+    rows.forEach { event ->
+        val previous = groups.lastOrNull()
+        if (isGroupedActivity(event) && previous != null && isGroupedActivity(previous.first()))
+            previous.add(event)
+        else groups.add(mutableListOf(event))
+    }
+    return groups
+}

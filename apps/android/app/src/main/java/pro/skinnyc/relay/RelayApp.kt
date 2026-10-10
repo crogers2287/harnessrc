@@ -34,6 +34,8 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.*
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
@@ -409,6 +411,7 @@ fun ErrorNotice(text: String, onDismiss: () -> Unit) {
 @Composable
 fun Chat(vm: RelayModel, modifier: Modifier) {
     val rows = remember(vm.events) { conversationRows(vm.events) }
+    val groups = remember(rows) { groupConversationActivity(rows) }
     val list = rememberLazyListState()
     val scope = rememberCoroutineScope()
     var follow by rememberSaveable(vm.selected) { mutableStateOf(true) }
@@ -459,7 +462,10 @@ fun Chat(vm: RelayModel, modifier: Modifier) {
         ) {
             if (vm.hasOlder)
                 item("older") { TextButton(onClick = vm::older) { Text("Load earlier messages") } }
-            items(rows, key = { it.id }) { Message(vm, it) }
+            items(groups, key = { it.first().id }) { group ->
+                if (isGroupedActivity(group.first())) ActivityGroup(vm, group)
+                else Message(vm, group.first())
+            }
             items(
                 vm.interactions.filter {
                     it.str("status") in listOf("pending", "responding", "uncertain")
@@ -691,6 +697,36 @@ fun Message(vm: RelayModel, event: ChatEvent) {
                 (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
                     .setPrimaryClip(ClipData.newPlainText("Message", text))
             }
+        }
+    }
+}
+
+@Composable
+fun ActivityGroup(vm: RelayModel, events: List<ChatEvent>) {
+    var expanded by rememberSaveable(events.first().id) { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .semantics { stateDescription = if (expanded) "Expanded" else "Collapsed" }
+                .clickable(role = androidx.compose.ui.semantics.Role.Button) { expanded = !expanded }
+                .heightIn(min = 48.dp)
+                .padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                if (expanded) Icons.Outlined.ExpandMore else Icons.Outlined.ChevronRight,
+                null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                "Agent activity · ${events.size}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (expanded) Column(Modifier.padding(start = 12.dp)) {
+            events.forEach { event -> key(event.id) { Message(vm, event) } }
         }
     }
 }

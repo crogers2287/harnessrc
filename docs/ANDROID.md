@@ -121,3 +121,9 @@ Sending clears the submitted composer text and original-transcription panel toge
 without waiting for the HTTP response. Recovery data is saved first. Failed delivery
 restores the original when no newer draft has been edited; safe retries retain the
 request ID and original whitespace. Late acknowledgements preserve the next draft.
+
+### 0.1.9: consolidated activity
+
+Consecutive tool calls, tool outputs and reasoning summaries appear under one collapsed **Agent activity** row between messages. Tap to expand; individual details remain available. Expansion survives incoming events and the row has a 48dp minimum target plus an accessibility state. Artifacts and questions remain separate.
+
+Validation: Android unit tests (including grouping boundaries and stable identity), lint and debug/test APK compilation passed. A disclosure interaction regression test was added and compiled, but not executed: the local emulator system image was missing and its replacement download was too slow to complete. Physical-device visual verification remains outstanding.

@@ -134,3 +134,7 @@ Verification for this change: 111 backend tests, typecheck/lint/web build, the m
 browser recording/send regression, 18 Android emulator integration tests, and native
 unit/lint/debug builds passed. The emulator checks include real clipboard, Back,
 recording, and interaction routing; a physical phone remains a separate check.
+
+### Activity consolidation (Android 0.1.9)
+
+Android now matches web's consecutive tool/reasoning grouping. Each run has a single collapsed Agent activity disclosure with an event count, a 48dp minimum target and an expanded/collapsed accessibility state. Expansion is keyed to the first native event, so appended activity preserves it. Messages, artifacts, file changes and plans remain outside the group; pending questions and approvals retain their dedicated cards. Raw events, timestamps and ordering are unchanged.
