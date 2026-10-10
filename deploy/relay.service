@@ -1,0 +1,23 @@
+[Unit]
+Description=Relay conversational remote for Herdr agents
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/harnessrc
+Environment=RC_CONFIG=%h/.config/relay/config.json
+ExecStart=/usr/bin/node --import tsx apps/gateway/src/main.ts
+Restart=on-failure
+RestartSec=3
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.local/state/relay
+# Run under the same Unix account that owns Herdr and the transcript stores.
+# Customize Node path and directories if installing elsewhere.
+
+[Install]
+WantedBy=default.target

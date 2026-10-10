@@ -1,0 +1,126 @@
+# Mobile UI design requirements
+
+The React PWA now implements this workflow. See root DESIGN.md and docs/screenshots for the resulting tokens and interface. Playwright checks responsive layout, touch targets, reconnects and accessibility; physical iOS/Android testing remains outstanding.
+
+## Selected skills and scope
+
+Use the repository copies, with sources pinned in [design-skills.lock.json](design-skills.lock.json). The complete licenses are included in each skill directory. They are also installed in the current developer's Codex skill directory and available on the next turn.
+
+| Skill | Role in this project | Source and license |
+| --- | --- | --- |
+| [Mobile Design](../.agents/skills/mobile-design/SKILL.md) | Primary mobile UX guidance: touch, keyboard, safe areas, navigation, adaptivity, accessibility, and states | [RubenGlez/mobile-design](https://github.com/RubenGlez/mobile-design), MIT |
+| [UI/UX Pro Max](../.agents/skills/ui-ux-pro-max/SKILL.md) | Local searchable design guidance and React/Tailwind implementation checks | [nextlevelbuilder/ui-ux-pro-max-skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill), MIT |
+| [Frontend Design](../.agents/skills/frontend-design/SKILL.md) | Deliberate visual identity, typography, composition, copy, and screenshot critique | [anthropics/skills](https://github.com/anthropics/skills/tree/main/skills/frontend-design), Apache-2.0 |
+
+These are the best fit among the inspected candidates for this brief, not a claim of a measured universal ranking. Mobile Design is a small project with unusually relevant platform and state guidance. UI/UX Pro Max provides broad searchable coverage; recommendations require review. Anthropic's skill contributes visual craft, while the mobile skill governs app ergonomics. A reviewed alternative, ceorkm/mobile-app-ui-design, had no declared repository license and several decorative defaults unsuitable for a control interface, so it was not installed. Vercel's web guidelines remain a useful reference, but do not add another overlapping installed skill here.
+
+## Priority and implementation target
+
+The user request, BUILD_ASSIGNMENT.md, security requirements, and this document take precedence over third-party defaults. Keep React, TypeScript, Tailwind, and the PWA architecture. Adapt native mobile design guidance to browser primitives; do not introduce React Native, Expo, native-only modules, remote fonts, or dependencies merely because a skill mentions them. The current product, audience, stack, and security context are already supplied: routine design decisions do not require another user question.
+
+Read the mobile skill first, UI/UX Pro Max second, and Frontend Design third. Use Mobile Design for ergonomics, UI/UX Pro Max for applicable implementation guidance, and Frontend Design for intentional visual choices. In a conflict, preserve safe, understandable remote-agent control and the documented capabilities.
+
+## Product direction
+
+Reading this as: a chat-first coding-agent remote for developers checking persistent sessions one-handed, with a calm, precise interface, targeting Android, iOS, and desktop through an installable PWA.
+
+Design dials: variance 3/10, motion 2/10, density 4/10. Efficient session rows and readable conversations should carry the design. Use an original restrained accent, system typography for native familiarity, 4/8px spacing, and semantic light/dark tokens. Code blocks can use system monospace. Final token values must be recorded in a root DESIGN.md and contrast-checked before shipping.
+
+The UI/UX Pro Max design-system search was executed with `developer chat productivity mobile`, then retried with `messaging productivity tool`. Both returned a marketing-oriented Product Demo + Features pattern. That pattern is not a verified fit for this app and was not persisted as its design system. Use the product-specific mobile direction above as the fallback; apply only individually relevant search results. The React stack search yielded stable message keys; the HTML/Tailwind search yielded mobile targets and focus-visible guidance. Its database references newer Tailwind versions than the project, so verify examples against installed versions before using them.
+
+## Interaction contracts
+
+1. **Inbox and navigation:** show project, harness, host, activity, waiting state, and queued count in scan-friendly rows. Use compact single-screen navigation on phones and a list/detail split on larger windows. Preserve browser back, deep links, drafts, and scroll position. Prefer separators over wrapping every item in a card.
+2. **Conversation and composer:** readable content with expandable tools and diffs; a reachable bottom composer that remains usable with the software keyboard. Use `env(safe-area-inset-*)`, dynamic viewport sizing with browser fallbacks, and safe scroll insets. Do not pull a reader away from older messages; expose a jump-to-latest control when appropriate.
+3. **Queue, Respond, and Steer:** distinguish these actions in plain text and show only adapter-supported controls. Confirm durable acceptance before clearing the draft. On uncertainty, retain the content and show recovery without blindly resending. A response card must name and resolve its exact native interaction.
+4. **Approvals:** show the proposed action and relevant command, diff, or plan. Offer distinct Allow once and Deny controls. No preselected approval, ambiguous icon action, swipe-only approval, or approval inferred from prose. Expired and replaced interactions visibly disable controls and explain the recovery path.
+5. **Complete states:** design loading, empty, working, waiting, disconnected, reconnecting, failed, expired, read-only, submitting, and confirmed states. Keep host connection health separate from agent status. Announce meaningful changes without reading every streamed token aloud.
+
+## Verification required before UI delivery
+
+- Review both themes at 375px and 430px phone widths, phone landscape, 768px tablet width, and 1440px desktop width. Include 320px reflow, 200% text/zoom, reduced motion, and long real transcript content. Browser emulation does not prove physical iOS/Android behavior.
+- Use 48×48 CSS px as this PWA's default touch hit area, with separation. This is a browser design choice inspired by native guidance; CSS px, iOS pt, and Android dp are different units.
+- Measure text contrast at 4.5:1 for normal text and 3:1 for large text; meaningful non-text controls need 3:1. Test focus visibility, semantic labels and roles, disabled states, keyboard order, and screen-reader announcements. State is never communicated only through color.
+- Confirm safe areas, keyboard-visible submission, browser back, focus restoration, modal focus containment, deep links, draft preservation, pagination, scroll restoration, and virtualization. Approval cards and variable-height Markdown must remain usable within long history.
+- Save and inspect screenshots of inbox, streamed conversation, approval/question, queue, disconnected state, and settings. Run browser E2E assertions for the actual task flows. Report physical-device checks separately until performed.
+
+## Local tools
+
+Verify vendored file integrity:
+
+```sh
+python3 scripts/verify-design-skills.py
+```
+
+Query the reviewed local guidance without transmitting repository or transcript data:
+
+```sh
+python3 .agents/skills/ui-ux-pro-max/scripts/search.py 'keyboard safe area mobile' --stack html-tailwind
+python3 .agents/skills/ui-ux-pro-max/scripts/search.py 'destructive confirmation' --domain ux
+```
+
+Skill updates are deliberate: inspect the new revision and license, update the repository copies and lock file together, then rerun verification. Never silently track a mutable upstream branch during a build.
+
+## October 8 conversation navigation and creation revision
+
+The primary phone screen is now the most recent conversation (or the last selected one). Sessions live in a compact left-edge swipe drawer, with a visible menu alternative, focus containment, Escape/back dismissal, preserved drafts, and reduced-motion support. Queue is an explicit secondary choice; the default sends when idle and uses native steering only when the adapter advertises it. Busy sessions without steering explain why Send is unavailable.
+
+New session is a focused, scrollable mobile form: permitted host directory, agent, provider, model (including a custom provider model ID), first message, and optional name. It keeps its request identity and draft across reloads. Native start acknowledgement, conversation discovery, and uncertain delivery have separate states. The first message also ensures a native conversation exists; creating an empty terminal is not the product flow.
+
+The existing design dials and semantic colors remain. Mobile controls use 48px minimum hit areas; form controls use 16px text. Local React/Tailwind skill searches informed async errors, visible focus, and touch targets. Browser tests cover a 390px creation flow, accessible field names, saved receipts, edge swipes, focus restoration, and default Send. The existing suite covers phone widths 320–430px, landscape, tablet, desktop, large text, reduced motion, attachments, approvals, queue, and streamed chat. Physical iOS/Android testing remains separate.
+
+### Steering delivery feedback and physical touch simulation
+
+Steer inserts a local outgoing message immediately, clears and refocuses the composer, and leaves the next draft intact when the request finishes. “Sending” and confirmed native delivery are distinct; lost confirmation retains the message with an explicit uncertainty notice. Local cards survive tab reload and reconcile against native history for display only. They never trigger automatic resend. SQLite steering receipts prevent replay of the same request ID, including an interrupted delivery. File attachments cannot silently disappear into a text-only steering request.
+
+The edge gesture test now uses Chromium's touch input protocol rather than JavaScript-created touch events. A narrow `pan-y` edge target lets horizontal movement reach the drawer while preserving vertical scrolling. Browser touch simulation still does not establish behavior against physical Android/iOS system back gestures; the menu button remains available.
+
+The default composer now posts to the dedicated immediate-message endpoint. Native state chooses Send or Steer at delivery time; browser status affects the label only. Immediate sends get the same local outgoing card and composer preservation as steering. Only an explicit Queue selection schedules a future task. The end-to-end regression asserts the HTTP route and native delivery mode, not merely the button text.
+
+### DSH launch discovery and clipboard screenshots
+
+The new-session form now starts with an Agent selector spanning all configured launch profiles. Choosing DSH selects its native connection automatically, instead of hiding DSH behind the `fred-dsh` Host choice. Hosts are offered only when the selected agent has multiple destinations; folder access remains scoped to the selected launch profile. Model IDs and durable launch receipts are unchanged. The catalog refreshes while the form is open.
+
+Attach includes an explicit **Paste screenshot** action using the browser Clipboard API after a user tap. It creates ordinary draft attachments with preview, progress, removal and existing Send/Steer behavior; it does not send automatically or read clipboard contents on focus. Standard file paste continues to work. The attachment chooser uses a compact two-column grid with 48px-plus targets, semantic colors, and inline denied/empty/unsupported clipboard recovery via Photos. Android keyboard apps may refuse to deliver images to a textarea, so the explicit action avoids depending on that keyboard path. Physical Android clipboard permission and keyboard behavior still require device confirmation.
+
+Regression coverage includes selecting DSH from the initial Agent menu, choosing its folder/model and checking the launch request; actual Chromium clipboard write/read and Ctrl+V uploads; attachment delivery; and denied/empty clipboard fallback at 320px. No design-token or motion changes were needed (variance 3, motion 2, density 4).
+
+### App interactions, dictation and keyboard focus
+
+The direction remains a calm phone-first messaging app (variance 3, motion 2, density 4), using the existing colors and system typography. While the software keyboard reduces the phone viewport, the title/hamburger/model/CWD/details header disappears and restores after dismissal; desktop headers remain visible. Voice input lives beside Send, with explicit recording, meter/timer, finish, cancel, processing, retry and editable-result states. No automatic chat submission occurs.
+
+Session rows support a 500ms hold and a visible 48px overflow button. Moving more than 10px or cancelling the pointer cancels the hold, preserving scrolling. The focused native-dialog action sheet uses bottom placement on phones, contained scrolling, browser Back/Escape, focus restoration, and safe-area padding. Rename persists a Relay display name across devices without changing the native title used to identify a process; pinning sorts within agent groups. Close conversation moves it to History after explaining that the agent and queued work continue. Reopen restores it. Actual Stop Turn appears only for adapters that advertise interruption; process termination is not disguised as a history action.
+
+Native DSH question cards provide radio/checkbox choices, descriptions, supporting Markdown, free text and batch submission. Answers address their native event ID, with no generic chat turn fallback. New browser regressions cover action-sheet interactions, renamed/pinned state, cancellation, keyboard header restoration and DSH answer payloads. Physical touchscreen hold/system-gesture and microphone testing remains separate.
+
+Live Chromium touch validation exposed a release-event bug that mouse tests missed: lifting the finger that opened the action sheet could also dismiss its backdrop. Backdrop dismissal now requires a fresh pointer-down outside the sheet. The session-actions E2E regression uses `Input.dispatchTouchEvent` for the hold and release.
+
+### Native media, history pages, and Claude tool hooks
+
+The response renderer now uses OpenUI's Image component inside keyboard-accessible preview controls, with explicit download and full-size native-dialog controls. DSH `deliverables/presented` events become artifact galleries. Local image Markdown resolves only through an authenticated event-scoped endpoint; a caller cannot supply an arbitrary path. The native DSH host serves bounded bytes using its own filesystem policy. This is structured artifact rendering, not an arbitrary model-generated JavaScript/UI execution runtime.
+
+History pages omit token fragments once their completed message exists, preserving the raw replay log. Loading older messages stops bottom pinning and reports errors. Wide Markdown tables scroll horizontally rather than compressing words into narrow columns. Claude goal task notices and usage diagnostics become collapsed activity rather than raw user-message XML.
+
+Browser tests verify actual decoded image bytes, full-size preview, named download, 390px overflow, collapsed notifications and earlier-history navigation. Live native Claude hook steering was verified on Fred; physical Android/iOS testing remains separate.
+
+### Cold-start Back and native session permissions
+
+Chrome may skip programmatic history entries created without user activation. Mobile conversation roots now use the native CloseWatcher close-request channel when available, in addition to history for other browsers. It handles one close request by opening Sessions; it does not cancel repeated Back requests to trap the user. Secondary pages keep ordinary Back navigation. Desktop Escape exercises the same browser primitive, but physical Android Back remains a separate validation.
+
+Session details includes the native permission catalog and current selection, with pending, unsupported, failure and saved states. All changes require a session-specific checkbox and Apply; Full access has an explicit scope warning. Permissions remain adapter-driven. Dials and tokens are unchanged (variance 3, motion 2, density 4).
+
+### Android keyboard clipboard images
+
+The composer is now a rich-editable DOM field with a plain-text message contract. Chromium's Android IME adapter advertises `image/*` only when the focused element is richly editable; a textarea does not qualify, even if its JavaScript paste handler accepts files. See [Chromium ImeAdapterAndroid::GetSupportedMimeTypes](https://github.com/chromium/chromium/blob/main/content/browser/android/ime_adapter_android.cc). This addresses the keyboard's “Chrome does not support image pasting here” rejection before Relay received any paste event.
+
+Native paste files become ordinary draft attachments. Pasted text is inserted at the caret without HTML formatting or remote image loads; native Undo stays available. DOM text is synchronized only for external changes such as dictation/restored drafts, preserving keyboard composition and selections during normal typing. Ctrl/Meta+Enter ignores active IME composition; plain Enter creates a new line. Touch selection inside the editor cannot open the session drawer. The explicit Attach → Paste screenshot permission flow remains a fallback.
+
+Browser regression coverage uses real clipboard image bytes, text plus HTML, caret replacement, Undo/Redo, multiline restoration, IME composition, dictation and send/steer attachments. Physical Android keyboard image handoff still requires device confirmation; desktop emulation does not reproduce the Android input connection.
+
+### Direct screenshot paste and Android feature gate
+
+Paste screenshot is now a separate 48px composer control beside Attach, available without opening a menu. On narrow screens both use icons with accessible names; denial or an empty clipboard opens the Photos fallback. This explicitly reads the current system clipboard, not keyboard clipboard history. Chromium additionally gates IME media insertion behind AndroidMediaInsertion (disabled by default in source); rich editing alone cannot guarantee Gboard support and a website cannot enable the feature. Reference: https://chromium.googlesource.com/chromium/src/+/refs/heads/main/content/public/common/content_features.cc and content/public/android/java/src/org/chromium/content/browser/input/ImeAdapterImpl.java. Browser tests verify direct read/upload and empty/denied fallback; actual Android keyboard handoff remains unverified.
+
+### Native Android client
+
+The user requested an APK to remove Chrome's input limitations. `apps/android` uses Kotlin, Jetpack Compose, and an AndroidX native editor; the existing PWA remains intact. Design variance 3, motion 2, density 4: original teal branding, warm neutral surfaces, system type, restrained rounded composer, 48dp actions, selectable conversation content, native sheets and session drawer. Android's own window insets are observed before Compose/View interoperability consumes them, so the header remains hidden while the IME is open. Native instrumentation checks that Send stays above the keyboard, alongside rich-content input, recording, exact responses and recovery. Screenshots and physical-device limits are recorded in `docs/ANDROID.md`.
