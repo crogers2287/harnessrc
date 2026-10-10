@@ -206,8 +206,21 @@ export function useVoiceInput(sessionId: string, insert: (text: string) => void)
     document.addEventListener('visibilitychange', hidden);
     return () => document.removeEventListener('visibilitychange', hidden);
   }, []);
-  if (!settings.data?.enabled) return { busy: false, button: null, panel: null };
+  const clearResult = (token?: number) => {
+    if (
+      token !== generation.current ||
+      ['permission', 'recording', 'transcribing'].includes(phaseRef.current)
+    )
+      return;
+    setResult(undefined);
+    setError('');
+    changePhase('idle');
+  };
+  if (!settings.data?.enabled)
+    return { busy: false, button: null, panel: null, token: generation.current, clearResult };
   return {
+    token: generation.current,
+    clearResult,
     busy,
     button: (
       <button

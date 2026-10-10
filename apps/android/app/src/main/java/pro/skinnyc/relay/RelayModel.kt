@@ -35,6 +35,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
     var tasks by mutableStateOf(listOf<JSONObject>())
         private set
 
+    private var draftRevision = 0L
     var draft by mutableStateOf("")
         private set
 
@@ -197,6 +198,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
         selected = id
         prefs.edit().putString("session", id).apply()
         draft = ""
+        voiceOriginal = ""
         attachments = emptyList()
         outgoing = null
         events = emptyList()
@@ -212,7 +214,9 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
         if (selected.isBlank()) return
         runCatching {
             val saved = JSONObject(prefs.getString("draft:$selected", "{}")!!)
+            draftRevision = saved.optLong("draftRevision", 0)
             draft = saved.str("text")
+            voiceOriginal = saved.str("voiceOriginal")
             attachments = saved.rows("attachments")
             outgoing = saved.optJSONObject("outgoing")
             if (outgoing != null && outgoing!!.str("state") == "sending")
@@ -231,6 +235,8 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
                     "draft:$selected",
                     json(
                             "text" to draft,
+                            "draftRevision" to draftRevision,
+                            "voiceOriginal" to voiceOriginal,
                             "attachments" to JSONArray(attachments),
                             "outgoing" to outgoing,
                         )
@@ -242,6 +248,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun edit(text: String) {
+        draftRevision++
         draft = text
         saveDraft()
     }
@@ -294,7 +301,12 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
                         outgoing?.str("idempotencyKey") == key &&
                         (receipt.optBoolean("nativeSeen") || receipt.optBoolean("confirmed"))
                 ) {
-                    if (draft == pending.str("prompt")) draft = ""
+                    if (pending.str("state") == "uncertain" &&
+                        (!pending.has("restoredRevision") || pending.optLong("restoredRevision") == draftRevision) &&
+                        draft.trim() == pending.str("originalDraft").ifBlank { pending.str("prompt") }.trim()) {
+                        draft = ""
+                        if (voiceOriginal == pending.str("voiceOriginal")) voiceOriginal = ""
+                    }
                     val sent = pending.optJSONArray("attachments") ?: JSONArray()
                     attachments =
                         attachments.filterNot { file ->
@@ -410,8 +422,23 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
     private fun submit(id: String, payload: JSONObject, mode: String, original: String) {
         sending = true
         error = ""
-        outgoing = JSONObject(payload.toString()).put("state", "sending").put("mode", mode)
+        val previous = outgoing
+        val consumed = draft.trim() == original.trim() &&
+            (previous?.str("state") != "uncertain" || !previous.has("restoredRevision") || previous.optLong("restoredRevision") == draftRevision)
+        val submittedRevision = draftRevision
+        val submittedVoice = if (consumed) voiceOriginal else ""
+        val recovery = JSONObject(payload.toString()).put("mode", mode)
+            .put("originalDraft", original).put("voiceOriginal", submittedVoice)
+        outgoing = JSONObject(recovery.toString()).put("state", "sending")
+        if (consumed) {
+            draft = ""
+            voiceOriginal = ""
+        }
         if (!saveDraft(durable = true)) {
+            if (consumed) {
+                draft = original
+                voiceOriginal = submittedVoice
+            }
             sending = false
             outgoing = null
             error =
@@ -427,7 +454,6 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
                         payload,
                     )
                 if (selected == id) {
-                    if (draft == original) draft = ""
                     val sent = payload.optJSONArray("attachments") ?: JSONArray()
                     attachments =
                         attachments.filterNot { file ->
@@ -436,7 +462,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
                     outgoing =
                         if (mode == "queue") null
                         else
-                            JSONObject(payload.toString())
+                            JSONObject(recovery.toString())
                                 .put("state", "accepted")
                                 .put("mode", mode)
                     notice =
@@ -450,7 +476,6 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
                     loadCurrent()
                 } else {
                     val saved = JSONObject(prefs.getString("draft:$id", "{}")!!)
-                    if (saved.str("text") == original) saved.put("text", "")
                     val ids = payload.optJSONArray("attachments") ?: JSONArray()
                     saved.put(
                         "attachments",
@@ -464,7 +489,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
                         "outgoing",
                         if (mode == "queue") JSONObject.NULL
                         else
-                            JSONObject(payload.toString())
+                            JSONObject(recovery.toString())
                                 .put("state", "accepted")
                                 .put("mode", mode),
                     )
@@ -473,11 +498,16 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 if (selected == id) {
+                    if (consumed && draft.isEmpty() && draftRevision == submittedRevision) {
+                        draft = original
+                        voiceOriginal = submittedVoice
+                        recovery.put("restoredRevision", draftRevision)
+                    }
                     if (e is ApiFailure && e.status in listOf(400, 401, 403, 413, 422, 429))
                         outgoing = null
                     else
                         outgoing =
-                            JSONObject(payload.toString())
+                            JSONObject(recovery.toString())
                                 .put("state", "uncertain")
                                 .put("mode", mode)
                     error =
@@ -487,10 +517,11 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
                     saveDraft()
                 } else {
                     val saved = JSONObject(prefs.getString("draft:$id", "{}")!!)
-                    saved.put(
-                        "outgoing",
-                        JSONObject(payload.toString()).put("state", "uncertain").put("mode", mode),
-                    )
+                    if (consumed && saved.str("text").isEmpty() && saved.optLong("draftRevision") == submittedRevision) {
+                        saved.put("text", original).put("voiceOriginal", submittedVoice)
+                        recovery.put("restoredRevision", submittedRevision)
+                    }
+                    saved.put("outgoing", JSONObject(recovery.toString()).put("state", "uncertain"))
                     prefs.edit().putString("draft:$id", saved.toString()).apply()
                 }
             } finally {
@@ -510,7 +541,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
                 "attachments" to pending.optJSONArray("attachments"),
             ),
             pending.str("mode"),
-            pending.str("prompt"),
+            pending.str("originalDraft").ifBlank { pending.str("prompt") },
         )
     }
 
@@ -594,6 +625,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
                                 .joinToString("\n")
                         )
                         voiceOriginal = data.str("original")
+                        saveDraft()
                         notice =
                             data.str("warning").ifBlank {
                                 "Dictation added · review before sending"

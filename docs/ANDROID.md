@@ -114,3 +114,10 @@ which prevented Markwon from installing link handling. A selection-preserving vi
 now distinguishes a short link tap from a drag or long press. Instrumentation verifies
 one browser launch per tap and retained text selection on long press. It also verifies
 Codex approval choices use only the interaction response endpoint.
+
+### 0.1.7: clear submitted drafts and dictation originals
+
+Sending clears the submitted composer text and original-transcription panel together,
+without waiting for the HTTP response. Recovery data is saved first. Failed delivery
+restores the original when no newer draft has been edited; safe retries retain the
+request ID and original whitespace. Late acknowledgements preserve the next draft.

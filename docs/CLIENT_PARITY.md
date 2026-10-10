@@ -104,3 +104,23 @@ selection. Android's release is still tailnet-authenticated; external-browser do
 use that same tailnet access. Neither client exposes arbitrary server filesystem paths.
 Validation: 111 backend tests, 2 targeted mobile browser tests, 16 native emulator
 tests, Android unit/lint/build. Physical-device download/install remains a user check.
+
+### Composer lifecycle (Android 0.1.7)
+
+Android consumes the submitted draft and its original transcription after durably
+saving the outgoing request, before waiting for the network. Failed delivery restores
+them only if the user has not edited the next draft. Retry keeps the same request ID
+and the exact original draft (including whitespace). A confirmed receipt for an
+accepted message cannot clear a newer identical draft. Dictation originals are saved
+with their session's draft and do not leak across session switches.
+
+Web clears the completed dictation panel on successful Send/Steer/Queue, scoped to
+the submitted recording generation so a later recording is preserved. Browser tests
+cover real recording into a draft, sending, clearing the original, and preserving new
+text during acknowledgement. Native tests cover immediate clearing, late receipt,
+failed delivery, whitespace retry, and activity recreation.
+
+Verification for this change: 111 backend tests, typecheck/lint/web build, the mobile
+browser recording/send regression, 18 Android emulator integration tests, and native
+unit/lint/debug builds passed. The emulator checks include real clipboard, Back,
+recording, and interaction routing; a physical phone remains a separate check.

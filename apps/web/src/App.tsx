@@ -632,7 +632,8 @@ function Conversation({
   const pinned = useRef(true);
   const transcript = useRef<HTMLDivElement>(null);
   const submission = useRef<
-    { prompt: string; key: string; attachments: string[]; mode: string } | undefined
+    | { prompt: string; key: string; attachments: string[]; mode: string; voiceToken?: number }
+    | undefined
   >(undefined);
   const lastCount = useRef(0);
   const merged = useMemo(() => {
@@ -689,7 +690,13 @@ function Conversation({
   }, [route.view]);
   const outgoing = useOutgoing(session.id, merged);
   const send = useMutation({
-    mutationFn: (value: { prompt: string; key: string; attachments: string[]; mode: string }) =>
+    mutationFn: (value: {
+      prompt: string;
+      key: string;
+      attachments: string[];
+      mode: string;
+      voiceToken?: number;
+    }) =>
       api(`/api/sessions/${session.id}/${value.mode === 'queue' ? 'tasks' : 'messages'}`, {
         method: 'POST',
         body: JSON.stringify({
@@ -700,6 +707,7 @@ function Conversation({
       }),
     onSuccess: (_result, submitted) => {
       setReceiptId(_result?.task?.id);
+      voice.clearResult(submitted.voiceToken);
       if (submitted.mode === 'queue')
         setDraft((current) => (current === submitted.prompt ? '' : current));
       else
@@ -754,7 +762,13 @@ function Conversation({
       JSON.stringify(submission.current?.attachments) !== JSON.stringify(ids) ||
       submission.current?.mode !== mode
     )
-      submission.current = { prompt, key: crypto.randomUUID(), attachments: ids, mode };
+      submission.current = {
+        prompt,
+        key: crypto.randomUUID(),
+        attachments: ids,
+        mode,
+        voiceToken: voice.token,
+      };
     if (mode !== 'queue') {
       setReceiptId(undefined);
       setNotice('');

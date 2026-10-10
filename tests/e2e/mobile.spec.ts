@@ -1152,12 +1152,20 @@ test('voice records real browser audio, cleans into a draft, preserves typing an
     page.getByText('um keep port 42 uh do not send automatically', { exact: true }),
   ).toBeVisible();
   await page.screenshot({ path: 'docs/screenshots/voice-draft-mobile.png' });
-  await page.getByRole('button', { name: 'Dismiss voice input' }).click();
+  await page.route('**/api/sessions/*/messages', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    await route.fulfill({ json: { mode: 'send' } });
+  });
+  await page.getByRole('button', { name: 'Send message', exact: true }).click();
+  await expect(draft).toHaveText('');
+  await draft.fill('New draft while the acknowledgement arrives');
+  await expect(page.getByLabel('Voice input', { exact: true })).toHaveCount(0);
+  await expect(draft).toHaveText('New draft while the acknowledgement arrives');
   await page.getByRole('button', { name: 'Dictate message', exact: true }).click();
   await expect(page.getByText(/Listening ·/)).toBeVisible();
   await page.getByRole('button', { name: 'Cancel voice input' }).click();
   await expect(page.getByLabel('Voice input', { exact: true })).toHaveCount(0);
-  expect(submissions).toBe(0);
+  expect(submissions).toBe(1);
 });
 
 test('voice permission refusal preserves the draft; service failure keeps audio for retry', async ({

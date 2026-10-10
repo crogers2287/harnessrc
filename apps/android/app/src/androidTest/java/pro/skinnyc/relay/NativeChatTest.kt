@@ -38,6 +38,8 @@ class NativeChatTest {
     @Volatile private var pendingQuestion: JSONObject? = null
     @Volatile private var selectedMode = "default"
     @Volatile private var rejectMessage = false
+    @Volatile private var messageDelayMs = 0L
+    @Volatile private var dictationOriginal = "please uh check the image and fix the layout"
     @Volatile private var receiptConfirmed = false
     @Volatile private var liveSocket: okhttp3.WebSocket? = null
     private val ctx
@@ -98,7 +100,7 @@ class NativeChatTest {
                             path.contains("/attachments?") ->
                                 """{"attachment":{"id":"11111111-1111-4111-8111-111111111111","name":"Screenshot.png","mime":"image/png","size":128}}"""
                             path.contains("/dictation?") ->
-                                """{"text":"Please check the image and fix the layout.","original":"please uh check the image and fix the layout","cleaned":true}"""
+                                json("text" to "Please check the image and fix the layout.", "original" to dictationOriginal, "cleaned" to true).toString()
                             path.endsWith("/messages") -> """{"mode":"steer"}"""
                             path.contains("message-receipts") ->
                                 """{"nativeSeen":false,"confirmed":$receiptConfirmed}"""
@@ -106,6 +108,7 @@ class NativeChatTest {
                         }
                     return MockResponse()
                         .setHeader("Content-Type", "application/json")
+                        .setBodyDelay(if (path.endsWith("/messages")) messageDelayMs else 0L, java.util.concurrent.TimeUnit.MILLISECONDS)
                         .setBody(body)
                 }
             }
@@ -640,6 +643,68 @@ class NativeChatTest {
         } finally {
             instrumentation.removeMonitor(monitor)
         }
+    }
+
+    private fun dictate(original: String) {
+        dictationOriginal = original
+        val file = File.createTempFile("voice-test", ".m4a", ctx.cacheDir).apply { writeBytes(ByteArray(256)) }
+        scenario.onActivity { it.model.transcribe(file) }
+        compose.waitUntil(10000) {
+            var done = false
+            scenario.onActivity { done = !it.model.transcribing && it.model.voiceOriginal == original }
+            done
+        }
+    }
+
+    @Test
+    fun submittedDictationClearsImmediatelyButLateReceiptKeepsNewIdenticalDraft() {
+        messageDelayMs = 1200
+        val prompt = "  Check this project.  "
+        dictate("uh check this project")
+        scenario.onActivity { it.model.edit(prompt) }
+        compose.onNodeWithText("Original transcription").assertExists()
+        compose.onNodeWithContentDescription("Steer instruction").performClick()
+        compose.waitUntil(10000) {
+            var empty = false
+            scenario.onActivity { empty = find(it.window.decorView)!!.text.isNullOrEmpty() }
+            empty
+        }
+        compose.onNodeWithText("Original transcription").assertDoesNotExist()
+        dictate("a new recording")
+        scenario.onActivity { it.model.edit(prompt) }
+        compose.waitUntil(10000) { var done = false; scenario.onActivity { done = !it.model.sending }; done }
+        receiptConfirmed = true
+        scenario.onActivity { it.model.reload() }
+        compose.waitUntil(10000) { var done = false; scenario.onActivity { done = it.model.outgoing == null }; done }
+        scenario.onActivity {
+            assertEquals(prompt, it.model.draft)
+            assertEquals("a new recording", it.model.voiceOriginal)
+        }
+        assertEquals(1, requests.count { it.path?.endsWith("/messages") == true })
+    }
+
+    @Test
+    fun failedDictationRestoresDraftAndWhitespaceRetryClearsBoth() {
+        rejectMessage = true
+        val prompt = "  Preserve this recording.  "
+        dictate("um preserve this recording")
+        scenario.onActivity { it.model.edit(prompt) }
+        compose.onNodeWithContentDescription("Steer instruction").performClick()
+        compose.waitUntil(10000) { compose.onAllNodesWithText("Retry safely").fetchSemanticsNodes().isNotEmpty() }
+        scenario.onActivity {
+            assertEquals(prompt, it.model.draft)
+            assertEquals("um preserve this recording", it.model.voiceOriginal)
+        }
+        scenario.recreate()
+        compose.waitUntil(10000) { compose.onAllNodesWithText("Retry safely").fetchSemanticsNodes().isNotEmpty() }
+        rejectMessage = false
+        compose.onNodeWithText("Retry safely").performScrollTo().performClick()
+        compose.waitUntil(10000) { var done = false; scenario.onActivity { done = !it.model.sending && it.model.draft.isEmpty() }; done }
+        scenario.onActivity {
+            assertEquals("", find(it.window.decorView)!!.text.toString())
+            assertEquals("", it.model.voiceOriginal)
+        }
+        compose.onNodeWithText("Original transcription").assertDoesNotExist()
     }
 
     @Test
