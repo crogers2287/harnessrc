@@ -17,6 +17,24 @@ const config = configSchema.parse({
   hosts: [
     { id: 'demo', name: 'Demo host', localFiles: true, socket: path.join(dir, 'herdr.sock') },
   ],
+  launchProfiles: [
+    {
+      id: 'test-claude',
+      hostId: 'demo',
+      label: 'Claude',
+      harness: 'claude',
+      workspaceId: 'w1',
+      roots: [dir],
+      permissionPresets: [
+        {
+          id: 'plan',
+          name: 'Plan',
+          description: 'Plan before making changes.',
+          args: ['--permission-mode', 'plan'],
+        },
+      ],
+    },
+  ],
   bridges: [
     {
       hostId: 'demo',

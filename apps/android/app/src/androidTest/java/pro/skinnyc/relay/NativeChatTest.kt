@@ -82,6 +82,9 @@ class NativeChatTest {
                     if (path.endsWith("/mode") && request.method == "POST") selectedMode = JSONObject(request.body.clone().readUtf8()).getString("value")
                     val body =
                         when {
+                            path == "/api/launch/profiles" -> """{"profiles":[{"id":"test","label":"Claude","connected":true,"projectHome":"/home/test","models":[],"permissions":[{"id":"plan","name":"Plan","description":"Plan before changes."}]}]}"""
+                            path == "/api/launch/folders" -> """{"path":"/home/test/Phone project"}"""
+                            path == "/api/launch" -> """{"requestId":"test","status":"started","terminalId":"new-terminal"}"""
                             path.endsWith("/mode") -> """{"supported":true,"current":"$selectedMode","options":[{"value":"default","name":"Build"},{"value":"plan","name":"Plan","description":"Applies to subsequent turns."}]}"""
                             path.endsWith("/permissions") -> """{"supported":false,"options":[],"reason":"Test session uses host permissions."}"""
                             path == "/api/sessions" -> "{\"sessions\":[$session]}"
@@ -363,6 +366,34 @@ class NativeChatTest {
         }
         assertTrue(requests.first { it.path?.contains("/dictation?") == true }.bodySize > 100)
         assertFalse(requests.any { it.path?.endsWith("/messages") == true })
+    }
+
+    @Test
+    fun launchCreatesProjectAndRequiresPermissionConfirmation() {
+        scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
+        compose.onNodeWithText("New session").performClick()
+        compose.waitUntil(15000) { compose.onAllNodesWithText("New project folder").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("New project folder").performScrollTo().performClick()
+        compose.onNodeWithText("Project folder name").performScrollTo().performTextInput("Phone project")
+        compose.onNodeWithText("Create and use folder").performScrollTo().performClick()
+        compose.waitUntil(15000) { requests.any { it.path == "/api/launch/folders" } }
+        compose.onNodeWithText("Use host default").performScrollTo().performClick()
+        compose.onNodeWithText("Plan", useUnmergedTree = true).performClick()
+        compose.onNodeWithText("First instruction").performScrollTo().performTextInput("Plan my project")
+        compose.onNodeWithText("Start session").performScrollTo().assertIsNotEnabled()
+        compose.onNode(isToggleable()).performScrollTo().performClick()
+        androidx.test.espresso.Espresso.closeSoftKeyboard()
+        compose.waitForIdle()
+        InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot().let { bitmap ->
+            File(ctx.getExternalFilesDir(null), "native-launch.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            bitmap.recycle()
+        }
+        compose.onNodeWithText("Start session").performScrollTo().performClick()
+        compose.waitUntil(15000) { requests.any { it.path == "/api/launch" && it.method == "POST" } }
+        val body = JSONObject(requests.first { it.path == "/api/launch" && it.method == "POST" }.body.clone().readUtf8())
+        assertEquals("plan", body.getString("permission"))
+        assertTrue(body.getBoolean("permissionConfirmed"))
+        assertEquals("/home/test/Phone project", body.getString("cwd"))
     }
 
     @Test

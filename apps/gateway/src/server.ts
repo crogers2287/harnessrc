@@ -257,6 +257,18 @@ export async function createGateway(
       .parse(req.query);
     return launcher.folders(profileId, folder);
   });
+  app.post(
+    '/api/launch/folders',
+    { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } },
+    async (req) => {
+      launchAdmin(req);
+      const input = z
+        .object({ profileId: z.string(), name: z.string().min(1).max(80) })
+        .strict()
+        .parse(req.body);
+      return launcher.createFolder(input.profileId, input.name, req.device.id);
+    },
+  );
   app.get('/api/launch/:id', async (req) => {
     launchAdmin(req);
     const { id } = z.object({ id: z.string().uuid() }).parse(req.params);

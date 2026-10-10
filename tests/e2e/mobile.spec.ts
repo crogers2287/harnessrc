@@ -2115,3 +2115,42 @@ test('Codex native question answers use the interaction route instead of a chat 
     .toEqual({ response: { answers: { color: { answers: ['Blue'] } } } });
   expect(sends).toBe(0);
 });
+
+test('new project folder and confirmed launch permissions work on a phone', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await pair(page);
+  let launched: any;
+  await page.route('**/api/launch', async (route) => {
+    launched = route.request().postDataJSON();
+    await route.fulfill({
+      json: {
+        requestId: launched.requestId,
+        hostId: 'demo',
+        status: 'started',
+        terminalId: 'new-test-terminal',
+      },
+    });
+  });
+  await page.getByRole('button', { name: 'New session', exact: true }).click();
+  await page.getByRole('button', { name: 'New project folder', exact: true }).click();
+  await page.getByLabel('Project folder name').fill('Phone project');
+  await page.getByRole('button', { name: 'Create and use folder' }).click();
+  await expect(page.locator('.folder-choice')).toContainText('/Phone project');
+  await page.getByLabel('Session permissions', { exact: true }).selectOption('plan');
+  await page.getByLabel('First message').fill('Plan the new project');
+  await page.getByRole('button', { name: 'Start session', exact: true }).click();
+  expect(launched).toBeUndefined();
+  await page.getByLabel('Use these permissions for the new session').check();
+  await page.getByLabel('First message').focus();
+  await page.screenshot({ path: '/tmp/relay-project-launch-web.png' });
+  await page.setViewportSize({ width: 320, height: 700 });
+  await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await page.screenshot({ path: '/tmp/relay-project-launch-dark.png' });
+  await page.getByRole('button', { name: 'Start session', exact: true }).click();
+  await expect.poll(() => launched?.permission).toBe('plan');
+  expect(launched.permissionConfirmed).toBe(true);
+  expect(launched.cwd).toMatch(/\/Phone project$/);
+});

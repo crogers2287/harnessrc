@@ -74,3 +74,13 @@ CLI-reported native IDs now participate in daemon binding discovery instead of b
 Regressions cover pre-registered native IDs, late link acquisition/loss, preserved reader cursors, and routing Steer to the native callback. Android's existing capability gating remains unchanged; physical-phone validation remains outstanding.
 
 Validation: 107 backend tests, TypeScript, ESLint, production web build, two mobile browser Send/Steer regressions, and Android unit/lint/debug build pass.
+
+### Project folders and launch permissions, Android 0.1.5
+
+Web and Android New session provide **New project folder**: a single folder name creates a private directory directly under the profile's first permitted root (Fred: `/home/crogers2287`) and selects it as CWD. Separators, hidden names, traversal, and collisions are rejected. Existing folders are never overwritten. The administrator-only endpoint is rate limited and audited; on Linux an open parent directory anchors the creation against concurrent path replacement.
+
+Launch permissions are server-provided choices. Claude/Codex choices are trusted installation configuration, exposed without command arguments; DSH choices come from its native permission catalog. A selected choice requires explicit confirmation. Codex configures the new native thread and its sole Herdr CLI owner consistently; Claude receives the selected native CLI flags; DSH applies and reads back the preset before the first prompt. An unconfirmed or unknown choice is rejected before a launch claim. Permission failure never falls through to sending the first instruction. Host defaults are unchanged when no choice is selected.
+
+Existing session permissions and mode controls are at the top of Session settings. Codex and DSH support adapter-backed changes; existing Claude CLI permission changes remain unavailable without a safe native interface. Claude Plan/Accept edits/Bypass can be selected when creating a new session. This release requires APK 0.1.5 for the new native screens; web updates independently.
+
+Validation: 109 backend tests, production web build/typecheck/lint, Android unit/lint/debug and test builds, 14 emulator integration tests (including actual keyboard/clipboard paths), and mobile browser launch/settings regressions. Screenshots reviewed for native launch and keyboard layouts. Physical-device checks and live launch-policy verification across every harness remain outstanding.

@@ -1,6 +1,7 @@
+import { launchPermissionSchema } from './launch-permissions.ts';
 import type { DshHost } from './dsh-host.ts';
 import { CodexDaemon } from '../../../packages/adapters/src/codex-daemon.ts';
-import { realpath, readdir, stat } from 'node:fs/promises';
+import { realpath, readdir, stat, mkdir, open } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
 import type { Store } from '@harnessrc/storage';
@@ -24,6 +25,7 @@ export const launchProfileSchema = z.object({
   workspaceId: z.string(),
   roots: z.array(z.string()).min(1),
   args: z.array(z.string()).default([]),
+  permissionPresets: z.array(launchPermissionSchema).default([]),
   modelFlag: z.string().default('--model'),
   models: z.array(z.object({ id: z.string(), name: z.string() })).default([]),
   allowCustomModel: z.boolean().default(false),
@@ -38,6 +40,8 @@ export const launchRequestSchema = z
     cwd: z.string().min(1).max(4096),
     name: z.string().trim().min(1).max(80),
     model: z.string().max(160).default(''),
+    permission: z.string().max(160).optional(),
+    permissionConfirmed: z.boolean().optional(),
     agentPreset: z.string().min(1).max(160).optional(),
     prompt: z.string().trim().min(1).max(32000),
   })
@@ -95,6 +99,52 @@ export class Launcher {
       truncated: directories.length > 500,
     };
   }
+  async createFolder(id: string, name: string, device: string) {
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9 _.-]{0,79}$/.test(name) || name.endsWith('.'))
+      throw new Error('Use a project name with letters, numbers, spaces, hyphens or underscores');
+    const { resolved: home } = await this.directory(id);
+    const parent = await open(home, 'r');
+    try {
+      // Hold the resolved parent open so a concurrent symlink replacement cannot redirect mkdir.
+      const anchored = process.platform === 'linux' ? `/proc/self/fd/${parent.fd}` : home;
+      await mkdir(path.join(anchored, name), { mode: 0o700 });
+      const created = await realpath(path.join(home, name));
+      if (created !== path.join(home, name))
+        throw new Error('Project folder changed; refresh folders');
+      this.store.audit(device, 'project.create', null, { profileId: id, path: created });
+      return { path: created };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST')
+        throw new Error(
+          'A folder or file with this name already exists. Choose it with Browse folders.',
+        );
+      throw error;
+    } finally {
+      await parent.close();
+    }
+  }
+  async permissionOptions(p: LaunchProfile) {
+    if (p.harness !== 'dsh')
+      return p.permissionPresets.map(({ id, name, description }) => ({ id, name, description }));
+    const host = this.dshHosts.get(p.hostId);
+    if (!host?.connected) return [];
+    const catalog = z
+      .object({
+        options: z.array(
+          z.object({
+            value: z.string().regex(/^[a-zA-Z0-9_-]+$/),
+            name: z.string(),
+            description: z.string().optional(),
+          }),
+        ),
+      })
+      .parse(await host.native.call('permissionPresets/catalog', {}));
+    return catalog.options.map((o) => ({
+      id: o.value,
+      name: o.name,
+      description: o.description ?? '',
+    }));
+  }
   async catalog() {
     return Promise.all(
       this.profiles.map(async (p) => ({
@@ -106,6 +156,8 @@ export class Launcher {
         models: await this.models(p),
         allowCustomModel: p.allowCustomModel,
         defaultModel: p.defaultModel,
+        projectHome: p.roots[0],
+        permissions: await this.permissionOptions(p),
         ...(p.harness === 'dsh' ? await this.presets(p) : {}),
         connected:
           this.dshHosts.get(p.hostId)?.connected ??
@@ -200,6 +252,13 @@ export class Launcher {
       return JSON.parse(existing.receipt as string);
     }
     const p = this.profile(input.profileId);
+    if (
+      input.permission &&
+      (!input.permissionConfirmed ||
+        !(await this.permissionOptions(p)).some((o) => o.id === input.permission))
+    )
+      throw new Error('Choose and confirm an available permission preset');
+    const permission = p.permissionPresets.find((o) => o.id === input.permission);
     const selectedPreset = input.agentPreset ?? p.dshPreset;
     if (input.agentPreset && p.harness !== 'dsh') throw new Error('Agent presets require DSH');
     if (p.harness === 'dsh' && selectedPreset) {
@@ -246,6 +305,7 @@ export class Launcher {
       cwd: resolved,
       model: input.model,
       agentPreset: selectedPreset,
+      permission: input.permission,
     });
     try {
       const selectedModel = input.model || p.defaultModel;
@@ -266,6 +326,21 @@ export class Launcher {
         await dsh.native.call('session/rename', {
           request: { sessionId: nativeId, title: input.name },
         });
+        if (input.permission) {
+          const result = await dsh.native.call('commands/execute', {
+            agentId: nativeId,
+            line: `/permission ${input.permission}`,
+            submittedAttachments: [],
+          });
+          if ((result as any).result?.kind !== 'success')
+            throw new Error('Permission selection failed');
+          const rows = (await dsh.native.list()) as any;
+          if (
+            rows.items?.find((r: any) => r.sessionId === nativeId)?.projections?.values?.permissions
+              ?.currentValue !== input.permission
+          )
+            throw new Error('Permission selection was not confirmed');
+        }
         await dsh.native.prompt(nativeId, input.requestId, input.prompt, 'queue');
         receipt.status = 'started';
         save();
@@ -283,6 +358,8 @@ export class Launcher {
             model: selectedModel,
             modelProvider: p.codexProvider,
             ephemeral: false,
+            ...(permission?.sandbox ? { sandbox: permission.sandbox } : {}),
+            ...(permission?.approvalPolicy ? { approvalPolicy: permission.approvalPolicy } : {}),
           });
           receipt.nativeSessionId = z.string().uuid().parse(thread.id);
           save();
@@ -317,6 +394,7 @@ export class Launcher {
                   ? ['resume', receipt.nativeSessionId, '--remote', `unix://${socket}`]
                   : []),
                 ...p.args,
+                ...(permission?.args ?? []),
                 ...(selectedModel ? [p.modelFlag, selectedModel] : []),
               ],
               timeout_ms: 30000,

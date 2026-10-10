@@ -502,10 +502,11 @@ fun DetailsScreen(vm: RelayModel, back: () -> Unit) {
     var permissions by remember(s?.id) { mutableStateOf<JSONObject?>(null) }
     var agentMode by remember(s?.id) { mutableStateOf<JSONObject?>(null) }
     var settingKind by remember(s?.id) { mutableStateOf("permissions") }
+    var settingsReload by remember { mutableStateOf(0) }
     var loadError by remember(s?.id) { mutableStateOf("") }
     var permissionChoice by remember(s?.id) { mutableStateOf<JSONObject?>(null) }
     var actionSheet by remember { mutableStateOf(false) }
-    LaunchedEffect(s?.id) {
+    LaunchedEffect(s?.id, settingsReload) {
         if (s != null)
             runCatching {
                     permissions = vm.api.api("/api/sessions/${s.id}/permissions")
@@ -514,10 +515,37 @@ fun DetailsScreen(vm: RelayModel, back: () -> Unit) {
                 }
                 .onFailure { loadError = it.message ?: "Could not load settings" }
     }
-    Page("Session details", back) {
+    Page("Session settings", back) {
         if (s == null) Text("Choose a session first.")
         else {
             Text(s.title, style = MaterialTheme.typography.headlineSmall)
+            TextButton(onClick = { settingsReload++; loadError = "" }) { Text("Refresh permissions and mode") }
+            if (permissions == null && loadError.isBlank()) Text("Loading session permissions…")
+            listOf("permissions" to permissions, "mode" to agentMode).forEach { (kind, settings) ->
+                settings?.let { catalog ->
+                    HorizontalDivider()
+                    Text(if (kind == "mode") "Agent mode" else "Permissions", style = MaterialTheme.typography.titleMedium)
+                    if (catalog.optBoolean("supported")) {
+                        Text("Current: ${catalog.str("currentName").ifBlank { catalog.str("current") }}")
+                        catalog.rows("options").forEach { option ->
+                            OutlinedButton(
+                                enabled = !vm.working && option.str("value") != catalog.str("current"),
+                                onClick = { settingKind = kind; permissionChoice = option },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Column {
+                                    Text(option.str("name"))
+                                    if (option.str("description").isNotBlank())
+                                        Text(
+                                            option.str("description"),
+                                            style = MaterialTheme.typography.bodySmall,
+                                        )
+                                }
+                            }
+                        }
+                    } else Text(catalog.str("reason"), style = MaterialTheme.typography.bodyMedium)
+                }
+            }
             listOf(
                     "Agent" to s.agent,
                     "Profile" to s.profile,
@@ -574,31 +602,7 @@ fun DetailsScreen(vm: RelayModel, back: () -> Unit) {
                     Text("Apply model")
                 }
             }
-            listOf("permissions" to permissions, "mode" to agentMode).forEach { (kind, settings) ->
-                settings?.let { catalog ->
-                    HorizontalDivider()
-                    Text(if (kind == "mode") "Agent mode" else "Permissions", style = MaterialTheme.typography.titleMedium)
-                    if (catalog.optBoolean("supported")) {
-                        Text("Current: ${catalog.str("currentName").ifBlank { catalog.str("current") }}")
-                        catalog.rows("options").forEach { option ->
-                            OutlinedButton(
-                                enabled = !vm.working && option.str("value") != catalog.str("current"),
-                                onClick = { settingKind = kind; permissionChoice = option },
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                Column {
-                                    Text(option.str("name"))
-                                    if (option.str("description").isNotBlank())
-                                        Text(
-                                            option.str("description"),
-                                            style = MaterialTheme.typography.bodySmall,
-                                        )
-                                }
-                            }
-                        }
-                    } else Text(catalog.str("reason"), style = MaterialTheme.typography.bodyMedium)
-                }
-            }
+
         }
     }
     if (actionSheet && s != null) SessionActions(vm, s) { actionSheet = false }
@@ -805,6 +809,11 @@ fun LaunchScreen(vm: RelayModel, back: () -> Unit) {
     var profiles by remember { mutableStateOf(listOf<JSONObject>()) }
     var error by remember { mutableStateOf("") }
     var profileId by rememberSaveable { mutableStateOf("") }
+    var permission by rememberSaveable { mutableStateOf("") }
+    var permissionConfirmed by rememberSaveable { mutableStateOf(false) }
+    var newFolder by remember { mutableStateOf(false) }
+    var folderName by rememberSaveable { mutableStateOf("") }
+    var creating by remember { mutableStateOf(false) }
     var model by rememberSaveable { mutableStateOf("") }
     var preset by rememberSaveable { mutableStateOf("") }
     var cwd by rememberSaveable { mutableStateOf("") }
@@ -893,6 +902,9 @@ fun LaunchScreen(vm: RelayModel, back: () -> Unit) {
             ) {
                 profileId = it
                 model = ""
+                permission = ""
+                permissionConfirmed = false
+                newFolder = false
                 preset = ""
                 cwd = ""
             }
@@ -929,6 +941,28 @@ fun LaunchScreen(vm: RelayModel, back: () -> Unit) {
                     Icon(Icons.Outlined.FolderOpen, null)
                     Text("Browse folders", Modifier.padding(start = 8.dp))
                 }
+                OutlinedButton(onClick = { newFolder = !newFolder }) { Text("New project folder") }
+                if (newFolder) {
+                    Text("Create in ${profile.str("projectHome")}")
+                    OutlinedTextField(folderName, { folderName = it }, label = { Text("Project folder name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    Button(enabled = folderName.isNotBlank() && !creating, onClick = {
+                        creating = true
+                        scope.launch {
+                            runCatching { vm.api.api("/api/launch/folders", "POST", json("profileId" to profileId, "name" to folderName.trim())) }
+                                .onSuccess { cwd = it.str("path"); newFolder = false; folderName = ""; error = "" }
+                                .onFailure { error = it.message ?: "Could not create folder" }
+                            creating = false
+                        }
+                    }) { Text(if (creating) "Creating…" else "Create and use folder") }
+                }
+                ChoiceField("Session permissions", listOf(json("id" to "", "name" to "Use host default")) + profile.rows("permissions"), permission) {
+                    permission = it; permissionConfirmed = false
+                }
+                Text(profile.rows("permissions").find { it.str("id") == permission }?.str("description") ?: "Uses the agent’s configured permission policy.", style = MaterialTheme.typography.bodySmall)
+                if (permission.isNotBlank()) Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = permissionConfirmed, onCheckedChange = { permissionConfirmed = it })
+                    Text("Use these permissions for the new session")
+                }
                 OutlinedTextField(
                     name,
                     { name = it },
@@ -938,12 +972,12 @@ fun LaunchScreen(vm: RelayModel, back: () -> Unit) {
                 OutlinedTextField(
                     prompt,
                     { prompt = it },
-                    label = { Text("First instruction (optional)") },
+                    label = { Text("First instruction") },
                     modifier = Modifier.fillMaxWidth(),
                     minLines = 3,
                 )
                 Button(
-                    enabled = cwd.startsWith('/') && profile.optBoolean("connected") && !starting,
+                    enabled = cwd.startsWith('/') && profile.optBoolean("connected") && !starting && !creating && prompt.isNotBlank() && (permission.isBlank() || permissionConfirmed),
                     onClick = {
                         starting = true
                         error = ""
@@ -955,6 +989,8 @@ fun LaunchScreen(vm: RelayModel, back: () -> Unit) {
                                         "cwd" to cwd,
                                         "name" to name.ifBlank { cwd.substringAfterLast('/') },
                                         "model" to model,
+                                        "permission" to permission.takeIf { it.isNotBlank() },
+                                        "permissionConfirmed" to permissionConfirmed,
                                         "prompt" to prompt,
                                         "agentPreset" to
                                             preset

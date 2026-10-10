@@ -17,6 +17,8 @@ type Profile = {
   agentPresets?: { id: string; name: string; description?: string; unavailable: boolean }[];
   defaultAgentPreset?: string;
   presetError?: string;
+  projectHome?: string;
+  permissions?: { id: string; name: string; description: string }[];
 };
 type Folders = {
   path: string;
@@ -39,6 +41,8 @@ type Draft = {
   model: string;
   prompt: string;
   agentPreset?: string;
+  permission?: string;
+  permissionConfirmed?: boolean;
 };
 const labels: Record<string, string> = {
   claude: 'Claude Code',
@@ -76,6 +80,8 @@ export function NewSession({
 }) {
   const query = useQueryClient();
   const [draft, setDraft] = useState(saved);
+  const [newFolder, setNewFolder] = useState(false);
+  const [folderName, setFolderName] = useState('');
   const [browse, setBrowse] = useState(false);
   const [folderPath, setFolderPath] = useState<string>();
   const [typedPath, setTypedPath] = useState('');
@@ -95,6 +101,20 @@ export function NewSession({
         `/api/launch/folders?${new URLSearchParams({ profileId: profile!.id, ...(folderPath ? { path: folderPath } : {}) })}`,
       ),
     enabled: browse && !!profile,
+  });
+  const createFolder = useMutation({
+    mutationFn: () =>
+      api<{ path: string }>('/api/launch/folders', {
+        method: 'POST',
+        body: JSON.stringify({ profileId: profile!.id, name: folderName.trim() }),
+      }),
+    onSuccess: (value) => {
+      setDraft((d) => ({ ...d, cwd: value.path }));
+      setNewFolder(false);
+      setBrowse(false);
+      setFolderName('');
+      void query.invalidateQueries({ queryKey: ['folders'] });
+    },
   });
   const [receipt, setReceipt] = useState<Receipt>();
   const [attempted, setAttempted] = useState(
@@ -155,18 +175,22 @@ export function NewSession({
       void query.invalidateQueries({ queryKey: ['sessions'] });
     },
   });
-  const frozen = launch.isPending || !!receipt || attempted;
+  const frozen = launch.isPending || createFolder.isPending || !!receipt || attempted;
   const chooseProfile = (value: Profile) => {
     setDraft((d) => ({
       ...d,
       profileId: value.id,
       model: '',
+      permission: undefined,
+      permissionConfirmed: false,
       agentPreset:
         value.hostId === profile?.hostId && value.harness === profile?.harness
           ? d.agentPreset
           : undefined,
       cwd: value.hostId === profile?.hostId ? d.cwd : '',
     }));
+    setNewFolder(false);
+    createFolder.reset();
     setCustom(false);
     setFolderPath(undefined);
   };
@@ -287,6 +311,39 @@ export function NewSession({
                   <span>{draft.cwd || 'Choose a folder on ' + profile.hostId}</span>
                   <ChevronRight size={18} aria-hidden="true" />
                 </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNewFolder(!newFolder);
+                    createFolder.reset();
+                  }}
+                  aria-expanded={newFolder}
+                >
+                  New project folder
+                </button>
+                {newFolder && (
+                  <div className="folder-browser">
+                    <p>Create in {profile.projectHome ?? 'your project home'}</p>
+                    <label>
+                      Project folder name
+                      <input
+                        value={folderName}
+                        onChange={(e) => setFolderName(e.target.value)}
+                        autoCapitalize="none"
+                        spellCheck={false}
+                        maxLength={80}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      disabled={!folderName.trim() || createFolder.isPending}
+                      onClick={() => createFolder.mutate()}
+                    >
+                      {createFolder.isPending ? 'Creating…' : 'Create and use folder'}
+                    </button>
+                    {createFolder.error && <p role="alert">{createFolder.error.message}</p>}
+                  </div>
+                )}
                 {browse && (
                   <div className="folder-browser">
                     <label className="path-entry">
@@ -401,6 +458,44 @@ export function NewSession({
                       required
                     />
                     <small>Use a model ID available through {profile.provider}.</small>
+                  </label>
+                )}
+                <label>
+                  Session permissions
+                  <select
+                    aria-label="Session permissions"
+                    value={draft.permission ?? ''}
+                    onChange={(e) =>
+                      setDraft((d) => ({
+                        ...d,
+                        permission: e.target.value || undefined,
+                        permissionConfirmed: false,
+                      }))
+                    }
+                  >
+                    <option value="">Use host default</option>
+                    {(profile.permissions ?? []).map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                  <small>
+                    {profile.permissions?.find((p) => p.id === draft.permission)?.description ??
+                      'Uses the agent’s configured permission policy.'}
+                  </small>
+                </label>
+                {draft.permission && (
+                  <label className="confirm-choice">
+                    <input
+                      type="checkbox"
+                      required
+                      checked={!!draft.permissionConfirmed}
+                      onChange={(e) =>
+                        setDraft((d) => ({ ...d, permissionConfirmed: e.target.checked }))
+                      }
+                    />
+                    Use these permissions for the new session
                   </label>
                 )}
                 <label>

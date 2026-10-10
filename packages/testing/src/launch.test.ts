@@ -257,6 +257,15 @@ test('new Codex threads are named before their first Herdr CLI owner starts; rep
     workspaceId: 'w1',
     roots: [tmpdir()],
     codexProvider: 'local_models',
+    permissionPresets: [
+      {
+        id: 'workspace',
+        name: 'Workspace',
+        args: ['--sandbox', 'workspace-write', '--ask-for-approval', 'on-request'],
+        sandbox: 'workspace-write',
+        approvalPolicy: 'on-request',
+      },
+    ],
     defaultModel: 'codex/gpt-6.1-sol',
     allowCustomModel: true,
   });
@@ -271,6 +280,8 @@ test('new Codex threads are named before their first Herdr CLI owner starts; rep
     profileId: 'codex',
     cwd: tmpdir(),
     name: 'Native launch',
+    permission: 'workspace',
+    permissionConfirmed: true,
     model: '',
     prompt: 'Hello',
   };
@@ -280,6 +291,8 @@ test('new Codex threads are named before their first Herdr CLI owner starts; rep
       nativeCalls.map((c) => c.method),
       ['thread/start', 'thread/name/set'],
     );
+    assert.equal(nativeCalls[0].params.sandbox, 'workspace-write');
+    assert.equal(nativeCalls[0].params.approvalPolicy, 'on-request');
     assert.equal(nativeCalls[0].params.modelProvider, 'local_models');
     assert.equal(nativeCalls[0].params.model, 'codex/gpt-6.1-sol');
     assert.equal(nativeCalls[1].params.threadId, nativeId);
@@ -288,6 +301,10 @@ test('new Codex threads are named before their first Herdr CLI owner starts; rep
       nativeId,
       '--remote',
       'unix:///private/daemon.sock',
+      '--sandbox',
+      'workspace-write',
+      '--ask-for-approval',
+      'on-request',
       '--model',
       'codex/gpt-6.1-sol',
     ]);
@@ -308,6 +325,7 @@ test('DSH launch discovers presets, validates selection before mutation and pres
     native: {
       call: async (method: string, args: any) => {
         calls.push({ method, args });
+        if (method === 'permissionPresets/catalog') return { options: [] };
         if (method === 'agentPresets/list')
           return {
             presets: [
@@ -381,6 +399,119 @@ test('DSH launch discovers presets, validates selection before mutation and pres
       calls.filter((c) => c.method === 'session/create').at(-1)?.args.request.agentPreset,
       undefined,
     );
+  } finally {
+    store.close();
+  }
+});
+
+test('new project folders stay inside the permitted home and permission choices reject before launch', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'relay-project-'));
+  const store = new Store(':memory:');
+  const profile = launchProfileSchema.parse({
+    id: 'claude',
+    hostId: 'fred',
+    label: 'Claude',
+    harness: 'claude',
+    workspaceId: 'w1',
+    roots: [root],
+    permissionPresets: [{ id: 'plan', name: 'Plan', args: ['--permission-mode', 'plan'] }],
+  });
+  const launcher = new Launcher(store, [profile], new Map());
+  try {
+    assert.equal(
+      (await launcher.createFolder('claude', 'New project', 'device')).path,
+      path.join(root, 'New project'),
+    );
+    for (const name of ['../escape', '/tmp/escape', '.ssh', 'nested/path', 'bad\\path'])
+      await assert.rejects(launcher.createFolder('claude', name, 'device'), /project name/);
+    await assert.rejects(
+      launcher.createFolder('claude', 'New project', 'device'),
+      /already exists/,
+    );
+    await symlink('/tmp', path.join(root, 'link'));
+    await assert.rejects(launcher.createFolder('claude', 'link', 'device'), /already exists/);
+    const input = {
+      requestId: randomUUID(),
+      profileId: 'claude',
+      cwd: root,
+      name: 'Test',
+      model: '',
+      prompt: 'Hello',
+      permission: 'plan',
+    };
+    await assert.rejects(launcher.launch(input, 'device'), /confirm/);
+    await assert.rejects(
+      launcher.launch({ ...input, permission: 'invented', permissionConfirmed: true }, 'device'),
+      /available/,
+    );
+    assert.equal(launcher.receipt(input.requestId), undefined);
+    const [catalog] = await launcher.catalog();
+    assert.deepEqual(catalog.permissions, [{ id: 'plan', name: 'Plan', description: '' }]);
+  } finally {
+    store.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('DSH confirms launch permissions before sending the first instruction', async () => {
+  const store = new Store(':memory:');
+  const calls: string[] = [];
+  let nativeId = '';
+  let confirmed = true;
+  const host: any = {
+    connected: true,
+    native: {
+      call: async (method: string, args: any) => {
+        calls.push(method);
+        if (method === 'permissionPresets/catalog')
+          return { options: [{ value: 'workspace', name: 'Workspace' }] };
+        if (method === 'session/create') nativeId = args.request.sessionId;
+        return { result: { kind: 'success' } };
+      },
+      list: async () => ({
+        items: [
+          {
+            sessionId: nativeId,
+            projections: {
+              values: { permissions: { currentValue: confirmed ? 'workspace' : 'other' } },
+            },
+          },
+        ],
+      }),
+      prompt: async () => {
+        calls.push('prompt');
+      },
+    },
+  };
+  const profile = launchProfileSchema.parse({
+    id: 'dsh',
+    hostId: 'dsh',
+    label: 'DSH',
+    harness: 'dsh',
+    workspaceId: 'w1',
+    roots: [tmpdir()],
+  });
+  const launcher = new Launcher(store, [profile], new Map(), new Map(), new Map([['dsh', host]]));
+  const input = {
+    requestId: randomUUID(),
+    profileId: 'dsh',
+    cwd: tmpdir(),
+    name: 'Project',
+    model: '',
+    prompt: 'Hello',
+    permission: 'workspace',
+    permissionConfirmed: true,
+  };
+  try {
+    assert.equal((await launcher.launch(input, 'device')).status, 'started');
+    assert.ok(calls.indexOf('commands/execute') < calls.indexOf('prompt'));
+    calls.length = 0;
+    confirmed = false;
+    assert.equal(
+      (await launcher.launch({ ...input, requestId: randomUUID() }, 'device')).status,
+      'uncertain',
+    );
+    assert.ok(!calls.includes('prompt'));
   } finally {
     store.close();
   }

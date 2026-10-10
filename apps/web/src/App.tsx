@@ -1788,9 +1788,9 @@ function SessionDetails({ session: s }: { session: SessionView }) {
       ) : (
         <Status status={s.status} />
       )}
-      {s.harness === 'dsh' && s.capabilities.sendMessage && <DshModel session={s} />}
       <SessionPermissions key={`${s.id}:permissions`} sessionId={s.id} />
       <SessionPermissions key={`${s.id}:mode`} sessionId={s.id} kind="mode" />
+      {s.harness === 'dsh' && s.capabilities.sendMessage && <DshModel session={s} />}
       <dl className="details-list">
         {[
           ['Agent', s.harness],
