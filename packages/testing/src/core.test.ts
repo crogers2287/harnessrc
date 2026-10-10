@@ -199,6 +199,33 @@ test('JSONL tailer handles partial records, UTF-8, rotation, and root escape', a
     await f.close();
   }
 });
+test('JSONL histories larger than 128 MiB replay in bounded chunks after restart', async () => {
+  const f = await fixture({ startRuntime: false });
+  try {
+    const session = { ...f.session, harness: 'claude', nativeSessionId: 'large' };
+    const file = path.join(f.dir, 'large.jsonl');
+    const record = (uuid: string) => JSON.stringify({
+      uuid, type: 'user', message: { content: uuid },
+    }) + '\n';
+    await writeFile(file, record('first'));
+    // Ignored records pad the history without allocating hundreds of MiB of events.
+    const padding = JSON.stringify({ padding: ' '.repeat(1024 * 1024) }) + '\n';
+    for (let i = 0; i < 129; i++) await appendFile(file, padding);
+    await appendFile(file, record('last'));
+    for (let restart = 0; restart < 2; restart++) {
+      const adapter = new JsonlAdapter(f.dir, 'claude');
+      const first = await adapter.read(session);
+      assert.deepEqual(first.map(e => e.sourceId), ['first']);
+      const ids = first.map(e => e.sourceId);
+      for (let chunk = 0; chunk < 35; chunk++)
+        ids.push(...(await adapter.read(session)).map(e => e.sourceId));
+      assert.deepEqual(ids, ['first', 'last']);
+      assert.deepEqual(await adapter.read(session), []);
+    }
+  } finally {
+    await f.close();
+  }
+});
 test('Hermes read path selects only the exact native session', async () => {
   const f = await fixture({ startRuntime: false });
   try {

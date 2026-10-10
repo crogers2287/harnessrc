@@ -260,8 +260,7 @@ export class JsonlAdapter implements Adapter {
     let c = this.cursors.get(session.id);
     if (!c || c.file !== file || c.inode !== s.ino || s.size < c.offset)
       c = { file, inode: s.ino, offset: 0, index: 0, partial: '' };
-    if (s.size - c.offset > 128 * 1024 * 1024)
-      throw new Error('Transcript exceeds 128 MiB import limit');
+    // Import arbitrarily long histories in bounded chunks, including after restart.
     const handle = await open(file, 'r');
     try {
       const size = Math.min(s.size - c.offset, 4 * 1024 * 1024);

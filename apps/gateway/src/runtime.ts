@@ -345,6 +345,27 @@ export class Runtime extends EventEmitter {
         const adapter = this.adapters.get(s.id);
         if (!adapter) continue;
         try {
+          if (adapter.interactions) {
+            const native = await adapter.interactions(s);
+            const ids = new Set(native.map((i) => i.nativeRequestId));
+            for (const i of native) {
+              const pending = this.broker.open(s.id, i);
+              this.broker.heartbeat(pending.id);
+            }
+            for (const old of this.store
+              .interactions(s.id)
+              .filter(
+                (i) =>
+                  i.route !== 'claude-hook' &&
+                  (i.status === 'pending' ||
+                    (['dsh-native', 'codex-native'].includes(i.route) &&
+                      i.status === 'uncertain')) &&
+                  !ids.has(i.nativeRequestId),
+              )) {
+              old.status = 'stale';
+              this.store.saveInteraction(old);
+            }
+          }
           for (const e of await adapter.read(s)) {
             if (e.kind === 'artifact.created' && typeof e.data.nativeImageDataUrl === 'string') {
               importNativeImage(this.store, this.attachments, s, e);
@@ -400,27 +421,6 @@ export class Runtime extends EventEmitter {
                 };
             }
             this.store.event(s, e);
-          }
-          if (adapter.interactions) {
-            const native = await adapter.interactions(s);
-            const ids = new Set(native.map((i) => i.nativeRequestId));
-            for (const i of native) {
-              const pending = this.broker.open(s.id, i);
-              this.broker.heartbeat(pending.id);
-            }
-            for (const old of this.store
-              .interactions(s.id)
-              .filter(
-                (i) =>
-                  i.route !== 'claude-hook' &&
-                  (i.status === 'pending' ||
-                    (['dsh-native', 'codex-native'].includes(i.route) &&
-                      i.status === 'uncertain')) &&
-                  !ids.has(i.nativeRequestId),
-              )) {
-              old.status = 'stale';
-              this.store.saveInteraction(old);
-            }
           }
           await this.queue.tick(s.id);
         } catch (e) {
