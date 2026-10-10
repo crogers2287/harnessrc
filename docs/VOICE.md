@@ -14,7 +14,7 @@ Add an optional `voice` object to the gateway configuration, then restart only R
     "cleanup": {
       "endpoint": "http://GARY_TAILNET_IP:8712/v1/chat/completions",
       "model": "relay-dictation-cleanup",
-      "timeoutMs": 10000
+      "timeoutMs": 20000
     }
   }
 }
@@ -22,7 +22,7 @@ Add an optional `voice` object to the gateway configuration, then restart only R
 
 URLs are operator-controlled; users cannot choose upstream URLs. If upstream authentication is needed, set `authorizationEnv` to the name of an environment variable containing its bearer token, on either stage. The client never receives these credentials. Omitting `voice` hides the microphone. Omitting `cleanup` returns the raw transcript.
 
-The authenticated endpoint requires session control permission and same-origin request protection. It accepts at most 10 MB, limits concurrency to two and requests to six/minute, and bounds upstream timeouts. Browser capture stops at three minutes or 9 MB. Audio and transcript are processed in memory, not written to Relay's database or uploads; audit records contain byte count and cleanup success only. Gary's service logging/retention is administered separately. Failed recordings remain in the browser tab for retry and are lost when that tab closes. Cleanup defaults to a three-second budget; the dedicated CPU service uses a ten-second budget (optional `cleanup.timeoutMs`, 100–10000 ms). Slow or failed cleanup inserts the original transcript with a notice instead of delaying the draft for 30 seconds. Technical names can be misheard; review before sending. The original transcription is available for comparison.
+The authenticated endpoint requires session control permission and same-origin request protection. It accepts at most 10 MB, limits concurrency to two and requests to six/minute, and bounds upstream timeouts. Browser capture stops at three minutes or 9 MB. Audio and transcript are processed in memory, not written to Relay's database or uploads; audit records contain byte count and cleanup success only. Gary's service logging/retention is administered separately. Failed recordings remain in the browser tab for retry and are lost when that tab closes. Cleanup defaults to a three-second budget; the dedicated CPU service uses a twenty-second budget (optional `cleanup.timeoutMs`, 100–30000 ms). Slow or failed cleanup inserts the original transcript with a notice when that budget is exhausted. Technical names can be misheard; review before sending. The original transcription is available for comparison.
 
 HTTPS and microphone permission are required. MIME support is feature-detected for WebM/Opus, MP4, and Ogg. Recording stops when the tab is hidden or its session is left. Browser tests use an actual Chromium MediaRecorder with a fake microphone and cover permission refusal, cancellation, retained drafts, retry, and no agent submission. A synthetic speech fixture was also transcribed and cleaned on Gary. Physical Android/iOS microphones, permission prompts, and interruption behavior still require device confirmation.
 

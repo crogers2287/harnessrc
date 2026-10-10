@@ -142,3 +142,9 @@ Android now matches web's consecutive tool/reasoning grouping. Each run has a si
 ### Long dictation decoding
 
 Gary's shared ASR upload decoder now uses a seekable anonymous temporary file instead of piping M4A into FFmpeg. A 40-second spoken M4A reproduced a zero-byte decode and HTTP 200 with empty text before the fix. The same bytes decode correctly with seeking. Both Android M4A and browser WebM regression cases cover 6, 40 and 180 seconds. Invalid, empty and oversized input is rejected. See `scripts/speech/README.md`; neither client needs an update for this service-side repair. End-to-end speech verification is separate from decoder validation.
+
+### Codex asynchronous questions
+
+Codex exposes `request_user_input_async` through native `agentMessage` items with `delivery: async` and structured `questions`, separately from the JSON-RPC `item/tool/requestUserInput` pathway. Relay reads full active-turn history (summary history omits answers), renders these through the existing web/Android question cards, and recognizes structured answers from other clients. Stable question identity matches Codex's `[tool name, item id, question index]` tuple. Replies use the native `send_user_message_question_reply` envelope via `turn/steer` with the exact expected active turn ID, as in Codex's own TUI. Ended/replaced turns and already answered questions cannot be submitted. Durable broker claims protect double submissions and uncertain delivery; the adapter never starts a new turn to answer an async question.
+
+Protocol references: installed experimental app-server schema (`AsyncUserInputQuestion`, `TurnSteerParams`) and upstream `codex-rs/tui/src/chatwidget/questions.rs`, `codex-rs/tui/src/bottom_pane/async_questions/state.rs`, `codex-rs/context-fragments/src/answered_question.rs`. Native screenshots still require device verification; both clients already support this structured question shape.

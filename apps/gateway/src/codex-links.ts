@@ -1,3 +1,4 @@
+import { CodexAsyncQuestions } from '../../../packages/adapters/src/codex-async-questions.ts';
 import { CodexSettings } from '../../../packages/adapters/src/codex-settings.ts';
 import { randomUUID } from 'node:crypto';
 import type { Agent, HerdrClient } from '@harnessrc/herdr';
@@ -289,11 +290,22 @@ export class CodexLinks {
       });
       this.subscriptions.set(s.id, Date.now());
     }
-    return this.native.questions.list(s.nativeSessionId);
+    return [
+      ...this.native.questions.list(s.nativeSessionId),
+      ...(await new CodexAsyncQuestions(this.native).list(s.nativeSessionId)),
+    ];
   }
   async respond(client: HerdrClient, s: Session, interaction: Interaction, response: unknown) {
     await this.assertDelivery(client, s);
     await client.assertBinding(s);
+    if (interaction.nativeRequestId.startsWith('async:')) {
+      return new CodexAsyncQuestions(this.native).respond(
+        s.nativeSessionId,
+        interaction.nativeRequestId,
+        interaction.turnId,
+        response,
+      );
+    }
     if (
       !this.native.respond ||
       !this.native.questions

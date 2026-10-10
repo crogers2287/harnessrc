@@ -15,7 +15,7 @@ export const voiceConfigSchema = z.object({
       endpoint,
       model: z.string(),
       authorizationEnv: z.string().optional(),
-      timeoutMs: z.number().int().min(100).max(10000).optional(),
+      timeoutMs: z.number().int().min(100).max(30000).optional(),
     })
     .optional(),
 });
