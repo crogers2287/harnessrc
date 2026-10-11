@@ -39,6 +39,25 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
     var selected by mutableStateOf(prefs.getString("session", "")!!)
         private set
 
+    var lastOpenedAt by mutableStateOf(readLastOpened())
+        private set
+
+    private fun readLastOpened(): Map<String, Long> = runCatching {
+        val value = JSONObject(prefs.getString("session-opened", "{}")!!)
+        value.keys().asSequence().associateWith { value.optLong(it) }
+    }.getOrDefault(emptyMap())
+
+    private fun markOpened(id: String) {
+        if (id.isBlank()) return
+        val updated = (lastOpenedAt + (id to System.currentTimeMillis()))
+            .entries.sortedByDescending { it.value }.take(500).associate { it.key to it.value }
+        lastOpenedAt = updated
+        prefs.edit().putString(
+            "session-opened",
+            JSONObject().apply { updated.forEach { (key, timestamp) -> put(key, timestamp) } }.toString(),
+        ).apply()
+    }
+
     val session
         get() = sessions.find { it.id == selected }
 
@@ -113,6 +132,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
     fun start() {
         if (foreground) return
         foreground = true
+        markOpened(selected)
         viewModelScope.launch {
             refreshSessions()
             connect()
@@ -155,8 +175,10 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
                                 }
                                 if (value.str("type") == "event") {
                                     val event = ChatEvent(value.obj("event"))
-                                    if (event.data.str("sessionId") == selected)
+                                    if (event.data.str("sessionId") == selected) {
                                         events = mergeEvents(events, listOf(event))
+                                        reconcileOutgoingEcho(selected)
+                                    }
                                 }
                             }
                         }
@@ -192,11 +214,13 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
         try {
             sessions = api.api("/api/sessions").rows("sessions").map(::Session)
             voiceEnabled = api.api("/api/voice").optBoolean("enabled")
+            val previousSelection = selected
             if (sessions.none { it.id == selected })
                 selected =
                     sessions
                         .firstOrNull { it.data.str("presence") != "saved" && it.status != "ended" }
                         ?.id ?: sessions.firstOrNull()?.id ?: ""
+            if (selected != previousSelection) markOpened(selected)
             if (draft.isEmpty() && events.isEmpty()) restoreDraft()
             loadCurrent()
             error = ""
@@ -213,6 +237,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
         saveDraft()
         cancelVoice()
         selected = id
+        markOpened(id)
         prefs.edit().putString("session", id).apply()
         draft = ""
         voiceOriginal = ""
@@ -289,6 +314,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
                     .map(::ChatEvent)
             if (selected != id) return
             events = mergeEvents(events, rows)
+            reconcileOutgoingEcho(id)
             if (older || events.size <= 100) hasOlder = rows.size == 100
             withContext(Dispatchers.IO) {
                 cachedConversation(id)
@@ -299,6 +325,19 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
             if (e is CancellationException) throw e
             if (id == selected) error = friendly(e)
         }
+    }
+
+    private fun reconcileOutgoingEcho(id: String) {
+        val pending = outgoing ?: return
+        if (selected != id || !hasNativeEcho(pending, events)) return
+        val sent = pending.optJSONArray("attachments") ?: JSONArray()
+        attachments = attachments.filterNot { file ->
+            (0 until sent.length()).any { sent.optString(it) == file.str("id") }
+        }
+        outgoing = null
+        error = ""
+        notice = "Sent"
+        saveDraft()
     }
 
     private suspend fun detail(id: String) {
@@ -320,7 +359,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
                         outgoing?.str("idempotencyKey") == key &&
                         // A confirmed gateway receipt means the harness accepted
                         // the prompt, not that it has appeared in native history.
-                        receipt.optBoolean("nativeSeen")
+                        (receipt.optBoolean("nativeSeen") || hasNativeEcho(pending, events))
                 ) {
                     if (pending.str("state") == "uncertain" &&
                         (!pending.has("restoredRevision") || pending.optLong("restoredRevision") == draftRevision) &&
@@ -450,6 +489,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
         val submittedVoice = if (consumed) voiceOriginal else ""
         val recovery = JSONObject(payload.toString()).put("mode", mode)
             .put("originalDraft", original).put("voiceOriginal", submittedVoice)
+            .put("startedAtMillis", if (previous?.str("idempotencyKey") == payload.str("idempotencyKey")) previous.optLong("startedAtMillis", System.currentTimeMillis()) else System.currentTimeMillis())
         outgoing = JSONObject(recovery.toString()).put("state", "sending")
         if (consumed) {
             draft = ""

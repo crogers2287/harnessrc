@@ -122,8 +122,8 @@ export function OutgoingMessages({
               ? 'Sending…'
               : item.state === 'confirmed'
                 ? item.delivery === 'next-step'
-                  ? 'Steering accepted · waiting for the next agent step'
-                  : 'Sent · waiting for conversation update'
+                  ? 'Sent to active turn'
+                  : 'Sent'
                 : 'Delivery not confirmed. Check the conversation before sending again.'}
             {item.state === 'uncertain' && (
               <>

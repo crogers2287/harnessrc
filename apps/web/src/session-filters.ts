@@ -26,7 +26,18 @@ export const defaultFilters: SessionFilters = {
 };
 export const isSaved = (s: SessionView) =>
   !!s.archived || s.presence === 'saved' || s.status === 'ended';
-export function filterSessions(sessions: SessionView[], f: SessionFilters) {
+export function sessionRecency(s: SessionView, lastOpened: Record<string, string> = {}) {
+  const activity = Date.parse(s.lastActivity) || 0;
+  const opened = Date.parse(lastOpened[s.id] ?? '') || 0;
+  return opened > activity
+    ? { timestamp: new Date(opened).toISOString(), source: 'Opened' }
+    : { timestamp: s.lastActivity, source: 'Activity' };
+}
+export function filterSessions(
+  sessions: SessionView[],
+  f: SessionFilters,
+  lastOpened: Record<string, string> = {},
+) {
   const words = f.search.trim().toLowerCase().split(/\s+/).filter(Boolean);
   return sessions
     .filter((s) => {
@@ -60,7 +71,8 @@ export function filterSessions(sessions: SessionView[], f: SessionFilters) {
     .sort(
       (a, b) =>
         Number(!!b.pinned) - Number(!!a.pinned) ||
-        Date.parse(b.lastActivity) - Date.parse(a.lastActivity) ||
+        Date.parse(sessionRecency(b, lastOpened).timestamp) -
+          Date.parse(sessionRecency(a, lastOpened).timestamp) ||
         a.id.localeCompare(b.id),
     );
 }

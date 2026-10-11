@@ -154,7 +154,7 @@ fun RelayApp(
                                     true,
                                 )
                         }
-                        .let(::sortedSessions)
+                        .let { sortedSessions(it, vm.lastOpenedAt) }
                 LazyColumn(Modifier.weight(1f)) {
                     if (rows.isEmpty())
                         item {
@@ -207,6 +207,11 @@ fun RelayApp(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                sessionRecencyLabel(s, vm.lastOpenedAt),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                             Row(
                                 Modifier.padding(top = 5.dp),
@@ -500,7 +505,7 @@ fun Chat(vm: RelayModel, modifier: Modifier) {
                             when (pending.str("state")) {
                                 "sending" -> "Sending…"
                                 "uncertain" -> "Delivery not confirmed"
-                                else -> "Accepted · waiting for conversation update"
+                                else -> if (pending.str("mode") == "steer") "Sent to active turn" else "Sent"
                             },
                             Modifier.weight(1f).padding(start = 8.dp),
                             style = MaterialTheme.typography.labelMedium,

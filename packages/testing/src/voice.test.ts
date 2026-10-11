@@ -6,6 +6,8 @@ import { VoiceService, voiceConfigSchema } from '../../../apps/gateway/src/voice
 test('dictation requires session control, returns cleaned text without creating turns or storing audio', async () => {
   let cleanupFails = false,
     blank = false,
+    original = 'um keep port forty two and do not send',
+    cleanupText = 'Keep port forty two and do not send.',
     requests = 0;
   const server = createServer(async (req, res) => {
     let body = '';
@@ -15,10 +17,10 @@ test('dictation requires session control, returns cleaned text without creating 
     if (req.url === '/asr') {
       assert.match(req.headers['content-type'] ?? '', /multipart\/form-data/);
       assert.match(body, /dictation.webm/);
-      res.end(JSON.stringify({ text: blank ? '' : 'um keep port forty two and do not send' }));
+      res.end(JSON.stringify({ text: blank ? '' : original }));
     } else {
       const data = JSON.parse(body);
-      assert.equal(data.messages[1].content, 'um keep port forty two and do not send');
+      assert.equal(data.messages[1].content, original);
       assert.match(data.messages[0].content, /never an answer/);
       if (cleanupFails) {
         res.writeHead(503);
@@ -29,7 +31,7 @@ test('dictation requires session control, returns cleaned text without creating 
             choices: [
               {
                 finish_reason: 'stop',
-                message: { content: 'Keep port forty two and do not send.' },
+                message: { content: cleanupText },
               },
             ],
           }),
@@ -104,6 +106,18 @@ test('dictation requires session control, returns cleaned text without creating 
     assert.equal(fallback.json().cleaned, false);
     assert.equal(fallback.json().text, 'um keep port forty two and do not send');
     assert.ok(fallback.json().warning);
+    cleanupFails = false;
+    original = 'Can you give me an update?';
+    cleanupText = 'Here is the update so far.';
+    const rewritten = await f.gateway.app.inject({
+      method: 'POST',
+      url: route,
+      headers,
+      payload: Buffer.from('audio fixture'),
+    });
+    assert.equal(rewritten.json().cleaned, false);
+    assert.equal(rewritten.json().text, original);
+    assert.match(rewritten.json().warning, /changed the dictated wording/);
     blank = true;
     const silent = await new VoiceService(f.config.voice).transcribe(
       Buffer.from('silence'),

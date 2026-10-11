@@ -1,7 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { hasNativeEcho, type Outgoing } from '../../../apps/web/src/delivery.ts';
-import { filterSessions, defaultFilters } from '../../../apps/web/src/session-filters.ts';
+import {
+  filterSessions,
+  defaultFilters,
+  sessionRecency,
+} from '../../../apps/web/src/session-filters.ts';
 import type { Event, SessionView } from '@harnessrc/protocol';
 const at = '2026-10-09T01:00:00Z';
 test('attachment echoes reconcile task IDs and already-saved optimistic cards without hiding different files', () => {
@@ -83,6 +87,34 @@ test('live/history agent filters combine multiword model search, directory, host
     ['blocked'],
   );
   assert.equal(filterSessions(sessions, { ...defaultFilters, agent: 'claude' }).length, 0);
+});
+
+test('session lists sort by the latest open or agent activity across harnesses', () => {
+  const activity = {
+    id: 'activity',
+    harness: 'codex',
+    presence: 'live',
+    status: 'idle',
+    lastActivity: '2026-10-10T03:00:00Z',
+    cwd: '/projects/a',
+    hostId: 'fred',
+    pendingCount: 0,
+    project: 'Activity',
+  } as SessionView;
+  const opened = {
+    ...activity,
+    id: 'opened',
+    harness: 'dsh',
+    lastActivity: '2026-10-09T01:00:00Z',
+    project: 'Opened',
+  } as SessionView;
+  const lastOpened = { opened: '2026-10-11T03:30:00Z' };
+  assert.deepEqual(
+    filterSessions([activity, opened], defaultFilters, lastOpened).map((s) => s.id),
+    ['opened', 'activity'],
+  );
+  assert.equal(sessionRecency(opened, lastOpened).source, 'Opened');
+  assert.equal(sessionRecency(activity, lastOpened).source, 'Activity');
 });
 
 test('native slash-command echoes remove their optimistic copy with timestamp safeguards', () => {

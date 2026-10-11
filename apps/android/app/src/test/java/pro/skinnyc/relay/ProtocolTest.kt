@@ -45,7 +45,7 @@ class ProtocolTest {
     }
 
     @Test
-    fun sessionsSortWorkingFirstThenAttentionThenIdleByNewestActivity() {
+    fun sessionsSortPinnedFirstThenByNewestActivityRegardlessOfStatus() {
         fun session(id: String, status: String, time: String, pinned: Boolean = false) =
             Session(
                 json("id" to id, "status" to status, "lastActivity" to time, "pinned" to pinned)
@@ -59,8 +59,20 @@ class ProtocolTest {
                 session("new", "working", "2026-10-09T12:00:00Z"),
             )
         assertEquals(
-            listOf("new", "old", "question", "idle", "ended"),
+            listOf("idle", "ended", "new", "question", "old"),
             sortedSessions(rows).map { it.id },
+        )
+        val lastOpened = mapOf("old" to java.time.Instant.parse("2026-10-09T17:00:00Z").toEpochMilli())
+        assertEquals(
+            listOf("idle", "old", "ended", "new", "question"),
+            sortedSessions(rows, lastOpened).map { it.id },
+        )
+        assertTrue(
+            sessionRecencyLabel(
+                rows.first { it.id == "old" },
+                lastOpened,
+                lastOpened.getValue("old"),
+            ).startsWith("Opened")
         )
         assertEquals(sortedSessions(rows), sortedSessions(rows.reversed()))
     }

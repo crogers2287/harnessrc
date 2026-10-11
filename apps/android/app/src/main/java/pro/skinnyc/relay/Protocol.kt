@@ -52,26 +52,48 @@ data class Session(val data: JSONObject) {
     }
 }
 
-/** Working agents first; real activity breaks ties, independent of API ordering. */
-fun sortedSessions(sessions: List<Session>): List<Session> =
+/** Pinned sessions stay on top; the rest sort by the latest open or agent event. */
+fun sortedSessions(
+    sessions: List<Session>,
+    lastOpened: Map<String, Long> = emptyMap(),
+): List<Session> =
     sessions.sortedWith(
-        compareBy<Session> {
-                when {
-                    it.status == "working" -> 0
-                    it.pending > 0 || it.status == "blocked" -> 1
-                    it.status == "ended" ||
-                        it.data.optBoolean("archived") ||
-                        it.data.str("presence") == "saved" -> 3
-                    else -> 2
-                }
-            }
-            .thenByDescending {
-                runCatching { java.time.Instant.parse(it.data.str("lastActivity")).toEpochMilli() }
-                    .getOrDefault(0L)
-            }
-            .thenByDescending { it.data.optBoolean("pinned") }
+        compareByDescending<Session> { it.data.optBoolean("pinned") }
+            .thenByDescending { sessionRecencyMillis(it, lastOpened) }
             .thenBy { it.id }
     )
+
+fun sessionRecencyMillis(session: Session, lastOpened: Map<String, Long>): Long {
+    val activity =
+        runCatching { java.time.Instant.parse(session.data.str("lastActivity")).toEpochMilli() }
+            .getOrDefault(0L)
+    return maxOf(activity, lastOpened[session.id] ?: 0L)
+}
+
+fun sessionRecencyLabel(
+    session: Session,
+    lastOpened: Map<String, Long>,
+    now: Long = System.currentTimeMillis(),
+): String {
+    val opened = lastOpened[session.id] ?: 0L
+    val activity =
+        runCatching { java.time.Instant.parse(session.data.str("lastActivity")).toEpochMilli() }
+            .getOrDefault(0L)
+    val timestamp = maxOf(opened, activity)
+    if (timestamp == 0L) return "No recent activity"
+    val elapsed = (now - timestamp).coerceAtLeast(0L)
+    val age = when {
+        elapsed < 60_000 -> "Just now"
+        elapsed < 3_600_000 -> "${elapsed / 60_000}m ago"
+        elapsed < 86_400_000 -> "${elapsed / 3_600_000}h ago"
+        elapsed < 604_800_000 -> "${elapsed / 86_400_000}d ago"
+        else -> java.time.Instant.ofEpochMilli(timestamp)
+            .atZone(java.time.ZoneId.systemDefault())
+            .toLocalDate()
+            .format(java.time.format.DateTimeFormatter.ofPattern("MMM d"))
+    }
+    return "${if (opened > activity) "Opened" else "Activity"} · $age"
+}
 
 data class ChatEvent(val data: JSONObject) {
     val id = data.str("id")
@@ -92,6 +114,28 @@ fun mergeEvents(existing: List<ChatEvent>, incoming: List<ChatEvent>): List<Chat
             }
             .toSet()
     return all.filterNot { it.data.str("sourceId") in replaced }
+}
+
+/** Finds a transcript echo to clear an accepted composer bubble, even without request IDs. */
+fun hasNativeEcho(outgoing: JSONObject, events: List<ChatEvent>): Boolean {
+    val key = outgoing.str("idempotencyKey")
+    val prompt = outgoing.str("prompt").trim()
+    val started = outgoing.optLong("startedAtMillis", 0L)
+    val attachmentIds =
+        (outgoing.optJSONArray("attachments") ?: JSONArray()).let { array ->
+            (0 until array.length()).map { array.optString(it) }.sorted()
+        }
+    return events.any { event ->
+        if (event.kind != "user.message") return@any false
+        val body = event.body
+        if (key.isNotBlank() && (body.str("requestId") == key || body.str("taskId") == key))
+            return@any true
+        if (attachmentIds.isNotEmpty()) return@any false
+        val timestamp =
+            runCatching { java.time.Instant.parse(event.data.str("timestamp")).toEpochMilli() }
+                .getOrDefault(0L)
+        timestamp >= started - 1000 && displayText(event.text).trim() == prompt
+    }
 }
 
 fun conversationRows(events: List<ChatEvent>): List<ChatEvent> {

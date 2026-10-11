@@ -1,6 +1,6 @@
 # Voice input
 
-Tap the microphone in the composer, speak, then tap Finish. Relay records audio with the browser's MediaRecorder, transcribes it, cleans filler/repetitions/punctuation, and inserts an editable draft. It never submits that draft to an agent. Typing during transcription is preserved. Cancel discards the recording; Retry reuses it without recording again.
+Tap the microphone in the composer, speak, then tap Finish. Relay records audio with the browser's MediaRecorder, transcribes it, conservatively cleans filler/repetitions/punctuation, and inserts an editable draft. Cleanup output must retain the recognized words in their original order and may not add words; if it looks like a rewrite or answer, Relay inserts the original transcript instead. It never submits that draft to an agent. Typing during transcription is preserved. Cancel discards the recording; Retry reuses it without recording again.
 
 This is one user action with two local model stages, not a claim that a single speech model does both jobs. Fred uses Gary's existing Qwen3-ASR 1.7B service (8710) and a dedicated CPU-only Qwen2.5-3B cleanup service (8712). The existing GGUF is reused; the cleanup service does not contend for GPU model slots or wake a large swapped model. Install `deploy/relay-dictation-cleanup.service` as a user service on Gary, adjusting the model path and tailnet bind address for other hosts. The installed ASR ignores its `prompt` parameter, so cleanup is an explicit second request.
 

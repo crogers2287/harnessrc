@@ -9,6 +9,7 @@ Both clients are first-class Relay clients. A user-facing feature or fix must be
 | Workflow | Web | Android APK | Evidence / gap |
 | --- | --- | --- | --- |
 | Session search, harness filter, profile/model/CWD, saved sessions | Implemented | Implemented | App.tsx / RelayApp.kt, Protocol.kt |
+| Recency-first session list (last opened or agent activity) | Implemented | Implemented | Client-local open timestamps; pinned sessions remain above the chronological list |
 | Rename, pin, archive, supported turn interruption | Implemented | Implemented | SessionActions / Screens.kt |
 | Start session, folder selection, DSH profile, model/custom model | Implemented | Implemented | NewSession.tsx / LaunchScreen |
 | Send, Steer, explicit Queue | Implemented | Implemented | Gateway messages API is authoritative |

@@ -12,6 +12,7 @@ import {
   defaultFilters,
   filterSessions,
   isSaved,
+  sessionRecency,
   type SessionFilters as FilterState,
 } from './session-filters.ts';
 import { InstallApp } from './InstallApp.tsx';
@@ -172,6 +173,33 @@ export function App() {
     enabled: !!auth.data,
   });
   const sessions = inbox.data?.sessions ?? [];
+  const [lastOpened, setLastOpened] = useState<Record<string, string>>(() => {
+    try {
+      const value: unknown = JSON.parse(localStorage.getItem('relay-session-opened') ?? '{}');
+      return value && typeof value === 'object' && !Array.isArray(value)
+        ? (value as Record<string, string>)
+        : {};
+    } catch {
+      return {};
+    }
+  });
+  useEffect(() => {
+    if (!route.session) return;
+    const openedAt = new Date().toISOString();
+    setLastOpened((previous) => {
+      const recent = Object.fromEntries(
+        Object.entries({ ...previous, [route.session!]: openedAt })
+          .sort((a, b) => Date.parse(b[1]) - Date.parse(a[1]))
+          .slice(0, 500),
+      );
+      try {
+        localStorage.setItem('relay-session-opened', JSON.stringify(recent));
+      } catch {
+        /* Best effort on devices with storage disabled. */
+      }
+      return recent;
+    });
+  }, [route.session]);
   const navigate = (next: Route) => {
     const params = new URLSearchParams(
       Object.entries(next).filter(([, v]) => v !== undefined) as [string, string][],
@@ -289,7 +317,7 @@ export function App() {
     );
   if (!auth.data) return <Pair onPaired={() => void query.invalidateQueries()} />;
   const selected = sessions.find((s) => s.id === route.session);
-  const shown = filterSessions(sessions, filters);
+  const shown = filterSessions(sessions, filters, lastOpened);
   return (
     <div className={`app ${route.session || route.view ? 'has-detail' : ''}`}>
       <SessionDrawer open={drawerOpen} close={closeDrawer}>
@@ -340,19 +368,9 @@ export function App() {
           count={shown.length}
         />
         <div className="session-list">
-          {[...new Set(shown.map((s) => s.harness))].sort().map((harness) => (
-            <section
-              className="agent-group"
-              key={harness}
-              aria-label={`${agentLabel(harness)} sessions`}
-            >
-              <h3 className="agent-group-heading">
-                {agentLabel(harness)}{' '}
-                <span>{shown.filter((s) => s.harness === harness).length}</span>
-              </h3>
-              {shown
-                .filter((s) => s.harness === harness)
-                .map((s) => (
+          {shown.map((s) => {
+            const recent = sessionRecency(s, lastOpened);
+            return (
                   <SessionRow
                     session={s}
                     selected={selected?.id === s.id}
@@ -396,7 +414,9 @@ export function App() {
                         ) : (
                           <Status status={s.status} />
                         )}
-                        <time dateTime={s.lastActivity}>{when(s.lastActivity)}</time>
+                        <time dateTime={recent.timestamp} title={`Last ${recent.source.toLowerCase()}`}>
+                          {recent.source} {when(recent.timestamp).toLowerCase()}
+                        </time>
                         {s.pendingCount > 0 && (
                           <span className="attention-count">
                             <CircleHelp size={14} aria-hidden="true" />
@@ -412,9 +432,8 @@ export function App() {
                       <span className="unread" aria-label="Unread activity" />
                     )}
                   </SessionRow>
-                ))}
-            </section>
-          ))}
+            );
+          })}
           {shown.length === 0 && (
             <Empty title={sessions.length ? 'No matching sessions' : 'No sessions yet'}>
               {sessions.length
