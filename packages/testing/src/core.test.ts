@@ -199,6 +199,25 @@ test('JSONL tailer handles partial records, UTF-8, rotation, and root escape', a
     await f.close();
   }
 });
+test('JSONL tailer keeps valid conversation events around one malformed record', async () => {
+  const f = await fixture({ startRuntime: false });
+  try {
+    const session = { ...f.session, harness: 'claude', nativeSessionId: 'damaged' };
+    const file = path.join(f.dir, 'damaged.jsonl');
+    const record = (uuid: string, text: string) =>
+      JSON.stringify({ uuid, type: 'assistant', message: { content: [{ type: 'text', text }] } });
+    await writeFile(file, `${record('before', 'first reply')}\n{not-json}\n${record('after', 'second reply')}\n`);
+
+    const adapter = new JsonlAdapter(f.dir, 'claude');
+    assert.deepEqual(
+      (await adapter.read(session)).map((event) => event.data.text),
+      ['first reply', 'second reply'],
+    );
+    assert.deepEqual(await adapter.read(session), []);
+  } finally {
+    await f.close();
+  }
+});
 test('JSONL histories larger than 128 MiB replay in bounded chunks after restart', async () => {
   const f = await fixture({ startRuntime: false });
   try {

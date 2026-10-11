@@ -281,11 +281,15 @@ export class JsonlAdapter implements Adapter {
       for (const line of combined.subarray(0, last).toString('utf8').split('\n')) {
         const index = c.index++;
         if (!line.trim()) continue;
-        let record;
+        let record: any;
         try {
           record = JSON.parse(line);
         } catch {
-          throw new Error(`Invalid complete JSONL record at ${index}`);
+          // A single damaged transcript record must not discard valid events from
+          // the same read batch. The cursor advances by bytesRead before parsing;
+          // throwing here used to lose every event collected in this batch while
+          // still moving past the malformed line.
+          continue;
         }
         events.push(
           ...(this.harness === 'claude'
