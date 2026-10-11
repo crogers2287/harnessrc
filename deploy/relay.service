@@ -15,7 +15,8 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=%h/.local/state/relay
+# Must include configured launch roots to allow project-folder creation.
+ReadWritePaths=%h
 # Run under the same Unix account that owns Herdr and the transcript stores.
 # Customize Node path and directories if installing elsewhere.
 

@@ -394,7 +394,9 @@ export class Launcher {
                   ? ['resume', receipt.nativeSessionId, '--remote', `unix://${socket}`]
                   : []),
                 ...p.args,
-                ...(permission?.args ?? []),
+                // Remote threads already received permissions through thread/start.
+                // Codex rejects CLI permission overrides when resuming them.
+                ...(receipt.nativeSessionId ? [] : (permission?.args ?? [])),
                 ...(selectedModel ? [p.modelFlag, selectedModel] : []),
               ],
               timeout_ms: 30000,

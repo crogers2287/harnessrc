@@ -301,10 +301,6 @@ test('new Codex threads are named before their first Herdr CLI owner starts; rep
       nativeId,
       '--remote',
       'unix:///private/daemon.sock',
-      '--sandbox',
-      'workspace-write',
-      '--ask-for-approval',
-      'on-request',
       '--model',
       'codex/gpt-6.1-sol',
     ]);

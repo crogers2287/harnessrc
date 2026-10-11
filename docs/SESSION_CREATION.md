@@ -42,3 +42,11 @@ Migration `004-launches.sql` records a launch request before mutation. Repeating
 Fred validation: native Codex, Codex through CFRproxy, and Claude Code through CFRproxy were launched in a chosen CWD and returned exact test replies with their selected models in native transcripts. Browser creation, swipe navigation, uploads, approvals, queue, reconnect, and streaming are covered by Playwright. OMP/Pi and DSH native integration are separate outstanding work; the launcher does not claim interactive support for them merely because Herdr can start a binary.
 
 Live native steering was also verified on Fred: an existing Codex turn received `turn/steer` with its `expectedTurnId` and produced the changed final reply without a new turn.
+
+### Host prerequisites and launch permissions
+
+The gateway service must have write access to every configured project root for **New project folder** to work. `ProtectHome=read-only` alone blocks this even when ordinary shell permissions allow creation. The service template grants `ReadWritePaths=%h` for projects directly beneath the user's home; installations restricting projects to a dedicated directory should grant only that root plus Relay's state directory. API realpath/root validation still applies.
+
+Codex remote launches require the installed CLI to support `codex resume --remote`. Check the binary reached by the Herdr shell, including broken symlinks earlier in PATH: an older system Codex can silently become the fallback. On Fred, a removed standalone package left `~/.local/bin/codex` dangling; the still-running 0.162.1 executable and code-mode host were recovered from their `/proc/<pid>/exe` handles to restore the original installation path without interrupting existing sessions.
+
+For native-daemon launches, permissions are applied exactly once through `thread/start`. Do not append sandbox/approval CLI flags to `resume --remote`: Codex rejects those overrides. Direct CLI launches still receive their configured permission flags.
