@@ -41,7 +41,9 @@ export function useOutgoing(sessionId: string, events: Event[]) {
         pending.map(async (item) => {
           try {
             const result = await api(`/api/sessions/${sessionId}/message-receipts/${item.key}`);
-            if (!cancelled && (result.nativeSeen === true || result.confirmed === true)) {
+            // Gateway acceptance only means DSH accepted the prompt. Keep the
+            // optimistic chat bubble until the native transcript contains it.
+            if (!cancelled && result.nativeSeen === true) {
               setItems((old) => old.filter((x) => x.key !== item.key));
             }
           } catch {

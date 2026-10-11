@@ -43,6 +43,9 @@ export function SessionPermissions({
       {settings.data?.supported && settings.data.reason && (
         <p className="helper">{settings.data.reason}</p>
       )}
+      {settings.data?.supported && settings.data.note && (
+        <p className="helper">{settings.data.note}</p>
+      )}
       <p className="helper">
         {kind === 'mode'
           ? 'Choose how the agent approaches subsequent turns.'

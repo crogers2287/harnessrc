@@ -477,7 +477,19 @@ fun Chat(vm: RelayModel, modifier: Modifier) {
             }
             vm.outgoing?.let { pending ->
                 item("delivery") {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            shape = RoundedCornerShape(22.dp, 22.dp, 6.dp, 22.dp),
+                            modifier = Modifier.widthIn(max = 620.dp).fillMaxWidth(0.9f),
+                        ) {
+                            Text(
+                                pending.str("prompt"),
+                                Modifier.padding(16.dp),
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
+                        }
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             Icons.Outlined.Check,
                             null,
@@ -488,7 +500,7 @@ fun Chat(vm: RelayModel, modifier: Modifier) {
                             when (pending.str("state")) {
                                 "sending" -> "Sending…"
                                 "uncertain" -> "Delivery not confirmed"
-                                else -> "Accepted · waiting for the agent"
+                                else -> "Accepted · waiting for conversation update"
                             },
                             Modifier.weight(1f).padding(start = 8.dp),
                             style = MaterialTheme.typography.labelMedium,
@@ -498,6 +510,7 @@ fun Chat(vm: RelayModel, modifier: Modifier) {
                             TextButton(enabled = !vm.sending, onClick = vm::retrySend) {
                                 Text("Retry safely")
                             }
+                        }
                     }
                 }
             }

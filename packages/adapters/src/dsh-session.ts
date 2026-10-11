@@ -11,6 +11,7 @@ import {
   type SourceEvent,
   type Task,
   type Interaction,
+  type PermissionSettings,
 } from '@harnessrc/protocol';
 import { DshClient, type DshAttachment } from './dsh.ts';
 
@@ -173,7 +174,7 @@ export class DshAdapter implements Adapter {
     if (!row) throw new Error('DSH native session no longer exists');
     return row;
   }
-  async permissions(s: Session) {
+  async permissions(s: Session): Promise<PermissionSettings> {
     const row = await this.row(s);
     const current = row.projections?.values.permissions?.currentValue;
     if (typeof current !== 'string' || !row.agentAvailable)
@@ -185,7 +186,12 @@ export class DshAdapter implements Adapter {
     const catalog = z
       .object({ options: permissionSettingsSchema.shape.options })
       .parse(await this.native.call('permissionPresets/catalog', {}));
-    return { supported: true, current, options: catalog.options };
+    return {
+      supported: true,
+      current,
+      options: catalog.options,
+      note: 'DSH applies permission presets to this session. A sandbox change is blocked while this agent has persistent terminal sessions open; close those terminals in DSH and retry. Relay will not close them automatically.',
+    };
   }
   async setPermissions(s: Session, value: string, expected: string) {
     const settings = await this.permissions(s);

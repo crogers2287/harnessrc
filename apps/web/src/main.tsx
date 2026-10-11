@@ -14,6 +14,7 @@ import { selectTransport } from '@harnessrc/client-sdk';
 
 const savedTheme = localStorage.getItem('relay-theme') ?? 'system';
 document.documentElement.dataset.theme = savedTheme;
+document.documentElement.dataset.accent = localStorage.getItem('relay-accent') ?? 'teal';
 trackViewport();
 const client = new QueryClient({
   defaultOptions: { queries: { retry: false, refetchOnWindowFocus: true } },

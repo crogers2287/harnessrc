@@ -1941,6 +1941,7 @@ function SettingsView({ admin, back }: { admin: boolean; back: () => void }) {
     localStorage.getItem('relay-notifications') === 'on',
   );
   const [theme, setTheme] = useState(localStorage.getItem('relay-theme') ?? 'system');
+  const [accent, setAccent] = useState(localStorage.getItem('relay-accent') ?? 'teal');
   const [revoke, setRevoke] = useState<string>();
   const mutation = useMutation({
     mutationFn: ({ url, method, body }: { url: string; method: string; body?: unknown }) =>
@@ -1951,6 +1952,10 @@ function SettingsView({ admin, back }: { admin: boolean; back: () => void }) {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem('relay-theme', theme);
   }, [theme]);
+  useEffect(() => {
+    document.documentElement.dataset.accent = accent;
+    localStorage.setItem('relay-accent', accent);
+  }, [accent]);
   const enableNotifications = async () => {
     if (!('Notification' in window)) return;
     const permission = await Notification.requestPermission();
@@ -1997,6 +2002,29 @@ function SettingsView({ admin, back }: { admin: boolean; back: () => void }) {
               <option value="dark">Dark</option>
             </select>
           </label>
+          <fieldset className="accent-picker">
+            <legend>Color theme</legend>
+            <div className="accent-options">
+              {[
+                ['teal', 'Relay teal', '#246b60'],
+                ['blue', 'Ocean blue', '#1759a6'],
+                ['violet', 'Soft violet', '#6542a6'],
+                ['amber', 'Warm amber', '#8a4f00'],
+              ].map(([value, label, color]) => (
+                <button
+                  key={value}
+                  type="button"
+                  className="accent-option"
+                  aria-label={label}
+                  aria-pressed={accent === value}
+                  onClick={() => setAccent(value)}
+                >
+                  <span className="accent-swatch" style={{ background: color }} />
+                  <span>{label}</span>
+                </button>
+              ))}
+            </div>
+          </fieldset>
         </section>
         <InstallApp />
         <section>

@@ -37,9 +37,29 @@ private val Dark =
     )
 
 @Composable
-fun RelayTheme(content: @Composable () -> Unit) {
+fun RelayTheme(accent: String = "teal", content: @Composable () -> Unit) {
+    val dark = isSystemInDarkTheme()
+    val primary = when (accent) {
+        "blue" -> if (dark) Color(0xFFA5C8FF) else Color(0xFF1759A6)
+        "violet" -> if (dark) Color(0xFFD0BCFF) else Color(0xFF6542A6)
+        "amber" -> if (dark) Color(0xFFFFD18A) else Color(0xFF8A4F00)
+        else -> if (dark) Color(0xFF91CDBE) else Color(0xFF246B60)
+    }
+    val onPrimary = when (accent) {
+        "blue" -> if (dark) Color(0xFF10233F) else Color.White
+        "violet" -> if (dark) Color(0xFF24143F) else Color.White
+        "amber" -> if (dark) Color(0xFF382307) else Color.White
+        else -> if (dark) Color(0xFF123C33) else Color.White
+    }
+    val base = if (dark) Dark else Light
+    val scheme = base.copy(
+        primary = primary,
+        onPrimary = onPrimary,
+        primaryContainer = if (dark) primary.copy(alpha = 0.22f) else primary.copy(alpha = 0.12f),
+        onPrimaryContainer = primary,
+    )
     MaterialTheme(
-        colorScheme = if (isSystemInDarkTheme()) Dark else Light,
+        colorScheme = scheme,
         typography =
             Typography(
                 bodyLarge =

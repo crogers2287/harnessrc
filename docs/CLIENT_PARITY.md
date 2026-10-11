@@ -12,7 +12,8 @@ Both clients are first-class Relay clients. A user-facing feature or fix must be
 | Rename, pin, archive, supported turn interruption | Implemented | Implemented | SessionActions / Screens.kt |
 | Start session, folder selection, DSH profile, model/custom model | Implemented | Implemented | NewSession.tsx / LaunchScreen |
 | Send, Steer, explicit Queue | Implemented | Implemented | Gateway messages API is authoritative |
-| Confirmed receipt without transcript echo | Implemented in this change | Implemented in 0.1.3 | Browser receipt regression / confirmedReceiptUnlocksComposerWithoutResendingOrLosingNewDraft |
+| Outgoing chat bubble remains until native transcript echo | Implemented | Implemented | A gateway-accepted receipt alone no longer hides the message |
+| Appearance theme and accent palette | Implemented | Implemented | System/light/dark plus persistent teal, blue, violet, and amber accents |
 | Uncertain delivery recovery | Retains card, Restore draft / Dismiss | Durable original-key Retry safely | Gap: web does not yet provide the equivalent original-key retry control; Restore draft must not be described as safe retry |
 | Questions, approvals, stale request handling | Implemented | Implemented | Same interaction API; native request_user_input supported on verified CLI Codex; other async formats and CLI approvals remain limited |
 | Queue edit, cancel, pause/resume | Implemented | Implemented | App.tsx / QueueScreen |
@@ -44,6 +45,10 @@ Gateway regression suite: 94 passed. TypeScript, ESLint and production web build
 ### Native Stop, 2026-10-09
 
 Existing web and Android Stop controls now receive `interruptTurn` for verified CLI Codex daemon links and native DSH sessions. Web: session actions → Stop current turn (also session details). Android: hold a session → Stop current turn, or Session details → Rename, pin or manage session. Confirmation is required. No new APK is needed for these server-advertised capabilities. Codex selects the exact active turn after ownership verification; DSH uses the existing host's `session/cancel` and preserves its pending inbox. This does not terminate a Herdr process or erase queued tasks. Claude CLI interruption remains unsupported until a safe native route is integrated.
+
+### DSH delayed transcript echo and permissions
+
+An accepted DSH prompt is not necessarily present in the native transcript yet. Web and Android retain the local outgoing bubble until the native `user/message` event is observed; gateway acceptance alone no longer removes it. Android also renders the message text during the request, instead of showing only a spinner. DSH may delay applying a steer until a supported agent step. Permission presets are session-scoped, but a sandbox switch is rejected while that agent owns open or starting persistent terminal sessions; close them in DSH and retry. Relay never closes those sessions automatically.
 
 Validation: 96 backend tests passed, including exact Codex turn cancellation, rejected stale/replaced owners, DSH idle/missing-session rejection and cancellation acknowledgement. Browser Stop confirmation/route test passed. Native UI code did not change; physical-device Stop validation remains outstanding.
 

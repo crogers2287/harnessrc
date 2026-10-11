@@ -34,6 +34,59 @@
   --focus: #85ccbe;
   color-scheme: dark;
 }
+:root[data-accent='blue'] {
+  --accent: #1759a6;
+  --focus: #1759a6;
+  --soft: #e7effa;
+}
+:root[data-theme='dark'][data-accent='blue'] {
+  --accent: #a5c8ff;
+  --focus: #a5c8ff;
+  --soft: #23344e;
+  --on-accent: #10233f;
+}
+:root[data-accent='violet'] {
+  --accent: #6542a6;
+  --focus: #6542a6;
+  --soft: #efeafb;
+}
+:root[data-theme='dark'][data-accent='violet'] {
+  --accent: #d0bcff;
+  --focus: #d0bcff;
+  --soft: #352c4c;
+  --on-accent: #24143f;
+}
+:root[data-accent='amber'] {
+  --accent: #8a4f00;
+  --focus: #8a4f00;
+  --soft: #fbefdc;
+}
+:root[data-theme='dark'][data-accent='amber'] {
+  --accent: #ffd18a;
+  --focus: #ffd18a;
+  --soft: #49351e;
+  --on-accent: #382307;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light'])[data-accent='blue'] {
+    --accent: #a5c8ff;
+    --focus: #a5c8ff;
+    --soft: #23344e;
+    --on-accent: #10233f;
+  }
+  :root:not([data-theme='light'])[data-accent='violet'] {
+    --accent: #d0bcff;
+    --focus: #d0bcff;
+    --soft: #352c4c;
+    --on-accent: #24143f;
+  }
+  :root:not([data-theme='light'])[data-accent='amber'] {
+    --accent: #ffd18a;
+    --focus: #ffd18a;
+    --soft: #49351e;
+    --on-accent: #382307;
+  }
+}
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
     --bg: #111b1d;
@@ -2224,6 +2277,43 @@ code {
 .openui-icon-button.icon-button:active {
   background: var(--soft);
   color: var(--text);
+}
+.accent-picker {
+  border: 0;
+  margin: 16px 0 0;
+  padding: 0;
+}
+.accent-picker legend {
+  color: var(--muted);
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.accent-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.accent-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+.accent-option[aria-pressed='true'] {
+  border-color: var(--focus);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--focus) 22%, transparent);
+}
+.accent-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--text) 18%, transparent);
 }
 .openui-icon-button-icon {
   display: inline-flex;

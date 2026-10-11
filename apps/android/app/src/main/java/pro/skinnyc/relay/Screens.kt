@@ -16,6 +16,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.*
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -456,6 +457,26 @@ fun SessionActions(vm: RelayModel, session: Session, close: () -> Unit) {
 fun SettingsScreen(vm: RelayModel, back: () -> Unit) {
     var endpoint by remember { mutableStateOf(vm.api.base) }
     Page("Settings", back) {
+        Text("Appearance", style = MaterialTheme.typography.titleMedium)
+        Text("Color theme", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        listOf("teal" to "Relay teal", "blue" to "Ocean blue", "violet" to "Soft violet", "amber" to "Warm amber").forEach { (key, label) ->
+            val swatch = when (key) {
+                "blue" -> Color(0xFF1759A6)
+                "violet" -> Color(0xFF6542A6)
+                "amber" -> Color(0xFF8A4F00)
+                else -> Color(0xFF246B60)
+            }
+            OutlinedButton(
+                onClick = { vm.updateAccentTheme(key) },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                border = if (vm.accentTheme == key) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
+            ) {
+                Box(Modifier.size(18.dp).clip(RoundedCornerShape(50)).background(swatch))
+                Text(label, Modifier.weight(1f).padding(start = 12.dp))
+                if (vm.accentTheme == key) Icon(Icons.Outlined.Check, "Selected")
+            }
+        }
+        HorizontalDivider()
         Text("Connection", style = MaterialTheme.typography.titleMedium)
         Text(
             "Connect Tailscale on this phone. Your tailnet identity authorizes access to Fred; no pairing key is needed.",
@@ -530,6 +551,12 @@ fun DetailsScreen(vm: RelayModel, back: () -> Unit) {
                     Text(if (kind == "mode") "Agent mode" else "Permissions", style = MaterialTheme.typography.titleMedium)
                     if (catalog.optBoolean("supported")) {
                         Text("Current: ${catalog.str("currentName").ifBlank { catalog.str("current") }}")
+                        if (kind == "permissions" && s.harness == "dsh")
+                            Text(
+                                "Sandbox changes are blocked while this agent has persistent DSH terminals open. Close them in DSH and retry; Relay will not close terminals automatically.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         if (catalog.str("reason").isNotBlank()) Text(catalog.str("reason"), style = MaterialTheme.typography.bodySmall)
                         catalog.rows("options").forEach { option ->
                             OutlinedButton(

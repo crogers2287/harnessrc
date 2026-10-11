@@ -16,6 +16,14 @@ import org.json.JSONObject
 
 class RelayModel(application: Application) : AndroidViewModel(application) {
     private val prefs = application.getSharedPreferences("relay", 0)
+    var accentTheme by mutableStateOf(prefs.getString("accentTheme", "teal") ?: "teal")
+        private set
+
+    fun updateAccentTheme(value: String) {
+        if (value !in setOf("teal", "blue", "violet", "amber")) return
+        accentTheme = value
+        prefs.edit().putString("accentTheme", value).apply()
+    }
     val api = RelayApi(prefs.getString("endpoint", RelayApi.DEFAULT_ENDPOINT)!!)
     var sessions by mutableStateOf(listOf<Session>())
         private set
@@ -302,7 +310,9 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
                 if (
                     selected == id &&
                         outgoing?.str("idempotencyKey") == key &&
-                        (receipt.optBoolean("nativeSeen") || receipt.optBoolean("confirmed"))
+                        // A confirmed gateway receipt means the harness accepted
+                        // the prompt, not that it has appeared in native history.
+                        receipt.optBoolean("nativeSeen")
                 ) {
                     if (pending.str("state") == "uncertain" &&
                         (!pending.has("restoredRevision") || pending.optLong("restoredRevision") == draftRevision) &&

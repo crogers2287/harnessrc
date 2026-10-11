@@ -4,6 +4,7 @@ export const permissionSettingsSchema = z.object({
   current: z.string().optional(),
   currentName: z.string().optional(),
   reason: z.string().optional(),
+  note: z.string().optional(),
   options: z.array(
     z.object({
       value: z.string().min(1).max(100),
