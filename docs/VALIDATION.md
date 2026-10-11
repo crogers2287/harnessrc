@@ -82,3 +82,11 @@ Final local verification for this revision: TypeScript, ESLint and production bu
 ### Codex attention title recovery
 
 Codex's `[ ! ] Action Required | ` prefix is a status decoration, not a new native thread. Relay removes only that exact prefix when selecting and verifying title candidates. The native random nonce echo, foreground process identity, and per-delivery proof are unchanged. Regression coverage verifies discovery during attention, normal/attention transitions, and rejection when a terminal switches to another identically named thread.
+
+## Session recency and dictation safety · October 11
+
+The session drawer is now one cross-harness list. Pinned sessions remain first; the rest sort by the newest of client-local open time and gateway-reported agent activity, with an “Opened” or “Activity” age on each row. Android and web preserve open timestamps separately on each device/browser.
+
+Dictation cleanup is constrained to the recognized words in their original order. Added/reordered words, removed question/negation terms, or substantial deletion cause Relay to insert the original ASR result. The regression fixture where cleanup answers “Can you give me an update?” now keeps that exact spoken question. Confirmed outgoing bubbles say “Sent” / “Sent to active turn” instead of waiting forever on “Accepted”; Android also clears the temporary bubble when the native transcript echo is found by ID or exact text and timestamp.
+
+Validation: 123 gateway/web tests passed; Android unit tests passed; Android signed release build 0.1.12 completed; TypeScript, ESLint and production web build passed. Fred now runs release b239170, `/health` returns `{\"ok\":true}`, and the root serves the updated web asset. Published APK SHA-256: `8f25e7c1a0080fe366ab28d5dbadb346ae8714698f7b1546f8227167da8124d5`. Physical-phone dictation and visual interaction were not rechecked in this release.
