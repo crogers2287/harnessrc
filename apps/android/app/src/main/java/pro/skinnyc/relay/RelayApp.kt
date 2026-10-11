@@ -241,8 +241,9 @@ fun RelayApp(
         Surface(Modifier.fillMaxSize()) {
             when (screen) {
                 "settings" -> SettingsScreen(vm) { screen = "" }
-                "new" -> LaunchScreen(vm) { screen = "" }
+                "new" -> LaunchScreen(vm, showSessions = { screen = ""; scope.launch { drawer.open() } }) { screen = "" }
                 "details" -> DetailsScreen(vm) { screen = "" }
+                "tasks" -> AgentTasksScreen(vm, openQueue = { screen = "queue" }) { screen = "" }
                 "queue" -> QueueScreen(vm) { screen = "" }
                 else ->
                     Column(
@@ -282,8 +283,8 @@ fun RelayApp(
                                         overflow = TextOverflow.Ellipsis,
                                     )
                                 }
-                                ActionIcon(Icons.Outlined.Checklist, "Task queue") {
-                                    screen = "queue"
+                                ActionIcon(Icons.Outlined.Checklist, "Agent tasks") {
+                                    screen = "tasks"
                                 }
                                 ActionIcon(Icons.Outlined.MoreHoriz, "Session details") {
                                     screen = "details"

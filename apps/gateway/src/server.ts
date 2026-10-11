@@ -357,6 +357,7 @@ export async function createGateway(
       session: sessionViews(req.device).find((s) => s.id === id),
       interactions: store.interactions(id),
       tasks: store.tasks(id),
+      plan: store.latestPlan(id),
     };
   });
   app.get('/api/sessions/:id/events', async (req) => {

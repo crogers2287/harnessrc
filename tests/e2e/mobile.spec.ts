@@ -2244,3 +2244,23 @@ test.describe('download links', () => {
     expect(page.url()).toBe(url);
   });
 });
+
+test('agent task view shows native progress with the message queue secondary', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await pair(page);
+  await page.route(/\/api\/sessions\/[^/?]+$/, async route => {
+    const response = await route.fetch();
+    const body = await response.json();
+    await route.fulfill({ json: { ...body, plan: { text: 'Repair launch', steps: [
+      { text: 'Inspect saved receipt', status: 'completed' },
+      { text: 'Verify recovery', status: 'in_progress' },
+      { text: 'Publish APK', status: 'pending' },
+    ] } } });
+  });
+  await page.reload();
+  await page.getByRole('button', { name: 'Agent tasks', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '1 of 3 completed' })).toBeVisible();
+  await expect(page.getByText('Verify recovery', { exact: false })).toBeVisible();
+  await expect(page.getByText('Follow-ups run in order', { exact: false })).not.toBeVisible();
+  await page.screenshot({ path: '/tmp/relay-agent-tasks-mobile.png', fullPage: true });
+});

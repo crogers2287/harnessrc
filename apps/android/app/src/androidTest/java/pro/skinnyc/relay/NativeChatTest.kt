@@ -87,6 +87,7 @@ class NativeChatTest {
                     val body =
                         when {
                             path == "/api/launch/profiles" -> """{"profiles":[{"id":"test","label":"Claude","connected":true,"projectHome":"/home/test","models":[],"permissions":[{"id":"plan","name":"Plan","description":"Plan before changes."}]}]}"""
+                            path.startsWith("/api/launch/saved-launch") -> """{"requestId":"saved-launch","status":"uncertain","diagnostic":"Startup was not confirmed."}"""
                             path == "/api/launch/folders" -> """{"path":"/home/test/Phone project"}"""
                             path == "/api/launch" -> """{"requestId":"test","status":"started","terminalId":"new-terminal"}"""
                             path.endsWith("/mode") -> """{"supported":true,"current":"$selectedMode","options":[{"value":"default","name":"Build"},{"value":"plan","name":"Plan","description":"Applies to subsequent turns."}]}"""
@@ -371,6 +372,22 @@ class NativeChatTest {
         }
         assertTrue(requests.first { it.path?.contains("/dictation?") == true }.bodySize > 100)
         assertFalse(requests.any { it.path?.endsWith("/messages") == true })
+    }
+
+    @Test
+    fun savedUncertainLaunchCanReturnToFormWithoutSendingAgain() {
+        ctx.getSharedPreferences("relay", 0).edit().putString("launch.pending",
+            """{"requestId":"saved-launch","profileId":"test","cwd":"/home/test/project","prompt":"Keep this instruction","name":"Saved project"}""").commit()
+        scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
+        compose.onNodeWithText("New session").performClick()
+        compose.waitUntil(15000) { compose.onAllNodesWithText("Return to saved form").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("View sessions").assertExists()
+        compose.onNodeWithText("Return to saved form").performClick()
+        compose.onNodeWithText("Return to form").performClick()
+        compose.onNodeWithText("First instruction").performScrollTo()
+        compose.onNodeWithText("Keep this instruction").assertExists()
+        assertFalse(requests.any { it.path == "/api/launch" && it.method == "POST" })
+        assertNull(ctx.getSharedPreferences("relay", 0).getString("launch.pending", null))
     }
 
     @Test

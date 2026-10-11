@@ -25,6 +25,7 @@ export class Store extends EventEmitter {
       readFileSync(new URL('../../../migrations/006-messages.sql', import.meta.url), 'utf8'),
     );
     this.db.exec(readFileSync(new URL('../../../migrations/001.sql', import.meta.url), 'utf8'));
+    this.db.exec(readFileSync(new URL('../../../migrations/008-agent-plans.sql', import.meta.url), 'utf8'));
     this.db.exec(
       readFileSync(new URL('../../../migrations/005-steering.sql', import.meta.url), 'utf8'),
     );
@@ -143,6 +144,26 @@ export class Store extends EventEmitter {
       }
     }
     return out;
+  }
+  latestPlan(id: string) {
+    const row = this.db.prepare(`SELECT body FROM events WHERE session_id=? AND (
+      json_extract(body,'$.kind')='plan' OR
+      (json_extract(body,'$.kind')='tool.invocation' AND
+       json_extract(body,'$.data.tool') IN ('update_plan','functions.update_plan','TodoWrite'))
+    ) ORDER BY sequence DESC LIMIT 1`).get(id);
+    if (!row) return null;
+    const event = JSON.parse(row.body as string) as Event;
+    let data = event.data as Record<string, any>;
+    if (event.kind !== 'plan') {
+      try { data = typeof data.input === 'string' ? JSON.parse(data.input) : data.input; }
+      catch { return null; }
+    }
+    const raw = data?.steps ?? data?.plan ?? data?.todos;
+    if (!Array.isArray(raw)) return null;
+    const steps = raw.filter((s) => s && typeof (s.step ?? s.content) === 'string')
+      .map((s) => ({ text: s.step ?? s.content,
+        status: ['pending', 'in_progress', 'completed'].includes(s.status) ? s.status : 'pending' }));
+    return { steps, text: String(data.text ?? data.explanation ?? ''), updatedAt: event.timestamp };
   }
   events(id: string, after = 0, limit = 100, before?: number): Event[] {
     const rows =

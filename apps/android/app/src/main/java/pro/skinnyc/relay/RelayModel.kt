@@ -26,6 +26,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
     val session
         get() = sessions.find { it.id == selected }
 
+    var plan by mutableStateOf<JSONObject?>(null)
     var events by mutableStateOf(listOf<ChatEvent>())
         private set
 
@@ -201,6 +202,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
         voiceOriginal = ""
         attachments = emptyList()
         outgoing = null
+        plan = null
         events = emptyList()
         interactions = emptyList()
         tasks = emptyList()
@@ -290,6 +292,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
             if (selected != id) return
             interactions = data.rows("interactions")
             tasks = data.rows("tasks")
+            plan = data.optJSONObject("plan")
             data.optJSONObject("session")?.let { updated ->
                 sessions = sessions.map { if (it.id == id) Session(updated) else it }
             }

@@ -708,6 +708,36 @@ fun ChoiceField(
 }
 
 @Composable
+fun AgentTasksScreen(vm: RelayModel, openQueue: () -> Unit, back: () -> Unit) {
+    Page("Agent tasks", back) {
+        val plan = vm.plan
+        val steps = plan?.rows("steps") ?: emptyList()
+        if (plan == null) {
+            Text("No task list shared yet", style = MaterialTheme.typography.titleMedium)
+            Text("The agent’s structured plan will appear here when it shares one.")
+        } else {
+            Text("${steps.count { it.str("status") == "completed" }} of ${steps.size} completed",
+                style = MaterialTheme.typography.titleMedium)
+            if (plan.str("text").isNotBlank()) Text(plan.str("text"))
+            steps.forEach { step ->
+                Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(when (step.str("status")) { "completed" -> "✓"; "in_progress" -> "→"; else -> "○" })
+                    Column {
+                        Text(step.str("text"))
+                        Text(when (step.str("status")) { "completed" -> "Completed"; "in_progress" -> "In progress"; else -> "Pending" },
+                            style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        }
+        HorizontalDivider()
+        OutlinedButton(onClick = openQueue, modifier = Modifier.heightIn(min = 48.dp)) {
+            Text("Queued messages (${vm.tasks.count { it.str("status") == "pending" }})")
+        }
+    }
+}
+
+@Composable
 fun QueueScreen(vm: RelayModel, back: () -> Unit) {
     var edit by remember { mutableStateOf<JSONObject?>(null) }
     var prompt by remember { mutableStateOf("") }
@@ -801,7 +831,7 @@ fun QueueScreen(vm: RelayModel, back: () -> Unit) {
 }
 
 @Composable
-fun LaunchScreen(vm: RelayModel, back: () -> Unit) {
+fun LaunchScreen(vm: RelayModel, showSessions: () -> Unit = {}, back: () -> Unit) {
     val context = LocalContext.current
     val launchPrefs = remember {
         context.getSharedPreferences("relay", android.content.Context.MODE_PRIVATE)
@@ -812,17 +842,17 @@ fun LaunchScreen(vm: RelayModel, back: () -> Unit) {
     }
     var profiles by remember { mutableStateOf(listOf<JSONObject>()) }
     var error by remember { mutableStateOf("") }
-    var profileId by rememberSaveable { mutableStateOf("") }
-    var permission by rememberSaveable { mutableStateOf("") }
+    var profileId by rememberSaveable { mutableStateOf(pendingLaunch.str("profileId")) }
+    var permission by rememberSaveable { mutableStateOf(pendingLaunch.str("permission")) }
     var permissionConfirmed by rememberSaveable { mutableStateOf(false) }
     var newFolder by remember { mutableStateOf(false) }
     var folderName by rememberSaveable { mutableStateOf("") }
     var creating by remember { mutableStateOf(false) }
-    var model by rememberSaveable { mutableStateOf("") }
-    var preset by rememberSaveable { mutableStateOf("") }
-    var cwd by rememberSaveable { mutableStateOf("") }
-    var name by rememberSaveable { mutableStateOf("") }
-    var prompt by rememberSaveable { mutableStateOf("") }
+    var model by rememberSaveable { mutableStateOf(pendingLaunch.str("model")) }
+    var preset by rememberSaveable { mutableStateOf(pendingLaunch.str("agentPreset")) }
+    var cwd by rememberSaveable { mutableStateOf(pendingLaunch.str("cwd")) }
+    var name by rememberSaveable { mutableStateOf(pendingLaunch.str("name")) }
+    var prompt by rememberSaveable { mutableStateOf(pendingLaunch.str("prompt")) }
     var requestId by rememberSaveable {
         mutableStateOf(pendingLaunch.str("requestId").ifBlank { UUID.randomUUID().toString() })
     }
@@ -830,6 +860,7 @@ fun LaunchScreen(vm: RelayModel, back: () -> Unit) {
     var uncertain by rememberSaveable {
         mutableStateOf(pendingLaunch.str("requestId").isNotBlank())
     }
+    var resetLaunch by remember { mutableStateOf(false) }
     var starting by remember { mutableStateOf(false) }
     var folders by remember { mutableStateOf<JSONObject?>(null) }
     val scope = rememberCoroutineScope()
@@ -893,11 +924,24 @@ fun LaunchScreen(vm: RelayModel, back: () -> Unit) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         if (receipt != null || uncertain || starting) {
-            LinearProgressIndicator(Modifier.fillMaxWidth())
+            if (starting || uncertain || receipt?.str("status") == "starting")
+                LinearProgressIndicator(Modifier.fillMaxWidth())
             Text(
                 receipt?.str("diagnostic")?.ifBlank { "Starting your session…" }
                     ?: "Checking launch delivery…"
             )
+            if (!starting) {
+                Button(onClick = { showSessions() }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                    Text("View sessions")
+                }
+                OutlinedButton(onClick = { uncertain = true }, enabled = !uncertain,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Check launch again") }
+                if (receipt != null && receipt?.str("status") != "starting") {
+                    TextButton(onClick = { resetLaunch = true }, modifier = Modifier.heightIn(min = 48.dp)) {
+                        Text("Return to saved form")
+                    }
+                }
+            }
         } else {
             ChoiceField(
                 "Agent",
@@ -1027,6 +1071,21 @@ fun LaunchScreen(vm: RelayModel, back: () -> Unit) {
         }
         if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error)
     }
+    if (resetLaunch) AlertDialog(
+        onDismissRequest = { resetLaunch = false },
+        title = { Text("Checked your sessions?") },
+        text = { Text("If this session already exists, open it from the session list. Returning to the form keeps your settings and prompt; starting it again creates another session.") },
+        confirmButton = { TextButton(onClick = {
+            launchPrefs.edit().remove("launch.pending").commit()
+            receipt = null
+            uncertain = false
+            requestId = UUID.randomUUID().toString()
+            permissionConfirmed = false
+            error = ""
+            resetLaunch = false
+        }) { Text("Return to form") } },
+        dismissButton = { TextButton(onClick = { resetLaunch = false }) { Text("Cancel") } },
+    )
     folders?.let { listing ->
         ModalBottomSheet(onDismissRequest = { folders = null }) {
             Column(Modifier.fillMaxWidth().padding(20.dp)) {

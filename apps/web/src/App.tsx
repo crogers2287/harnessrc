@@ -61,7 +61,8 @@ import {
 import { api, Connection } from '@harnessrc/client-sdk';
 import type { SessionView, Event, Interaction, Task } from '@harnessrc/protocol';
 import { Status, IconButton, Empty } from '@harnessrc/ui';
-type Detail = { session: SessionView; interactions: Interaction[]; tasks: Task[] };
+type AgentPlan = { steps: { text: string; status: string }[]; text: string; updatedAt: string };
+type Detail = { plan?: AgentPlan | null; session: SessionView; interactions: Interaction[]; tasks: Task[] };
 type Route = { session?: string; view?: string; interaction?: string };
 const getRoute = (): Route => Object.fromEntries(new URLSearchParams(location.search));
 const previewText = (text: string) =>
@@ -826,8 +827,19 @@ function Conversation({
   if (route.view === 'queue')
     return (
       <>
-        <PageHeader title="Task queue" back={() => navigate({ session: session.id })} />
-        <QueueView session={session} tasks={detail.data?.tasks ?? []} />
+        <PageHeader title="Agent tasks" back={() => navigate({ session: session.id })} />
+        <section className="plan-card" aria-label="Agent plan">
+          {detail.data?.plan ? <>
+            <h2>{detail.data.plan.steps.filter(s => s.status === 'completed').length} of {detail.data.plan.steps.length} completed</h2>
+            {detail.data.plan.text && <p>{detail.data.plan.text}</p>}
+            <ol>{detail.data.plan.steps.map((step, index) => <li key={index} style={{ paddingBlock: 8 }}>
+              <strong>{step.status === 'completed' ? 'Completed' : step.status === 'in_progress' ? 'In progress' : 'Pending'}</strong> — {step.text}
+            </li>)}</ol>
+          </> : <><h2>No task list shared yet</h2><p>The agent’s structured plan will appear here when it shares one.</p></>}
+        </section>
+        <details className="plan-card"><summary style={{ minHeight: 48 }}>Queued messages</summary>
+          <QueueView session={session} tasks={detail.data?.tasks ?? []} />
+        </details>
       </>
     );
   if (route.view === 'details')
@@ -860,7 +872,7 @@ function Conversation({
           </button>
         </div>
         <IconButton
-          label={`Task queue, ${session.queuedCount} pending`}
+          label="Agent tasks"
           onClick={() => navigate({ session: session.id, view: 'queue' })}
         >
           <ListTodo size={22} />
