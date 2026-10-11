@@ -220,10 +220,13 @@ test('new Codex threads are named before their first Herdr CLI owner starts; rep
   const original = CodexDaemon.prototype.request;
   const nativeCalls: { method: string; params: any }[] = [];
   const nativeId = randomUUID();
+  let permissionsMismatch = false;
+  let prompts = 0;
   CodexDaemon.prototype.request = async function (method, params) {
     nativeCalls.push({ method, params });
     if (method === 'thread/start') return { thread: { id: nativeId } };
-    if (method === 'thread/name/set') return {};
+    if (method === 'thread/name/set' || method === 'thread/settings/update') return {};
+    if (method === 'thread/resume') return { thread: { id: nativeId }, sandbox: { type: permissionsMismatch ? 'readOnly' : 'workspaceWrite' }, approvalPolicy: 'on-request' };
     throw new Error('Unexpected native operation: ' + method);
   };
   const store = new Store(':memory:');
@@ -246,7 +249,11 @@ test('new Codex threads are named before their first Herdr CLI owner starts; rep
           agent_session: { value: nativeId },
         },
       };
-    if (method === 'agent.prompt') return {};
+    if (method === 'agent.prompt') {
+      prompts++;
+      assert.equal(nativeCalls.at(-1)?.method, 'thread/resume');
+      return {};
+    }
     throw new Error(method);
   };
   const profile = launchProfileSchema.parse({
@@ -289,13 +296,14 @@ test('new Codex threads are named before their first Herdr CLI owner starts; rep
     assert.equal((await launcher.launch(request, 'device')).status, 'started');
     assert.deepEqual(
       nativeCalls.map((c) => c.method),
-      ['thread/start', 'thread/name/set'],
+      ['thread/start', 'thread/name/set', 'thread/settings/update', 'thread/resume'],
     );
     assert.equal(nativeCalls[0].params.sandbox, 'workspace-write');
     assert.equal(nativeCalls[0].params.approvalPolicy, 'on-request');
     assert.equal(nativeCalls[0].params.modelProvider, 'local_models');
     assert.equal(nativeCalls[0].params.model, 'codex/gpt-6.1-sol');
     assert.equal(nativeCalls[1].params.threadId, nativeId);
+    assert.deepEqual(nativeCalls[2].params, { threadId: nativeId, permissions: ':workspace', approvalPolicy: 'on-request' });
     assert.deepEqual(start.args, [
       'resume',
       nativeId,
@@ -305,8 +313,11 @@ test('new Codex threads are named before their first Herdr CLI owner starts; rep
       'codex/gpt-6.1-sol',
     ]);
     await launcher.launch(request, 'device');
-    assert.equal(nativeCalls.length, 2);
+    assert.equal(nativeCalls.length, 4);
     assert.equal(launcher.receipt(request.requestId)?.nativeSessionId, nativeId);
+    permissionsMismatch = true;
+    assert.equal((await launcher.launch({ ...request, requestId: randomUUID() }, 'device')).status, 'uncertain');
+    assert.equal(prompts, 1, 'never send the first instruction with unconfirmed permissions');
   } finally {
     CodexDaemon.prototype.request = original;
     store.close();

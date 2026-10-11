@@ -430,6 +430,25 @@ export class Launcher {
         if (attempt >= 100) throw new Error('Agent did not become ready');
         await new Promise((resolve) => setTimeout(resolve, 200));
       }
+      if (receipt.nativeSessionId && socket && permission?.sandbox) {
+        // Attaching the CLI can restore its local defaults over thread/start settings.
+        // Apply the chosen policy only after the verified owner is ready, then read it back.
+        const native = new CodexDaemon(socket);
+        try {
+          const profiles = { 'read-only': ':read-only', 'workspace-write': ':workspace', 'danger-full-access': ':danger-full-access' };
+          const sandboxTypes = { 'read-only': 'readOnly', 'workspace-write': 'workspaceWrite', 'danger-full-access': 'dangerFullAccess' };
+          await native.request('thread/settings/update', {
+            threadId: receipt.nativeSessionId,
+            permissions: profiles[permission.sandbox],
+            approvalPolicy: permission.approvalPolicy,
+          });
+          const state = await native.request('thread/resume', { threadId: receipt.nativeSessionId, excludeTurns: true });
+          if (state.thread?.id !== receipt.nativeSessionId ||
+              state.sandbox?.type !== sandboxTypes[permission.sandbox] ||
+              (permission.approvalPolicy && state.approvalPolicy !== permission.approvalPolicy))
+            throw new Error('Launch permissions were not confirmed');
+        } finally { native.close(); }
+      }
       await client.request('agent.prompt', { target, text: input.prompt }, 15000);
       receipt.status = 'started';
     } catch {

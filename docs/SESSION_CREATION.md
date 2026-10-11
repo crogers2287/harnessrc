@@ -49,4 +49,6 @@ The gateway service must have write access to every configured project root for 
 
 Codex remote launches require the installed CLI to support `codex resume --remote`. Check the binary reached by the Herdr shell, including broken symlinks earlier in PATH: an older system Codex can silently become the fallback. On Fred, a removed standalone package left `~/.local/bin/codex` dangling; the still-running 0.162.1 executable and code-mode host were recovered from their `/proc/<pid>/exe` handles to restore the original installation path without interrupting existing sessions.
 
-For native-daemon launches, permissions are applied exactly once through `thread/start`. Do not append sandbox/approval CLI flags to `resume --remote`: Codex rejects those overrides. Direct CLI launches still receive their configured permission flags.
+For native-daemon launches, permissions are initially applied through `thread/start` and verified again after CLI attachment. Do not append sandbox/approval CLI flags to `resume --remote`: Codex rejects those overrides. Direct CLI launches still receive their configured permission flags.
+
+The remote CLI attachment can restore local defaults over initial thread settings. After Herdr confirms the exact native session identity and interactive readiness, Relay reapplies the chosen native permission profile and approval policy through the existing daemon, then reads back both before sending the first instruction. A mismatch stops delivery and records an unconfirmed launch; no initial prompt is sent under a different policy.
