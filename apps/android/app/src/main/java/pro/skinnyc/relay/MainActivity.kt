@@ -35,7 +35,7 @@ class MainActivity : ComponentActivity() {
                     it.action == Intent.ACTION_SEND || it.action == Intent.ACTION_SEND_MULTIPLE
                 }
         setContent {
-            RelayTheme(model.accentTheme) {
+            RelayTheme(model.colorMode, model.accentTheme) {
                 RelayApp(model, shared, keyboardVisible) {
                     shared = null
                     setIntent(Intent(this, MainActivity::class.java).setAction(Intent.ACTION_MAIN))

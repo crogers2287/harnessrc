@@ -37,8 +37,12 @@ private val Dark =
     )
 
 @Composable
-fun RelayTheme(accent: String = "teal", content: @Composable () -> Unit) {
-    val dark = isSystemInDarkTheme()
+fun RelayTheme(mode: String = "system", accent: String = "teal", content: @Composable () -> Unit) {
+    val dark = when (mode) {
+        "light" -> false
+        "dark" -> true
+        else -> isSystemInDarkTheme()
+    }
     val primary = when (accent) {
         "blue" -> if (dark) Color(0xFFA5C8FF) else Color(0xFF1759A6)
         "violet" -> if (dark) Color(0xFFD0BCFF) else Color(0xFF6542A6)

@@ -458,6 +458,17 @@ fun SettingsScreen(vm: RelayModel, back: () -> Unit) {
     var endpoint by remember { mutableStateOf(vm.api.base) }
     Page("Settings", back) {
         Text("Appearance", style = MaterialTheme.typography.titleMedium)
+        Text("Theme", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        listOf("system" to "System", "light" to "Light", "dark" to "Dark").forEach { (key, label) ->
+            OutlinedButton(
+                onClick = { vm.updateColorMode(key) },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                border = if (vm.colorMode == key) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
+            ) {
+                Text(label, Modifier.weight(1f))
+                if (vm.colorMode == key) Icon(Icons.Outlined.Check, "Selected")
+            }
+        }
         Text("Color theme", color = MaterialTheme.colorScheme.onSurfaceVariant)
         listOf("teal" to "Relay teal", "blue" to "Ocean blue", "violet" to "Soft violet", "amber" to "Warm amber").forEach { (key, label) ->
             val swatch = when (key) {

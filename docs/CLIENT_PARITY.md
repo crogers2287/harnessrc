@@ -13,7 +13,7 @@ Both clients are first-class Relay clients. A user-facing feature or fix must be
 | Start session, folder selection, DSH profile, model/custom model | Implemented | Implemented | NewSession.tsx / LaunchScreen |
 | Send, Steer, explicit Queue | Implemented | Implemented | Gateway messages API is authoritative |
 | Outgoing chat bubble remains until native transcript echo | Implemented | Implemented | A gateway-accepted receipt alone no longer hides the message |
-| Appearance theme and accent palette | Implemented | Implemented | System/light/dark plus persistent teal, blue, violet, and amber accents |
+| Appearance theme and accent palette | Implemented | Implemented | Both have system/light/dark and persistent teal, blue, violet, and amber accents |
 | Uncertain delivery recovery | Retains card, Restore draft / Dismiss | Durable original-key Retry safely | Gap: web does not yet provide the equivalent original-key retry control; Restore draft must not be described as safe retry |
 | Questions, approvals, stale request handling | Implemented | Implemented | Same interaction API; native request_user_input supported on verified CLI Codex; other async formats and CLI approvals remain limited |
 | Queue edit, cancel, pause/resume | Implemented | Implemented | App.tsx / QueueScreen |

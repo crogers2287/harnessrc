@@ -16,8 +16,16 @@ import org.json.JSONObject
 
 class RelayModel(application: Application) : AndroidViewModel(application) {
     private val prefs = application.getSharedPreferences("relay", 0)
+    var colorMode by mutableStateOf(prefs.getString("colorMode", "system") ?: "system")
+        private set
     var accentTheme by mutableStateOf(prefs.getString("accentTheme", "teal") ?: "teal")
         private set
+
+    fun updateColorMode(value: String) {
+        if (value !in setOf("system", "light", "dark")) return
+        colorMode = value
+        prefs.edit().putString("colorMode", value).apply()
+    }
 
     fun updateAccentTheme(value: String) {
         if (value !in setOf("teal", "blue", "violet", "amber")) return
