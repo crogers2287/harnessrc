@@ -3,6 +3,8 @@ package pro.skinnyc.relay
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import org.json.JSONArray
+import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -105,6 +107,32 @@ class ProtocolTest {
         assertEquals("a", groupConversationActivity(rows.take(2)).first().first().id)
         assertEquals("a", groups.first().first().id)
         assertTrue(groupConversationActivity(emptyList()).isEmpty())
+    }
+
+    @Test
+    fun acceptedOutgoingBubbleReconcilesByNativeIdOrExactRecentTranscriptText() {
+        val started = java.time.Instant.parse("2026-10-11T15:00:00Z").toEpochMilli()
+        val outgoing =
+            json(
+                "idempotencyKey" to "relay-request",
+                "prompt" to "Can you give me an update?",
+                "startedAtMillis" to started,
+                "attachments" to JSONArray(),
+            )
+        val echo =
+            ChatEvent(
+                json(
+                    "id" to "native-echo",
+                    "kind" to "user.message",
+                    "timestamp" to "2026-10-11T15:00:03Z",
+                    "data" to json("text" to "Can you give me an update?"),
+                )
+            )
+        assertTrue(hasNativeEcho(outgoing, listOf(echo)))
+        assertFalse(hasNativeEcho(outgoing, listOf(echo.copy(data = JSONObject(echo.data.toString()).put("timestamp", "2026-10-11T14:59:00Z")))))
+        assertFalse(hasNativeEcho(outgoing, listOf(echo.copy(data = JSONObject(echo.data.toString()).put("kind", "assistant.message")))))
+        val correlated = echo.copy(data = JSONObject(echo.data.toString()).put("data", json("requestId" to "relay-request")))
+        assertTrue(hasNativeEcho(outgoing, listOf(correlated)))
     }
 
     @Test
