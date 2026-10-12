@@ -113,3 +113,15 @@ test('Claude background task result payload is preserved in activity details', (
     ),
   );
 });
+
+test('Claude task notifications with a background-work note render as a rich activity card', () => {
+  const result = presentUserMessage(
+    '<task-notification><task-id>ae392a3cd7cf6080f</task-id><output-file>/tmp/task.output</output-file><status>completed</status><summary>Agent "Integrate cold read, ticket, fix kkc batch 1" finished</summary><note>This agent stopped with background work of its own still running. It may resume on its own when that work completes or reports, and the same task-id notifies again if it does; the result below may be interim.</note><result>Waiting for the suite.</result><usage><subagent_tokens>429083</subagent_tokens><tool_uses>68</tool_uses><duration_ms>4672431</duration_ms></usage></task-notification>',
+  );
+  assert.equal(result.text, 'Agent "Integrate cold read, ticket, fix kkc batch 1" finished');
+  assert.equal(result.activity?.title, 'Background task completed');
+  assert.ok(result.activity?.details.some((d) => d.label === 'Note' && d.value.includes('may resume on its own')));
+  assert.ok(result.activity?.details.some((d) => d.label === 'Result' && d.value === 'Waiting for the suite.'));
+  assert.ok(result.activity?.details.some((d) => d.label === 'Usage' && d.value.includes('subagent_tokens: 429083')));
+  assert.ok(result.activity?.details.every((d) => !/<\/?(?:task-notification|note|result|usage|subagent_tokens)>/.test(d.value)));
+});

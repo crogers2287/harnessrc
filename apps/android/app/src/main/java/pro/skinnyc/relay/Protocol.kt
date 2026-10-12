@@ -230,7 +230,7 @@ fun taskNotice(text: String): TaskNotice? {
     var valid = true
     val rest =
         Regex(
-                """<(task-id|tool-use-id|output-file|status|summary|task-type|result|usage|diagnostics)>([\s\S]*?)</\1>"""
+                """<(task-id|tool-use-id|output-file|status|summary|task-type|result|note|usage|diagnostics)>([\s\S]*?)</\1>"""
             )
             .replace(match.groupValues[1]) {
                 val key = it.groupValues[1]
@@ -252,6 +252,7 @@ fun taskNotice(text: String): TaskNotice? {
             "tool-use-id" to "Tool call",
             "output-file" to "Output file",
             "task-type" to "Task type",
+            "note" to "Note",
         )
     val details =
         fields

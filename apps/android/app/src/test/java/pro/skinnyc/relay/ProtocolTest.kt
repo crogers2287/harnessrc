@@ -33,6 +33,19 @@ class ProtocolTest {
     }
 
     @Test
+    fun taskNotificationWithBackgroundWorkNoteIsStructured() {
+        val notice =
+            taskNotice(
+                "<task-notification><task-id>ae392a3cd7cf6080f</task-id><output-file>/tmp/task.output</output-file><status>completed</status><summary>Agent \"Integrate cold read, ticket, fix kkc batch 1\" finished</summary><note>This agent stopped with background work of its own still running. It may resume on its own when that work completes or reports, and the same task-id notifies again if it does; the result below may be interim.</note><result>Waiting for the suite.</result><usage><subagent_tokens>429083</subagent_tokens><tool_uses>68</tool_uses><duration_ms>4672431</duration_ms></usage></task-notification>"
+            )!!
+        assertEquals("Agent \"Integrate cold read, ticket, fix kkc batch 1\" finished", notice.summary)
+        assertTrue(notice.details.any { it.first == "Note" && it.second.contains("may resume on its own") })
+        assertTrue(notice.details.any { it.first == "Result" && it.second == "Waiting for the suite." })
+        assertTrue(notice.details.any { it.first == "Usage" && it.second.contains("subagent_tokens: 429083") })
+        assertTrue(notice.details.none { it.second.contains("<note>") || it.second.contains("<subagent_tokens>") })
+    }
+
+    @Test
     fun messageTimesUseNativeTimestampAndPhoneTimezone() {
         val value =
             messageTimestamp(

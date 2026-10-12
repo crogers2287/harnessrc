@@ -52,7 +52,7 @@ export function presentUserMessage(text: string): MessagePresentation {
       },
     );
     const rest = body.replace(
-      /<(task-id|tool-use-id|output-file|status|summary|task-type|result)>([\s\S]*?)<\/\1>/g,
+      /<(task-id|tool-use-id|output-file|status|summary|task-type|result|note)>([\s\S]*?)<\/\1>/g,
       (_, key: string, value: string) => {
         if (key in fields) valid = false;
         fields[key] = value.trim();
@@ -70,6 +70,7 @@ export function presentUserMessage(text: string): MessagePresentation {
         'tool-use-id': 'Tool call',
         'output-file': 'Output file',
         'task-type': 'Task type',
+        note: 'Note',
         status: 'Status',
         usage: 'Usage',
         diagnostics: 'Diagnostics',
