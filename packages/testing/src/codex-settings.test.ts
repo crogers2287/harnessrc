@@ -9,14 +9,21 @@ function fixture() {
   let owner = true;
   let confirm = true;
   let applyApproval = true;
+  let onlyMedium = false;
   const state = {
     thread: { id: 'thread' },
+    model: 'gpt-test',
+    modelProvider: 'openai',
     activePermissionProfile: { id: ':workspace' },
     approvalPolicy: 'on-request',
     sandbox: { type: 'workspaceWrite' },
     collaborationMode: {
       mode: 'default',
-      settings: { model: 'gpt-test', reasoning_effort: 'high' },
+      settings: {
+        model: 'gpt-test',
+        reasoning_effort: 'high',
+        developer_instructions: 'Keep project instructions.',
+      },
     },
   };
   const settings = new CodexSettings(
@@ -37,6 +44,21 @@ function fixture() {
               { id: 'forbidden', allowed: false },
             ],
           };
+        if (method === 'model/list')
+          return {
+            data: [
+              { model: 'gpt-test', displayName: 'Test' },
+              {
+                model: 'gpt-next',
+                displayName: 'Next',
+                defaultReasoningEffort: 'medium',
+                supportedReasoningEfforts: (onlyMedium ? ['medium'] : ['high', 'medium']).map(
+                  (reasoningEffort) => ({ reasoningEffort }),
+                ),
+              },
+            ],
+            nextCursor: null,
+          };
         if (method === 'thread/settings/update') {
           writes.push(params);
           if (confirm && params.permissions)
@@ -49,6 +71,7 @@ function fixture() {
             state.approvalPolicy = params.approvalPolicy;
           if (confirm && params.collaborationMode)
             state.collaborationMode = params.collaborationMode;
+          if (confirm && params.model) state.model = params.model;
           return {};
         }
         throw new Error(method);
@@ -63,6 +86,9 @@ function fixture() {
     settings,
     s,
     writes,
+    restrictEffort: () => {
+      onlyMedium = true;
+    },
     state,
     unload: () => {
       loaded = false;
@@ -183,4 +209,59 @@ test('profile-only acknowledgement cannot falsely report successful bypass', asy
     f.settings.set(f.s, 'permissions', ':danger-full-access', ':workspace'),
     /not confirmed/,
   );
+});
+
+test('live model changes use the native catalog and preserve planning, permissions and instructions', async () => {
+  const f = fixture();
+  f.state.collaborationMode.mode = 'plan';
+  const models = await f.settings.models(f.s);
+  assert.equal(models.current?.model, 'gpt-test');
+  assert.deepEqual(
+    models.groups[0].models.map((m) => m.id),
+    ['gpt-test', 'gpt-next'],
+  );
+  const result = await f.settings.setModel(f.s, { provider: 'openai', model: 'gpt-next' });
+  assert.equal(result.current?.model, 'gpt-next');
+  assert.equal(f.state.collaborationMode.mode, 'plan');
+  assert.equal(f.state.collaborationMode.settings.reasoning_effort, 'high');
+  assert.equal(
+    f.state.collaborationMode.settings.developer_instructions,
+    'Keep project instructions.',
+  );
+  assert.equal(f.state.approvalPolicy, 'on-request');
+  assert.equal(f.state.activePermissionProfile.id, ':workspace');
+  assert.equal(f.writes[0].permissions, undefined);
+});
+
+test('model changes reject unknown models, other providers, replaced owners and unconfirmed updates', async () => {
+  const f = fixture();
+  await assert.rejects(
+    f.settings.setModel(f.s, { provider: 'openai', model: 'invented' }),
+    /Choose a model/,
+  );
+  await assert.rejects(
+    f.settings.setModel(f.s, { provider: 'other', model: 'gpt-next' }),
+    /Choose a model/,
+  );
+  assert.equal(f.writes.length, 0);
+  f.unconfirmed();
+  await assert.rejects(
+    f.settings.setModel(f.s, { provider: 'openai', model: 'gpt-next' }),
+    /not confirmed/,
+  );
+  f.replace();
+  await assert.rejects(f.settings.models(f.s), /Owner replaced/);
+});
+
+test('model switching selects a compatible default effort and rejects unsupported explicit effort', async () => {
+  const f = fixture();
+  f.restrictEffort();
+  await assert.rejects(
+    f.settings.setModel(f.s, { provider: 'openai', model: 'gpt-next', reasoningEffort: 'ultra' }),
+    /reasoning effort offered/,
+  );
+  assert.equal(f.writes.length, 0);
+  await f.settings.setModel(f.s, { provider: 'openai', model: 'gpt-next' });
+  assert.equal(f.state.collaborationMode.settings.reasoning_effort, 'medium');
+  assert.equal(f.state.approvalPolicy, 'on-request');
 });

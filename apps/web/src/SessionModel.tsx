@@ -1,34 +1,29 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@harnessrc/client-sdk';
-import type { SessionView } from '@harnessrc/protocol';
-type Choice = { provider: string; model: string };
-type Catalog = {
-  current?: Choice;
-  default: Choice;
-  groups: { id: string; name: string; models: { id: string; name: string }[] }[];
-};
-export function DshModel({ session }: { session: SessionView }) {
+import type { SessionView, ModelCatalog } from '@harnessrc/protocol';
+export function SessionModel({ session }: { session: SessionView }) {
   const query = useQueryClient();
-  const catalog = useQuery<Catalog>({
-    queryKey: ['dsh-models', session.id],
+  const catalog = useQuery<ModelCatalog>({
+    queryKey: ['session-models', session.id],
     queryFn: () => api(`/api/sessions/${session.id}/models`),
   });
   const [choice, setChoice] = useState('');
   const mutation = useMutation({
     mutationFn: () => api(`/api/sessions/${session.id}/model`, { method: 'POST', body: choice }),
     onSuccess: () => {
+      setChoice('');
       void query.invalidateQueries({ queryKey: ['sessions'] });
-      void query.invalidateQueries({ queryKey: ['dsh-models', session.id] });
+      void query.invalidateQueries({ queryKey: ['session-models', session.id] });
     },
   });
   const current = catalog.data?.current ?? catalog.data?.default;
   return (
     <section className="settings-section">
-      <h3>DSH model</h3>
+      <h3>Session model</h3>
       <p className="helper">
-        Choose the provider and model for the next model request. An in-flight request keeps its
-        current model.
+        {catalog.data?.reason ??
+          'Choose the provider and model for the next model request. An in-flight request keeps its current model.'}
       </p>
       {catalog.isPending ? (
         <p role="status">Loading models…</p>
@@ -71,7 +66,7 @@ export function DshModel({ session }: { session: SessionView }) {
           </button>
         </form>
       )}
-      {mutation.isSuccess && <p role="status">Model selection saved in DSH.</p>}
+      {mutation.isSuccess && <p role="status">Model selection saved.</p>}
       {mutation.error && (
         <p className="error" role="alert">
           {mutation.error.message}

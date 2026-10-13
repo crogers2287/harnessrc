@@ -16,7 +16,7 @@ import {
   type SessionFilters as FilterState,
 } from './session-filters.ts';
 import { InstallApp } from './InstallApp.tsx';
-import { DshModel } from './DshModel.tsx';
+import { SessionModel } from './SessionModel.tsx';
 import { ComposerInput } from './ComposerInput.tsx';
 import { presentUserMessage, toolLabel } from '@harnessrc/protocol';
 import { OutgoingMessages, useOutgoing } from './outgoing.tsx';
@@ -954,6 +954,9 @@ function Conversation({
             <dt>Directory</dt>
             <dd>{session.cwd || 'Not reported'}</dd>
           </dl>
+          {session.capabilities.changeModel && (
+            <button onClick={() => navigate({ session: session.id, view: 'details' })}>Change model</button>
+          )}
         </section>
       )}
       {connection !== 'connected' && (
@@ -1833,9 +1836,9 @@ function SessionDetails({ session: s }: { session: SessionView }) {
       ) : (
         <Status status={s.status} />
       )}
+      {s.capabilities.changeModel && <SessionModel key={s.id} session={s} />}
       <SessionPermissions key={`${s.id}:permissions`} sessionId={s.id} />
       <SessionPermissions key={`${s.id}:mode`} sessionId={s.id} kind="mode" />
-      {s.harness === 'dsh' && s.capabilities.sendMessage && <DshModel session={s} />}
       <dl className="details-list">
         {[
           ['Agent', s.harness],

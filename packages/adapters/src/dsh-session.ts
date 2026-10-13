@@ -12,6 +12,8 @@ import {
   type Task,
   type Interaction,
   type PermissionSettings,
+  type ModelCatalog,
+  type ModelSelection,
 } from '@harnessrc/protocol';
 import { DshClient, type DshAttachment } from './dsh.ts';
 
@@ -131,6 +133,7 @@ export function dshEvents(input: unknown): SourceEvent[] {
 /** Existing web-host session. All writes go through that host's sole native agent owner. */
 export class DshAdapter implements Adapter {
   capabilities = capabilities([
+    'changeModel',
     'readConversation',
     'streamConversation',
     'sendMessage',
@@ -173,6 +176,20 @@ export class DshAdapter implements Adapter {
     const row = rows.find((r) => r.sessionId === s.nativeSessionId);
     if (!row) throw new Error('DSH native session no longer exists');
     return row;
+  }
+  async models(s: Session): Promise<ModelCatalog> {
+    const catalog = (await this.native.models()) as ModelCatalog;
+    const row = await this.row(s);
+    return { ...catalog, current: row.projections?.values.modelSelection?.next };
+  }
+  async setModel(s: Session, selection: ModelSelection): Promise<ModelCatalog> {
+    await this.native.selectModel(
+      s.nativeSessionId,
+      selection.provider,
+      selection.model,
+      selection.reasoningEffort,
+    );
+    return this.models(s);
   }
   async permissions(s: Session): Promise<PermissionSettings> {
     const row = await this.row(s);

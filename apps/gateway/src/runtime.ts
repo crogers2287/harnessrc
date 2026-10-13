@@ -268,7 +268,11 @@ export class Runtime extends EventEmitter {
                 ? (session) => this.codexLinks.get(hostId)!.interrupt(client, session)
                 : undefined,
               this.codexLinks.get(hostId)?.hasLink(s)
-                ? this.codexLinks.get(hostId)!.settings(client)
+                ? this.codexLinks.get(hostId)!.settings(
+                    client,
+                    (session, task) => this.attachments.prompt(session, task),
+                    (session, task) => this.attachments.imagePaths(session, task.attachments),
+                  )
                 : undefined,
             );
           }
@@ -377,10 +381,16 @@ export class Runtime extends EventEmitter {
                   .tasks(s.id)
                   .find(
                     (t) =>
-                      t.attachments.length &&
+                      (t.attachments.length ||
+                        String(e.data.text ?? '').includes(`[Relay request ${t.id}]`)) &&
                       t.generation === s.generation &&
                       Date.parse(e.timestamp) >= Date.parse(t.createdAt) &&
-                      matchesTaskReceipt(e.data.text, t.id, this.attachments.prompt(s, t)),
+                      matchesTaskReceipt(
+                        e.data.text,
+                        t.id,
+                        this.attachments.prompt(s, t) +
+                          (t.attachments.length ? '' : `\n\n[Relay request ${t.id}]`),
+                      ),
                   );
               if (!task) {
                 const match = String(e.data.text ?? '').match(/\[Relay request ([a-f0-9-]{36})\]/);

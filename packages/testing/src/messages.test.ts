@@ -254,3 +254,36 @@ test('preflight rejection does not leave an uncertain receipt or block a safe la
     await f.close();
   }
 });
+
+test('native delivery markers become task identity without leaking into either client transcript', async () => {
+  const f = await fixture({ startRuntime: false });
+  try {
+    const task = f.gateway.runtime.queue.add(f.session.id, {
+      prompt: 'Display my actual message',
+      idempotencyKey: randomUUID(),
+    });
+    task.status = 'running';
+    f.gateway.store.saveTask(task);
+    f.mock.events.push({
+      sourceId: 'native-marker-echo',
+      timestamp: new Date().toISOString(),
+      kind: 'user.message',
+      data: { text: `${task.prompt}\n\n[Relay request ${task.id}]` },
+    });
+    await f.gateway.runtime.tick();
+    const event = f.gateway.store
+      .events(f.session.id)
+      .find((e) => e.sourceId === 'native-marker-echo')!;
+    assert.equal(event.data.text, task.prompt);
+    assert.equal(event.data.taskId, task.id);
+    assert.deepEqual(event.data.attachments, []);
+    await f.gateway.runtime.tick();
+    assert.equal(
+      f.gateway.store.events(f.session.id).filter((e) => e.sourceId === 'native-marker-echo')
+        .length,
+      1,
+    );
+  } finally {
+    await f.close();
+  }
+});

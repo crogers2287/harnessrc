@@ -505,7 +505,7 @@ fun Chat(vm: RelayModel, modifier: Modifier) {
                             when (pending.str("state")) {
                                 "sending" -> "Sending…"
                                 "uncertain" -> "Delivery not confirmed"
-                                else -> if (pending.str("mode") == "steer") "Sent to active turn" else "Sent"
+                                else -> "Accepted · awaiting native conversation"
                             },
                             Modifier.weight(1f).padding(start = 8.dp),
                             style = MaterialTheme.typography.labelMedium,

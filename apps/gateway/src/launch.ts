@@ -449,7 +449,15 @@ export class Launcher {
             throw new Error('Launch permissions were not confirmed');
         } finally { native.close(); }
       }
-      await client.request('agent.prompt', { target, text: input.prompt }, 15000);
+      if (receipt.nativeSessionId && socket) {
+        const { agent } = await client.request('agent.get', { target: receipt.paneId });
+        if (agent.terminal_id !== receipt.terminalId || agent.name !== target || agent.agent_session?.value !== receipt.nativeSessionId) throw new Error('Native launch owner changed before first instruction');
+        const native = new CodexDaemon(socket);
+        try {
+          const result = await native.request('turn/start', { threadId: receipt.nativeSessionId, clientUserMessageId: input.requestId, input: [{ type: 'text', text: input.prompt }] });
+          if (!result.turn?.id) throw new Error('Native first turn was not confirmed');
+        } finally { native.close(); }
+      } else await client.request('agent.prompt', { target, text: input.prompt }, 15000);
       receipt.status = 'started';
     } catch {
       // Native errors can contain command environments. Return a fixed, non-secret diagnostic.

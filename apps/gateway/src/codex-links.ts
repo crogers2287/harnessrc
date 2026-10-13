@@ -2,7 +2,7 @@ import { CodexAsyncQuestions } from '../../../packages/adapters/src/codex-async-
 import { CodexSettings } from '../../../packages/adapters/src/codex-settings.ts';
 import { randomUUID } from 'node:crypto';
 import type { Agent, HerdrClient } from '@harnessrc/herdr';
-import type { Session, Interaction } from '@harnessrc/protocol';
+import { DeliveryDeferred, type Session, type Interaction, type Task } from '@harnessrc/protocol';
 import type { Store } from '@harnessrc/storage';
 import { nativeModel } from '../../../packages/adapters/src/transcripts.ts';
 import { CodexDaemon } from '../../../packages/adapters/src/codex-daemon.ts';
@@ -318,13 +318,23 @@ export class CodexLinks {
       throw new Error('Native question is no longer available');
     await this.native.respond(s.nativeSessionId, interaction.nativeRequestId, response);
   }
-  settings(client: HerdrClient) {
+  settings(
+    client: HerdrClient,
+    prompt: (s: Session, t: Task) => string = (_s, t) => t.prompt,
+    images: (s: Session, t: Task) => string[] = () => [],
+  ) {
     const settings = new CodexSettings(this.native, async (s) => {
       if (!this.hasLink(s)) throw new Error('Codex binding is not verified');
       await this.assertDelivery(client, s);
       await client.assertBinding(s);
     });
     return {
+      models: (s: Session) => settings.models(s),
+      setModel: (s: Session, value: import('@harnessrc/protocol').ModelSelection) =>
+        settings.setModel(s, value),
+      send: (s: Session, task: Task) =>
+        this.send(client, s, task, prompt(s, task), images(s, task)),
+      reconcile: (s: Session, task: Task) => this.reconcile(client, s, task),
       ...(this.native.questions && this.native.respond
         ? {
             interactions: (s: Session) => this.interactions(client, s),
@@ -338,6 +348,69 @@ export class CodexLinks {
       setMode: (s: Session, value: string, expected: string) =>
         settings.set(s, 'mode', value, expected),
     };
+  }
+  async send(client: HerdrClient, s: Session, task: Task, prompt: string, images: string[] = []) {
+    await this.assertDelivery(client, s);
+    if ((await this.turnState(client, s)) !== 'idle')
+      throw new DeliveryDeferred('Codex is already working. Send again to steer the active turn.');
+    const receipt = {
+      transport: 'codex-daemon',
+      clientUserMessageId: task.id,
+      prompt: prompt.includes(`[Relay request ${task.id}]`)
+        ? prompt
+        : `${prompt}\n\n[Relay request ${task.id}]`,
+      turnId: undefined as string | undefined,
+    };
+    task.correlation = JSON.stringify(receipt);
+    this.store.saveTask(task); // Save identity BEFORE the mutation; a timeout is never blindly retried.
+    await client.assertBinding(s);
+    const result = await this.native.request('turn/start', {
+      threadId: s.nativeSessionId,
+      clientUserMessageId: task.id,
+      input: [
+        { type: 'text', text: receipt.prompt },
+        ...images.map((path) => ({ type: 'localImage', path })),
+      ],
+    });
+    if (!result.turn?.id)
+      throw new Error('Codex did not confirm a native turn. Check delivery before retrying.');
+    receipt.turnId = result.turn.id;
+    return { correlation: JSON.stringify(receipt) };
+  }
+  async reconcile(
+    client: HerdrClient,
+    s: Session,
+    task: Task,
+  ): Promise<'running' | 'completed' | 'failed' | 'uncertain'> {
+    if (!task.correlation) return 'uncertain';
+    const receipt = JSON.parse(task.correlation);
+    if (receipt.transport !== 'codex-daemon') return 'uncertain';
+    if (!this.hasLink(s)) return 'uncertain';
+    await client.assertBinding(s);
+    const result = await this.native.request('thread/turns/list', {
+      threadId: s.nativeSessionId,
+      limit: 100,
+      sortDirection: 'desc',
+      itemsView: receipt.turnId ? 'notLoaded' : 'summary',
+    });
+    const turn = result.data?.find((t: any) =>
+      receipt.turnId
+        ? t.id === receipt.turnId
+        : t.items?.some(
+            (i: any) =>
+              i.type === 'userMessage' &&
+              (i.id === receipt.clientUserMessageId ||
+                i.content?.some((c: any) => c.type === 'text' && c.text === receipt.prompt)),
+          ),
+    );
+    if (!turn) return 'uncertain';
+    return turn.status === 'completed'
+      ? 'completed'
+      : ['failed', 'interrupted'].includes(turn.status)
+        ? 'failed'
+        : turn.status === 'inProgress'
+          ? 'running'
+          : 'uncertain';
   }
   hasLink(session: Session) {
     return this.links().some(

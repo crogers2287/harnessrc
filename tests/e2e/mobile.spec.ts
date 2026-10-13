@@ -2248,14 +2248,22 @@ test.describe('download links', () => {
 test('agent task view shows native progress with the message queue secondary', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await pair(page);
-  await page.route(/\/api\/sessions\/[^/?]+$/, async route => {
+  await page.route(/\/api\/sessions\/[^/?]+$/, async (route) => {
     const response = await route.fetch();
     const body = await response.json();
-    await route.fulfill({ json: { ...body, plan: { text: 'Repair launch', steps: [
-      { text: 'Inspect saved receipt', status: 'completed' },
-      { text: 'Verify recovery', status: 'in_progress' },
-      { text: 'Publish APK', status: 'pending' },
-    ] } } });
+    await route.fulfill({
+      json: {
+        ...body,
+        plan: {
+          text: 'Repair launch',
+          steps: [
+            { text: 'Inspect saved receipt', status: 'completed' },
+            { text: 'Verify recovery', status: 'in_progress' },
+            { text: 'Publish APK', status: 'pending' },
+          ],
+        },
+      },
+    });
   });
   await page.reload();
   await page.getByRole('button', { name: 'Agent tasks', exact: true }).click();
@@ -2263,4 +2271,53 @@ test('agent task view shows native progress with the message queue secondary', a
   await expect(page.getByText('Verify recovery', { exact: false })).toBeVisible();
   await expect(page.getByText('Follow-ups run in order', { exact: false })).not.toBeVisible();
   await page.screenshot({ path: '/tmp/relay-agent-tasks-mobile.png', fullPage: true });
+});
+
+test('mobile native model picker applies a catalog model without submitting a message', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route('**/api/sessions', async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    for (const s of body.sessions) s.capabilities.changeModel = true;
+    await route.fulfill({ response, json: body });
+  });
+  let model = 'old-model';
+  let changes = 0;
+  const catalog = () => ({
+    current: { provider: 'openai', model },
+    default: { provider: 'openai', model },
+    reason: 'Applies to subsequent turns. A running turn keeps its current model.',
+    groups: [
+      {
+        id: 'openai',
+        name: 'OpenAI',
+        models: [
+          { id: 'old-model', name: 'Old model' },
+          { id: 'new-model', name: 'New model' },
+        ],
+      },
+    ],
+  });
+  await page.route('**/api/sessions/*/models', (route) => route.fulfill({ json: catalog() }));
+  await page.route('**/api/sessions/*/model', async (route) => {
+    expect(route.request().postDataJSON()).toEqual({ provider: 'openai', model: 'new-model' });
+    model = 'new-model';
+    changes++;
+    await route.fulfill({ json: catalog() });
+  });
+  await pair(page);
+  await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
+  await page.getByRole('button', { name: 'Session details', exact: true }).click();
+  await page
+    .getByRole('combobox', { name: 'Model', exact: true })
+    .selectOption(JSON.stringify({ provider: 'openai', model: 'new-model' }));
+  await page.getByRole('button', { name: 'Apply model', exact: true }).click();
+  await expect(page.getByText('Model selection saved.', { exact: true })).toBeVisible();
+  expect(changes).toBe(1);
+  await expect(page.getByRole('combobox', { name: 'Model', exact: true })).toHaveValue(
+    JSON.stringify({ provider: 'openai', model: 'new-model' }),
+  );
+  await page.screenshot({ path: 'test-results/model-picker-mobile.png', fullPage: true });
 });

@@ -1,7 +1,6 @@
 import { nativeFiles } from '@harnessrc/protocol';
 import { publishArtifact } from './artifacts.ts';
 import { VoiceService, MAX_VOICE_BYTES, voiceMimeSchema } from './voice.ts';
-import { DshAdapter } from '../../../packages/adapters/src/dsh-session.ts';
 import { sendMessage } from './messages.ts';
 import { randomUUID } from 'node:crypto';
 import { deliverSteer } from './steering.ts';
@@ -506,11 +505,9 @@ export async function createGateway(
     const { id } = req.params as { id: string };
     check(req, id);
     const adapter = runtime.adapters.get(id);
-    if (!(adapter instanceof DshAdapter)) throw new Error('Native model selection unavailable');
+    if (!adapter?.models) throw new Error('Native model selection unavailable');
     await runtime.assertBinding(store.session(id));
-    const catalog = (await adapter.native.models()) as Record<string, unknown>;
-    const row = await adapter.row(store.session(id));
-    return { ...catalog, current: row.projections?.values.modelSelection?.next };
+    return adapter.models(store.session(id));
   });
   app.post('/api/sessions/:id/model', async (req) => {
     const { id } = req.params as { id: string };
@@ -524,16 +521,26 @@ export async function createGateway(
       .strict()
       .parse(req.body);
     const adapter = runtime.adapters.get(id);
-    if (!(adapter instanceof DshAdapter)) throw new Error('Native model selection unavailable');
-    await runtime.assertBinding(store.session(id));
-    const result = await adapter.native.selectModel(
-      store.session(id).nativeSessionId,
-      value.provider,
-      value.model,
-      value.reasoningEffort,
-    );
-    store.audit(req.device.id, 'session.model', id, value);
-    return result;
+    if (!adapter?.setModel) throw new Error('Native model selection unavailable');
+    if (permissionChanges.has(id))
+      throw Object.assign(new Error('A session setting change is already in progress'), {
+        statusCode: 409,
+      });
+    permissionChanges.add(id);
+    try {
+      await runtime.assertBinding(store.session(id));
+      const result = await adapter.setModel(store.session(id), value);
+      if (result.current) {
+        const session = store.session(id);
+        session.model = result.current.model;
+        session.modelUpdatedAt = new Date().toISOString();
+        store.saveSession(session);
+      }
+      store.audit(req.device.id, 'session.model', id, value);
+      return result;
+    } finally {
+      permissionChanges.delete(id);
+    }
   });
   app.get('/api/sessions/:id/message-receipts/:requestId', async (req) => {
     const { id, requestId } = req.params as { id: string; requestId: string };

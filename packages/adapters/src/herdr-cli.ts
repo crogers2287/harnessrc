@@ -34,16 +34,32 @@ export class HerdrCliAdapter implements Adapter {
     private nativeInterrupt?: (session: Session) => Promise<void>,
     settings?: Pick<
       Adapter,
-      'permissions' | 'setPermissions' | 'mode' | 'setMode' | 'interactions' | 'respond'
+      | 'permissions'
+      | 'setPermissions'
+      | 'mode'
+      | 'setMode'
+      | 'interactions'
+      | 'respond'
+      | 'send'
+      | 'reconcile'
+      | 'models'
+      | 'setModel'
     >,
   ) {
+    const reconcile = this.reconcile.bind(this);
     Object.assign(this, settings);
+    if (settings?.reconcile)
+      this.reconcile = (session, task) =>
+        task.correlation && JSON.parse(task.correlation).transport === 'codex-daemon'
+          ? settings.reconcile!(session, task)
+          : reconcile(session, task);
     this.capabilities.answerQuestion = !!settings?.respond;
     this.capabilities.approveAction = !!settings?.respond;
     this.capabilities.rejectAction = !!settings?.respond;
     this.capabilities.attachFiles = !!attachmentPrompt;
     this.capabilities.steerActiveTurn = !!nativeSteer;
     this.capabilities.interruptTurn = !!nativeInterrupt;
+    this.capabilities.changeModel = !!settings?.models && !!settings?.setModel;
   }
   async turnState(session: Session): Promise<Session['status']> {
     await this.assertOwner(session);

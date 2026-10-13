@@ -3,6 +3,10 @@ import assert from 'node:assert/strict';
 import { Store } from '@harnessrc/storage';
 import { HerdrClient, sessionFromAgent, type Agent } from '@harnessrc/herdr';
 import { CodexLinks } from '../../../apps/gateway/src/codex-links.ts';
+import { HerdrCliAdapter } from '@harnessrc/adapters';
+import { capabilities } from '@harnessrc/protocol';
+import { TaskQueue } from '@harnessrc/task-queue';
+import { randomUUID } from 'node:crypto';
 
 function fixture() {
   const store = new Store(':memory:');
@@ -321,5 +325,81 @@ test('a CLI-reported native ID still receives a verified control link', async ()
     assert.ok(f.writes.some((name) => name.startsWith('Relay link ')));
   } finally {
     f.store.close();
+  }
+});
+
+test('verified idle Codex sends start native turns once and reconcile a lost acknowledgement without terminal input', async () => {
+  for (const loseAck of [false, true]) {
+    const f = fixture();
+    try {
+      await f.links.refresh(f.client, [f.agent()]);
+      const session = sessionFromAgent('test', f.agent(), 'Project');
+      session.processIdentity = '10:12';
+      session.connected = true;
+      session.capabilities = capabilities(['readConversation', 'sendMessage', 'queueTask']);
+      f.store.saveSession(session);
+      const original = f.native.request;
+      const starts: any[] = [];
+      let complete = false;
+      f.native.request = async (method, p: any): Promise<any> => {
+        if (method === 'thread/turns/list')
+          return {
+            data: starts.length
+              ? [
+                  {
+                    id: 'native-turn',
+                    status: complete ? 'completed' : 'inProgress',
+                    items: [
+                      {
+                        type: 'userMessage',
+                        id: 'server-generated-user-id',
+                        content: starts[0].input,
+                      },
+                    ],
+                  },
+                ]
+              : [],
+          };
+        if (method === 'turn/start') {
+          assert.equal(p.threadId, session.nativeSessionId);
+          assert.ok(f.store.tasks(session.id)[0].correlation?.includes(p.clientUserMessageId));
+          starts.push(p);
+          if (loseAck) throw new Error('Lost native acknowledgement');
+          return { turn: { id: 'native-turn', status: 'inProgress' } };
+        }
+        return original(method, p);
+      };
+      const adapter = new HerdrCliAdapter(
+        { capabilities: session.capabilities as any, read: async () => [] },
+        f.client,
+        f.store,
+        async () => {},
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        f.links.settings(f.client),
+      );
+      const queue = new TaskQueue(f.store, () => adapter);
+      const input = { prompt: 'actual user instruction', idempotencyKey: randomUUID() };
+      if (loseAck)
+        await assert.rejects(queue.sendNow(session.id, input), /Lost native acknowledgement/);
+      else await queue.sendNow(session.id, input);
+      assert.equal(starts.length, 1);
+      assert.deepEqual(starts[0].input, [
+        {
+          type: 'text',
+          text: `${input.prompt}\n\n[Relay request ${f.store.tasks(session.id)[0].id}]`,
+        },
+      ]);
+      await queue.sendNow(session.id, input);
+      assert.equal(starts.length, 1);
+      complete = true;
+      await queue.tick(session.id);
+      assert.equal(f.store.tasks(session.id)[0].status, 'completed');
+    } finally {
+      f.store.close();
+    }
   }
 });

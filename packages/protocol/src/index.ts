@@ -14,6 +14,7 @@ export const capabilityNames = [
   'attachFiles',
   'readDiffs',
   'readSubagents',
+  'changeModel',
 ] as const;
 export type Capabilities = Record<(typeof capabilityNames)[number], boolean>;
 export const capabilities = (enabled: (typeof capabilityNames)[number][]): Capabilities =>
@@ -165,6 +166,8 @@ export type Host = {
   diagnostic?: string;
 };
 export type Adapter = {
+  models?: (session: Session) => Promise<ModelCatalog>;
+  setModel?: (session: Session, selection: ModelSelection) => Promise<ModelCatalog>;
   permissions?: (session: Session) => Promise<PermissionSettings>;
   setPermissions?: (
     session: Session,
@@ -195,6 +198,22 @@ export type Adapter = {
     input?: Pick<Task, 'id' | 'prompt' | 'attachments'>,
   ) => Promise<void>;
   interrupt?: (session: Session) => Promise<void>;
+};
+export type ModelSelection = { provider: string; model: string; reasoningEffort?: string };
+export type ModelCatalog = {
+  current?: ModelSelection;
+  default: ModelSelection;
+  reason?: string;
+  groups: {
+    id: string;
+    name: string;
+    models: {
+      id: string;
+      name: string;
+      reasoningEfforts?: string[];
+      defaultReasoningEffort?: string;
+    }[];
+  }[];
 };
 export function redact(value: unknown): unknown {
   if (typeof value === 'string')

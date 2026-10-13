@@ -127,3 +127,9 @@ request ID and original whitespace. Late acknowledgements preserve the next draf
 Consecutive tool calls, tool outputs and reasoning summaries appear under one collapsed **Agent activity** row between messages. Tap to expand; individual details remain available. Expansion survives incoming events and the row has a 48dp minimum target plus an accessibility state. Artifacts and questions remain separate.
 
 Validation: Android unit tests (including grouping boundaries and stable identity), lint and debug/test APK compilation passed. A disclosure interaction regression test was added and compiled, but not executed: the local emulator system image was missing and its replacement download was too slow to complete. Physical-device visual verification remains outstanding.
+
+## 0.1.14: native Codex delivery and session models
+
+Install the signed 0.1.14 APK over your current app. Tap the conversation title or **Session details** to choose **Model for next request**. The control appears only for adapters advertising native model changes (verified Codex and DSH). A running turn keeps its current model. Model loading remains available when a separate permissions request fails.
+
+The gateway fixes Codex Send and initial session instructions through the existing daemon; this delivery fix also applies to older APKs. Android 0.1.14 adds the model picker and labels pending native echoes accurately. See CLIENT_PARITY.md for live Fred validation and remaining platform limits.

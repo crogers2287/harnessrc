@@ -538,17 +538,23 @@ fun DetailsScreen(vm: RelayModel, back: () -> Unit) {
     var loadError by remember(s?.id) { mutableStateOf("") }
     var permissionChoice by remember(s?.id) { mutableStateOf<JSONObject?>(null) }
     var actionSheet by remember { mutableStateOf(false) }
-    LaunchedEffect(s?.id, settingsReload) {
-        if (s != null)
-            runCatching {
-                    permissions = vm.api.api("/api/sessions/${s.id}/permissions")
-                    agentMode = vm.api.api("/api/sessions/${s.id}/mode")
-                    if (s.harness == "dsh") models = vm.api.api("/api/sessions/${s.id}/models")
-                }
-                .onFailure {
+    LaunchedEffect(s?.id, settingsReload, s?.can("changeModel")) {
+        if (s != null) {
+            val routes = if (s.can("changeModel")) listOf("models", "permissions", "mode") else listOf("permissions", "mode")
+            routes.forEach { kind ->
+                runCatching {
+                    val result = vm.api.api("/api/sessions/${s.id}/$kind")
+                    when (kind) {
+                        "models" -> models = result
+                        "permissions" -> permissions = result
+                        "mode" -> agentMode = result
+                    }
+                }.onFailure {
                     if (it is kotlinx.coroutines.CancellationException) throw it
                     loadError = it.message ?: "Could not load settings"
                 }
+            }
+        }
     }
     Page("Session settings", back) {
         if (s == null) Text("Choose a session first.")
@@ -556,6 +562,40 @@ fun DetailsScreen(vm: RelayModel, back: () -> Unit) {
             Text(s.title, style = MaterialTheme.typography.headlineSmall)
             TextButton(onClick = { settingsReload++; loadError = "" }) { Text("Refresh permissions and mode") }
             if (permissions == null && loadError.isBlank()) Text("Loading session permissions…")
+            models?.let { catalog ->
+                HorizontalDivider()
+                Text("Model for next request", style = MaterialTheme.typography.titleMedium)
+                if (catalog.str("reason").isNotBlank()) Text(catalog.str("reason"), style = MaterialTheme.typography.bodySmall)
+                val options =
+                    catalog.rows("groups").flatMap { group ->
+                        group.rows("models").map { model ->
+                            json(
+                                "id" to "${group.str("id")}/${model.str("id")}",
+                                "name" to "${group.str("name")} · ${model.str("name")}",
+                                "provider" to group.str("id"),
+                                "model" to model.str("id"),
+                            )
+                        }
+                    }
+                val current = catalog.optJSONObject("current") ?: catalog.optJSONObject("default")
+                var chosen by remember(catalog) { mutableStateOf(current?.let { "${it.str("provider")}/${it.str("model")}" } ?: "") }
+                ChoiceField("Model", options, chosen) { chosen = it }
+                Button(
+                    enabled = !vm.working && chosen.isNotBlank(),
+                    onClick = {
+                        val choice = options.first { it.str("id") == chosen }
+                        vm.operation(
+                            "/api/sessions/${s.id}/model",
+                            json(
+                                "provider" to choice.str("provider"),
+                                "model" to choice.str("model"),
+                            ),
+                        ) { settingsReload++ }
+                    },
+                ) {
+                    Text("Apply model")
+                }
+            }
             listOf("permissions" to permissions, "mode" to agentMode).forEach { (kind, settings) ->
                 settings?.let { catalog ->
                     HorizontalDivider()
@@ -612,38 +652,7 @@ fun DetailsScreen(vm: RelayModel, back: () -> Unit) {
             }
             if (loadError.isNotBlank()) Text(loadError, color = MaterialTheme.colorScheme.error)
             if (vm.error.isNotBlank()) Text(vm.error, color = MaterialTheme.colorScheme.error)
-            models?.let { catalog ->
-                HorizontalDivider()
-                Text("Model for next request", style = MaterialTheme.typography.titleMedium)
-                val options =
-                    catalog.rows("groups").flatMap { group ->
-                        group.rows("models").map { model ->
-                            json(
-                                "id" to "${group.str("id")}/${model.str("id")}",
-                                "name" to "${group.str("name")} · ${model.str("name")}",
-                                "provider" to group.str("id"),
-                                "model" to model.str("id"),
-                            )
-                        }
-                    }
-                var chosen by remember { mutableStateOf("") }
-                ChoiceField("Model", options, chosen) { chosen = it }
-                Button(
-                    enabled = !vm.working && chosen.isNotBlank(),
-                    onClick = {
-                        val choice = options.first { it.str("id") == chosen }
-                        vm.operation(
-                            "/api/sessions/${s.id}/model",
-                            json(
-                                "provider" to choice.str("provider"),
-                                "model" to choice.str("model"),
-                            ),
-                        )
-                    },
-                ) {
-                    Text("Apply model")
-                }
-            }
+
 
         }
     }

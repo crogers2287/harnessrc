@@ -74,6 +74,7 @@ export class DshHost {
             'readConversation',
             'streamConversation',
             'sendMessage',
+            'changeModel',
             'steerActiveTurn',
             'queueTask',
             'answerQuestion',

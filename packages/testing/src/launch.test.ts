@@ -226,6 +226,7 @@ test('new Codex threads are named before their first Herdr CLI owner starts; rep
     nativeCalls.push({ method, params });
     if (method === 'thread/start') return { thread: { id: nativeId } };
     if (method === 'thread/name/set' || method === 'thread/settings/update') return {};
+    if (method === 'turn/start') { prompts++; return { turn: { id: 'first-turn' } }; }
     if (method === 'thread/resume') return { thread: { id: nativeId }, sandbox: { type: permissionsMismatch ? 'readOnly' : 'workspaceWrite' }, approvalPolicy: 'on-request' };
     throw new Error('Unexpected native operation: ' + method);
   };
@@ -250,9 +251,7 @@ test('new Codex threads are named before their first Herdr CLI owner starts; rep
         },
       };
     if (method === 'agent.prompt') {
-      prompts++;
-      assert.equal(nativeCalls.at(-1)?.method, 'thread/resume');
-      return {};
+      throw new Error('Native Codex launch must not paste into the terminal');
     }
     throw new Error(method);
   };
@@ -296,7 +295,7 @@ test('new Codex threads are named before their first Herdr CLI owner starts; rep
     assert.equal((await launcher.launch(request, 'device')).status, 'started');
     assert.deepEqual(
       nativeCalls.map((c) => c.method),
-      ['thread/start', 'thread/name/set', 'thread/settings/update', 'thread/resume'],
+      ['thread/start', 'thread/name/set', 'thread/settings/update', 'thread/resume', 'turn/start'],
     );
     assert.equal(nativeCalls[0].params.sandbox, 'workspace-write');
     assert.equal(nativeCalls[0].params.approvalPolicy, 'on-request');
@@ -313,7 +312,7 @@ test('new Codex threads are named before their first Herdr CLI owner starts; rep
       'codex/gpt-6.1-sol',
     ]);
     await launcher.launch(request, 'device');
-    assert.equal(nativeCalls.length, 4);
+    assert.equal(nativeCalls.length, 5);
     assert.equal(launcher.receipt(request.requestId)?.nativeSessionId, nativeId);
     permissionsMismatch = true;
     assert.equal((await launcher.launch({ ...request, requestId: randomUUID() }, 'device')).status, 'uncertain');

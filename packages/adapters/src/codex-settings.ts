@@ -1,10 +1,18 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
-import type { PermissionSettings, Session } from '@harnessrc/protocol';
+import type {
+  ModelCatalog,
+  ModelSelection,
+  PermissionSettings,
+  Session,
+} from '@harnessrc/protocol';
 import type { CodexDaemon } from './codex-daemon.ts';
 
 const stateSchema = z.object({
   thread: z.object({ id: z.string() }),
+  model: z.string().optional(),
+  modelProvider: z.string().optional(),
+  reasoningEffort: z.string().nullish(),
   sandbox: z.unknown().optional(),
   approvalPolicy: z.unknown().optional(),
   activePermissionProfile: z.object({ id: z.string() }).nullish(),
@@ -14,6 +22,7 @@ const stateSchema = z.object({
       settings: z.object({
         model: z.string(),
         reasoning_effort: z.string().nullable().optional(),
+        developer_instructions: z.string().nullish(),
       }),
     })
     .nullish(),
@@ -44,6 +53,101 @@ export class CodexSettings {
     if (state.thread.id !== s.nativeSessionId) throw new Error('Codex session identity changed');
     await this.assertOwner(s);
     return state;
+  }
+  async models(s: Session): Promise<ModelCatalog> {
+    const state = await this.state(s);
+    const provider = state.modelProvider ?? 'openai';
+    const current = {
+      provider,
+      model: state.collaborationMode?.settings.model ?? state.model ?? '',
+      reasoningEffort:
+        state.collaborationMode?.settings.reasoning_effort ?? state.reasoningEffort ?? undefined,
+    };
+    const models: ModelCatalog['groups'][number]['models'] = [];
+    let cursor: string | undefined;
+    const seen = new Set<string>();
+    do {
+      const page = z
+        .object({
+          data: z.array(
+            z.object({
+              model: z.string(),
+              displayName: z.string(),
+              hidden: z.boolean().optional(),
+              defaultReasoningEffort: z.string().optional(),
+              supportedReasoningEfforts: z
+                .array(z.object({ reasoningEffort: z.string() }))
+                .optional(),
+            }),
+          ),
+          nextCursor: z.string().nullish(),
+        })
+        .parse(
+          await this.native.request('model/list', { limit: 100, includeHidden: false, cursor }),
+        );
+      models.push(
+        ...page.data
+          .filter((m) => !m.hidden)
+          .map((m) => ({
+            id: m.model,
+            name: m.displayName,
+            defaultReasoningEffort: m.defaultReasoningEffort,
+            reasoningEfforts: m.supportedReasoningEfforts?.map((e) => e.reasoningEffort),
+          })),
+      );
+      cursor = page.nextCursor ?? undefined;
+      if (cursor && (seen.has(cursor) || seen.size >= 10))
+        throw new Error('Codex model catalog pagination did not complete');
+      if (cursor) seen.add(cursor);
+    } while (cursor);
+    if (current.model && !models.some((m) => m.id === current.model))
+      models.unshift({ id: current.model, name: `${current.model} (current)` });
+    return {
+      current,
+      default: current,
+      groups: [{ id: provider, name: provider, models }],
+      reason: 'Applies to subsequent turns. A running turn keeps its current model.',
+    };
+  }
+  async setModel(s: Session, selection: ModelSelection): Promise<ModelCatalog> {
+    const catalog = await this.models(s);
+    const model = catalog.groups
+      .find((g) => g.id === selection.provider)
+      ?.models.find((m) => m.id === selection.model);
+    if (!model) throw new Error('Choose a model offered by this session’s native provider.');
+    const state = await this.state(s);
+    if ((state.modelProvider ?? 'openai') !== selection.provider)
+      throw new Error('The native provider changed. Refresh models before applying.');
+    let effort =
+      selection.reasoningEffort ??
+      state.collaborationMode?.settings.reasoning_effort ??
+      state.reasoningEffort;
+    if (effort && model.reasoningEfforts && !model.reasoningEfforts.includes(effort)) {
+      if (selection.reasoningEffort)
+        throw new Error('Choose a reasoning effort offered by the selected model.');
+      effort = model.defaultReasoningEffort ?? model.reasoningEfforts[0];
+    }
+    const params: Record<string, unknown> = { threadId: s.nativeSessionId, model: selection.model };
+    if (effort) params.effort = effort;
+    if (state.collaborationMode)
+      params.collaborationMode = {
+        mode: state.collaborationMode.mode,
+        settings: {
+          ...state.collaborationMode.settings,
+          model: selection.model,
+          ...(effort ? { reasoning_effort: effort } : {}),
+          developer_instructions: state.collaborationMode.settings.developer_instructions ?? null,
+        },
+      };
+    await this.assertOwner(s);
+    await this.native.request('thread/settings/update', params);
+    const updated = await this.models(s);
+    if (
+      updated.current?.model !== selection.model ||
+      (effort && updated.current.reasoningEffort !== effort)
+    )
+      throw new Error('Codex has not confirmed the model change. Refresh before retrying.');
+    return updated;
   }
   async read(s: Session, kind: 'permissions' | 'mode'): Promise<PermissionSettings> {
     const state = await this.state(s);

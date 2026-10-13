@@ -37,6 +37,7 @@ class NativeChatTest {
     private val requests = CopyOnWriteArrayList<RecordedRequest>()
     @Volatile private var pendingQuestion: JSONObject? = null
     @Volatile private var selectedMode = "default"
+    @Volatile private var selectedModel = "flash-next"
     @Volatile private var rejectMessage = false
     @Volatile private var messageDelayMs = 0L
     @Volatile private var dictationOriginal = "please uh check the image and fix the layout"
@@ -46,12 +47,13 @@ class NativeChatTest {
         get() = ApplicationProvider.getApplicationContext<Context>()
 
     private val session =
-        """{"id":"test-session","sessionName":"Mobile clipboard check","project":"Relay","hostId":"Fred","harness":"dsh","agentPreset":"haxor","model":"fred/flash-next","cwd":"/home/crogers2287/harnessrc","status":"working","connected":true,"capabilities":{"readConversation":true,"sendMessage":true,"steerActiveTurn":true,"queueTask":true,"attachFiles":true,"answerQuestion":true}}"""
+        """{"id":"test-session","sessionName":"Mobile clipboard check","project":"Relay","hostId":"Fred","harness":"dsh","agentPreset":"haxor","model":"fred/flash-next","cwd":"/home/crogers2287/harnessrc","status":"working","connected":true,"capabilities":{"readConversation":true,"sendMessage":true,"steerActiveTurn":true,"queueTask":true,"attachFiles":true,"answerQuestion":true,"changeModel":true}}"""
 
     @Before
     fun setup() {
         requests.clear()
         selectedMode = "default"
+        selectedModel = "flash-next"
         server = MockWebServer()
         server.dispatcher =
             object : Dispatcher() {
@@ -84,6 +86,7 @@ class NativeChatTest {
                             .setBody("{\"error\":\"Connection lost\"}")
                     if (path == "/api/interactions/question-1/respond") pendingQuestion = null
                     if (path.endsWith("/mode") && request.method == "POST") selectedMode = JSONObject(request.body.clone().readUtf8()).getString("value")
+                    if (path.endsWith("/model") && request.method == "POST") selectedModel = JSONObject(request.body.clone().readUtf8()).getString("model")
                     val body =
                         when {
                             path == "/api/launch/profiles" -> """{"profiles":[{"id":"test","label":"Claude","connected":true,"projectHome":"/home/test","models":[],"permissions":[{"id":"plan","name":"Plan","description":"Plan before changes."}]}]}"""
@@ -91,6 +94,7 @@ class NativeChatTest {
                             path == "/api/launch/folders" -> """{"path":"/home/test/Phone project"}"""
                             path == "/api/launch" -> """{"requestId":"test","status":"started","terminalId":"new-terminal"}"""
                             path.endsWith("/mode") -> """{"supported":true,"current":"$selectedMode","options":[{"value":"default","name":"Build"},{"value":"plan","name":"Plan","description":"Applies to subsequent turns."}]}"""
+                            path.endsWith("/models") || path.endsWith("/model") -> """{"current":{"provider":"fred","model":"$selectedModel"},"default":{"provider":"fred","model":"flash-next"},"groups":[{"id":"fred","name":"Fred","models":[{"id":"flash-next","name":"Flash Next"},{"id":"astra","name":"Astra"}]}]}"""
                             path.endsWith("/permissions") -> """{"supported":false,"options":[],"reason":"Test session uses host permissions."}"""
                             path == "/api/sessions" -> "{\"sessions\":[$session]}"
                             path == "/api/voice" -> "{\"enabled\":true,\"maxSeconds\":180}"
@@ -536,6 +540,22 @@ class NativeChatTest {
                 .getString(0),
         )
         assertFalse(requests.any { it.path?.endsWith("/messages") == true })
+    }
+
+    @Test
+    fun nativeModelSelectionUsesCatalogAndNeverSendsChat() {
+        compose.onNodeWithContentDescription("Session details").performClick()
+        compose.waitUntil(10000) { requests.any { it.path?.endsWith("/models") == true } }
+        compose.onNodeWithText("Fred · Flash Next").performScrollTo().performClick()
+        compose.onNodeWithText("Fred · Astra").performClick()
+        compose.onNodeWithText("Apply model").performClick()
+        compose.waitUntil(10000) { requests.any { it.path?.endsWith("/model") == true && it.method == "POST" } }
+        val request = requests.first { it.path?.endsWith("/model") == true && it.method == "POST" }
+        val body = JSONObject(request.body.clone().readUtf8())
+        assertEquals("fred", body.getString("provider"))
+        assertEquals("astra", body.getString("model"))
+        assertEquals(2, body.length())
+        assertFalse(requests.any { it.path?.endsWith("/messages") == true || it.path?.endsWith("/tasks") == true })
     }
 
     @Test
