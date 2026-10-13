@@ -1,3 +1,4 @@
+import { sendMedia } from './media-response.ts';
 import { nativeFiles } from '@harnessrc/protocol';
 import { publishArtifact } from './artifacts.ts';
 import { VoiceService, MAX_VOICE_BYTES, voiceMimeSchema } from './voice.ts';
@@ -57,7 +58,13 @@ export async function createGateway(
     (_req, body, done) => done(null, body),
   );
   await app.register(cookie);
-  await app.register(rateLimit, { max: 600, timeWindow: '1 minute' });
+  await app.register(rateLimit, {
+    max: 600,
+    timeWindow: '1 minute',
+    // Public bundle/icon requests are not agent operations. Limiting them can
+    // leave a reload blank; authenticated APIs and WebSockets retain the limit.
+    allowList: (req) => !req.url.startsWith('/api/') && req.url.split('?')[0] !== '/ws',
+  });
   await app.register(websocket, { options: { maxPayload: 65536 } });
   const setTokens = (reply: FastifyReply, tokens: { access: string; refresh: string }) => {
     reply.setCookie('rc_access', tokens.access, {
@@ -79,9 +86,10 @@ export async function createGateway(
     reply
       .header('X-Content-Type-Options', 'nosniff')
       .header('Referrer-Policy', 'no-referrer')
+      .header('Access-Control-Expose-Headers', 'Content-Disposition, Content-Range, Accept-Ranges')
       .header(
         'Content-Security-Policy',
-        `default-src 'self'; connect-src 'self' ws: wss: ${config.tailnet?.endpoint ?? ''}; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'`,
+        `default-src 'self'; connect-src 'self' ws: wss: ${config.tailnet?.endpoint ?? ''}; img-src 'self' data: blob: ${config.tailnet?.endpoint ?? ''}; media-src 'self' blob: ${config.tailnet?.endpoint ?? ''}; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'`,
       );
     const url = req.url.split('?')[0];
     if (!url.startsWith('/api/') && url !== '/ws') return;
@@ -434,14 +442,7 @@ export async function createGateway(
     const { id, file } = req.params as { id: string; file: string };
     check(req, id);
     const { row, bytes } = runtime.attachments.read(store.session(id), file);
-    // Downloads never execute uploaded HTML/SVG in the gateway origin.
-    return reply
-      .type('application/octet-stream')
-      .header(
-        'Content-Disposition',
-        `attachment; filename*=UTF-8''${encodeURIComponent(String(row.name))}`,
-      )
-      .send(bytes);
+    return sendMedia(req, reply, String(row.name), String(row.mime), bytes);
   });
   app.delete('/api/sessions/:id/attachments/:file', async (req) => {
     const { id, file } = req.params as { id: string; file: string };
@@ -614,15 +615,7 @@ export async function createGateway(
     if (!file || !host || event.nativeSessionId !== session.nativeSessionId)
       return reply.code(404).send({ error: 'Conversation file not found' });
     const result = await host.native.file(file.path);
-    const image = /^(image\/(png|jpeg|webp|gif|avif))(;|$)/i.test(result.mime);
-    reply.header('Cache-Control', 'private, no-store');
-    reply.header('X-Content-Type-Options', 'nosniff');
-    reply.header('Content-Security-Policy', "sandbox; default-src 'none'");
-    reply.header(
-      'Content-Disposition',
-      `${image ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(file.path.split('/').pop() || 'file')}`,
-    );
-    return reply.type(image ? result.mime : 'application/octet-stream').send(result.bytes);
+    return sendMedia(req, reply, file.path.split('/').pop() || 'file', result.mime, result.bytes);
   });
   app.post('/api/interactions/:id/respond', async (req) => {
     const { id } = req.params as { id: string };

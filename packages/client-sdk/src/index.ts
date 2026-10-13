@@ -190,3 +190,56 @@ export async function downloadNativeFile(
     throw new Error('File unavailable. Retry or ask the agent to publish it again.');
   return response.blob();
 }
+
+/** Read-only media URLs use the same authenticated ingress as the API. */
+export function nativeMediaUrl(sessionId: string, eventId: string, index: number): string {
+  return (
+    transportOrigin +
+    `/api/sessions/${encodeURIComponent(sessionId)}/media/${encodeURIComponent(eventId)}/${index}`
+  );
+}
+export function attachmentUrl(sessionId: string, attachmentId: string): string {
+  return (
+    transportOrigin +
+    `/api/sessions/${encodeURIComponent(sessionId)}/attachments/${encodeURIComponent(attachmentId)}`
+  );
+}
+/** Read-only resource URL; callers validate the session-scoped media route. */
+export function mediaResourceUrl(path: string): string {
+  return transportOrigin + path;
+}
+export async function downloadResource(path: string): Promise<{ blob: Blob; name: string }> {
+  if (
+    !/^\/api\/(?:android\/apk|sessions\/[^/]+\/(?:attachments\/[a-fA-F0-9-]{36}|media\/[a-fA-F0-9-]{36}\/\d{1,2}))$/.test(
+      path,
+    )
+  )
+    throw new Error('Unsupported download route');
+  const send = () =>
+    fetch(transportOrigin + path, {
+      credentials: transportOrigin ? 'omit' : 'same-origin',
+      signal: AbortSignal.timeout(35000),
+    });
+  let response = await send();
+  if (response.status === 401) {
+    await api('/api/auth/refresh', { method: 'POST' });
+    response = await send();
+  }
+  if (!response.ok) throw new Error('Download unavailable. Check your connection and retry.');
+  const disposition = response.headers.get('content-disposition') || '';
+  const encoded = /filename\*=UTF-8''([^;]+)/i.exec(disposition)?.[1];
+  let name = path.endsWith('/apk') ? 'Relay.apk' : 'download';
+  try {
+    name = encoded
+      ? decodeURIComponent(encoded)
+      : /filename="([^"]+)"/i.exec(disposition)?.[1] || name;
+  } catch {
+    /* Use a safe default for malformed metadata. */
+  }
+  return {
+    blob: await response.blob(),
+    name: [...name]
+      .map((c) => (c === '/' || c === '\\' || c.charCodeAt(0) < 32 ? '_' : c))
+      .join(''),
+  };
+}

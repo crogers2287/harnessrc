@@ -26,6 +26,12 @@ export function publishArtifact(
   nativeSource?: Pick<SourceEvent, 'sourceId' | 'timestamp'>,
 ): { event: Event } {
   const input = artifactInput.parse(query);
+  let openui: string | undefined;
+  if (input.name.toLowerCase().endsWith('.openui')) {
+    if (bytes.length > 100000) throw new Error('OpenUI artifacts must be under 100 KB');
+    openui = bytes.toString('utf8');
+    if (!/^root\s*=/m.test(openui)) throw new Error('OpenUI artifacts require a root statement');
+  }
   if (input.generation !== session.generation)
     throw new Error('Session owner changed; select the current session before publishing');
   const fingerprint = createHash('sha256')
@@ -54,6 +60,7 @@ export function publishArtifact(
           text: input.caption,
           attachments: [file],
           publisher: 'artifact-upload',
+          ...(openui === undefined ? {} : { openui }),
         },
       });
       store.db

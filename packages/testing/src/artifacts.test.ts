@@ -44,7 +44,7 @@ test('artifacts publish once, survive restart, enforce owner and permission, and
       headers: f.headers,
     });
     assert.deepEqual(download.rawPayload, payload);
-    assert.equal(download.headers['content-type'], 'application/octet-stream');
+    assert.equal(download.headers['content-type'], 'image/png');
     const row = f.gateway.store.db
       .prepare('SELECT id FROM devices WHERE name=?')
       .get('Test browser')!;
@@ -107,7 +107,7 @@ test('native Codex image results become authenticated previews without base64 tr
     const response = await f.gateway.app.inject({ url, headers: f.headers });
     assert.equal(response.statusCode, 200, response.body);
     assert.equal(file.mime, 'image/png');
-    assert.equal(response.headers['content-type'], 'application/octet-stream');
+    assert.equal(response.headers['content-type'], 'image/png');
     assert.deepEqual(response.rawPayload, Buffer.from(image, 'base64'));
     assert.equal((await f.gateway.app.inject({ url })).statusCode, 401);
     assert.equal(f.gateway.runtime.attachments.list(f.session).length, 1);

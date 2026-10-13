@@ -250,6 +250,7 @@ export function matchesTaskReceipt(actual: unknown, taskId: string, expected: st
 }
 
 export { presentUserMessage, toolLabel } from './presentation.ts';
-export { nativeFiles, type NativeFile } from './media.ts';
+export { nativeFiles, mediaKind, type NativeFile } from './media.ts';
 
 export * from './permissions.ts';
+export { responseParts, type ResponsePart } from './rich-response.ts';
