@@ -1,3 +1,5 @@
+import { mediaKind } from '@harnessrc/protocol';
+import { attachmentUrl } from '@harnessrc/client-sdk';
 import { useEffect, useRef, useState } from 'react';
 import {
   Camera,
@@ -387,6 +389,23 @@ export function SentAttachment({
   };
   return (
     <div className="sent-file">
+      {mediaKind(file.name) === 'video' && (
+        <video
+          controls
+          playsInline
+          preload="metadata"
+          aria-label={file.name}
+          src={attachmentUrl(sessionId, file.id)}
+        />
+      )}
+      {mediaKind(file.name) === 'audio' && (
+        <audio
+          controls
+          preload="metadata"
+          aria-label={file.name}
+          src={attachmentUrl(sessionId, file.id)}
+        />
+      )}
       <button
         type="button"
         onClick={() => (preview ? dialog.current?.showModal() : void download())}

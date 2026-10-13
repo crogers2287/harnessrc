@@ -133,3 +133,9 @@ Validation: Android unit tests (including grouping boundaries and stable identit
 Install the signed 0.1.14 APK over your current app. Tap the conversation title or **Session details** to choose **Model for next request**. The control appears only for adapters advertising native model changes (verified Codex and DSH). A running turn keeps its current model. Model loading remains available when a separate permissions request fails.
 
 The gateway fixes Codex Send and initial session instructions through the existing daemon; this delivery fix also applies to older APKs. Android 0.1.14 adds the model picker and labels pending native echoes accurately. See CLIENT_PARITY.md for live Fred validation and remaining platform limits.
+
+## 0.1.15: rich responses and media
+
+Install the signed update over your existing app to retain drafts and settings. Assistant OpenUI blocks and published `.openui` files render as interactive artifacts. Cards, charts, tables, forms, tabs and other installed components share the web renderer. Navigation and the composer remain Kotlin/Compose; the bundled artifact surface has no arbitrary network or agent tools. Forms add a draft for review.
+
+DSH file links save through the document picker; MP4/video and audio have native playback, seek and video fullscreen controls. No filesystem link launches Relay's homepage. Passive media API responses are session-authorized and support byte ranges. See OPENUI.md for exact format, limits and physical-device checks.

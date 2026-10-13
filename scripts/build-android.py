@@ -27,6 +27,14 @@ if not keystore.exists():
                     '-validity', '10000', '-dname', 'CN=Relay Private Android,OU=Self hosted'], check=True)
     keystore.chmod(0o600)
 env = dict(os.environ, RELAY_ANDROID_STORE_FILE=str(keystore), RELAY_ANDROID_STORE_PASSWORD=password.read_text().strip())
+# Bundle only the declarative artifact renderer; navigation/editor remain Kotlin/Compose.
+subprocess.run(['npm', 'run', 'build'], cwd=root, check=True)
+rich_assets = root / 'apps/android/app/src/main/assets/rich'
+if rich_assets.exists():
+    shutil.rmtree(rich_assets)
+rich_assets.mkdir(parents=True)
+shutil.copyfile(root / 'apps/web/dist/rich.html', rich_assets / 'rich.html')
+shutil.copytree(root / 'apps/web/dist/assets', rich_assets / 'assets')
 subprocess.run([str(root / 'apps/android/gradlew'), '-p', str(root / 'apps/android'), ':app:assembleRelease'], env=env, check=True)
 apk = root / 'apps/android/app/build/outputs/apk/release/app-release.apk'
 metadata = json.loads((apk.parent / 'output-metadata.json').read_text())

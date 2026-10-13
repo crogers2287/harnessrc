@@ -45,6 +45,12 @@ export function useOutgoing(sessionId: string, events: Event[]) {
             // optimistic chat bubble until the native transcript contains it.
             if (!cancelled && result.nativeSeen === true) {
               setItems((old) => old.filter((x) => x.key !== item.key));
+            } else if (!cancelled && result.confirmed === true && item.state === 'uncertain') {
+              // A recovered acknowledgement settles delivery, while the single bubble
+              // remains visible until its native conversation echo arrives.
+              setItems((old) =>
+                old.map((x) => (x.key === item.key ? { ...x, state: 'confirmed' } : x)),
+              );
             }
           } catch {
             // Keep uncertain content and retry only the read after reconnect.

@@ -32,11 +32,6 @@ export const ComposerInput = forwardRef<
     const text = input.current?.innerText.replaceAll('\r\n', '\n') ?? '';
     return !input.current?.textContent && text === '\n' ? '' : text;
   };
-  const resize = () => {
-    if (!input.current) return;
-    input.current.style.height = 'auto';
-    input.current.style.height = `${Math.min(input.current.scrollHeight, 160)}px`;
-  };
   const replace = (text: string) => {
     const node = input.current!;
     node.textContent = text;
@@ -48,11 +43,9 @@ export const ComposerInput = forwardRef<
       selection?.removeAllRanges();
       selection?.addRange(range);
     }
-    resize();
   };
   useLayoutEffect(() => {
     if (read() === value) {
-      resize();
       return;
     }
     if (composing.current) {
@@ -67,7 +60,6 @@ export const ComposerInput = forwardRef<
     const text = read() + deferred.current;
     lastEmitted.current = text;
     onChange(text);
-    resize();
   };
   const insertText = (text: string) => {
     if (!text) return;

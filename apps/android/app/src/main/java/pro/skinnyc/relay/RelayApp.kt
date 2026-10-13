@@ -644,22 +644,12 @@ fun Message(vm: RelayModel, event: ChatEvent) {
         }
         return
     }
-    val localImages =
-        Regex("!\\[([^]]*)]\\(<?(/[^\\s<>]+?)>?(?:\\s+\"[^\"]*\")?\\)")
-            .findAll(event.text)
-            .filter {
-                Regex("\\.(png|jpe?g|webp|gif|avif)$", RegexOption.IGNORE_CASE)
-                    .containsMatchIn(it.groupValues[2])
-            }
-            .toList()
-    val native =
-        if (event.kind == "artifact.created") event.body.rows("nativeFiles")
-        else
-            localImages.map {
-                json("path" to it.groupValues[2], "description" to it.groupValues[1])
-            }
+    val native = conversationFiles(event.kind, event.body)
+    val saveFile = rememberFileSaver(vm)
     var text = displayText(event.text)
-    localImages.forEach { text = text.replace(it.value, "") }
+    Regex("!\\[([^]]*)]\\(<?(/[^\\s<>]+?)>?(?:\\s+\"[^\"]*\")?\\)").findAll(event.text).forEach {
+        if (native.any { file -> file.str("path") == it.groupValues[2] }) text = text.replace(it.value, "")
+    }
     Column(
         Modifier.fillMaxWidth(),
         horizontalAlignment = if (user) Alignment.End else Alignment.Start,
@@ -675,7 +665,20 @@ fun Message(vm: RelayModel, event: ChatEvent) {
                     else Modifier
                 )
         ) {
-            if (text.isNotBlank()) MarkdownText(text, vm.api.base)
+            if (event.kind == "artifact.created" && event.body.str("openui").isNotBlank()) RichArtifact(vm, event.body.str("openui"), event.id)
+            val parts = if (user) listOf(RichPart("text", text)) else richParts(text)
+            parts.forEachIndexed { partIndex, part ->
+                if (part.kind == "openui") RichArtifact(vm, part.text, "${event.id}:$partIndex", event.kind == "assistant.delta")
+                else {
+            if (part.text.isNotBlank()) MarkdownText(part.text, vm.api.base) { link ->
+                val index = native.indexOfFirst { it.str("path") == link || android.net.Uri.encode(it.str("path"), "/") == link }
+                if (index < 0) false else {
+                    saveFile("/api/sessions/${vm.selected}/media/${event.id}/$index", native[index].str("path").substringAfterLast('/'))
+                    true
+                }
+            }
+                }
+            }
             native.forEachIndexed { index, item ->
                 MediaCard(
                     vm,
@@ -768,8 +771,9 @@ fun SelectionContainerCompat(content: @Composable () -> Unit) {
 }
 
 @Composable
-fun MarkdownText(text: String, baseUrl: String = RelayApi.DEFAULT_ENDPOINT) {
+fun MarkdownText(text: String, baseUrl: String = RelayApi.DEFAULT_ENDPOINT, onNativeLink: (String) -> Boolean = { false }) {
     val context = LocalContext.current
+    val nativeLink by rememberUpdatedState(onNativeLink)
     val renderer =
         remember(context, baseUrl) {
             Markwon.builder(context)
@@ -779,7 +783,7 @@ fun MarkdownText(text: String, baseUrl: String = RelayApi.DEFAULT_ENDPOINT) {
                             builder: io.noties.markwon.MarkwonConfiguration.Builder
                         ) {
                             builder.linkResolver { view, link ->
-                                openChatLink(view.context, baseUrl, link)
+                                if (!nativeLink(link)) openChatLink(view.context, baseUrl, link)
                             }
                         }
                     }

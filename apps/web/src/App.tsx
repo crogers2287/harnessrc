@@ -1,6 +1,23 @@
+import { RichActionContext } from './rich-context.ts';
+import { lazy, Suspense } from 'react';
+const LazyRichResponse = lazy(() => import('./RichResponse.tsx'));
+function RichResponse(props: import('./RichResponse.tsx').RichProps) {
+  return (
+    <Suspense fallback={<p role="status">Loading interactive response…</p>}>
+      <LazyRichResponse {...props} />
+    </Suspense>
+  );
+}
+import { responseParts } from '@harnessrc/protocol';
 import { SessionPermissions } from './SessionPermissions.tsx';
 import { watchMobileBack } from './navigation.ts';
-import { NativeMedia, NativeMediaGallery, MediaPreviewProvider } from './NativeMedia.tsx';
+import {
+  NativeFileLink,
+  GatewayFileLink,
+  NativeMedia,
+  NativeMediaGallery,
+  MediaPreviewProvider,
+} from './NativeMedia.tsx';
 import { nativeFiles } from '@harnessrc/protocol';
 import { notifyEvent } from './notifications.ts';
 import { DshQuestions } from './DshQuestions.tsx';
@@ -63,7 +80,12 @@ import { api, Connection } from '@harnessrc/client-sdk';
 import type { SessionView, Event, Interaction, Task } from '@harnessrc/protocol';
 import { Status, IconButton, Empty } from '@harnessrc/ui';
 type AgentPlan = { steps: { text: string; status: string }[]; text: string; updatedAt: string };
-type Detail = { plan?: AgentPlan | null; session: SessionView; interactions: Interaction[]; tasks: Task[] };
+type Detail = {
+  plan?: AgentPlan | null;
+  session: SessionView;
+  interactions: Interaction[];
+  tasks: Task[];
+};
 type Route = { session?: string; view?: string; interaction?: string };
 const getRoute = (): Route => Object.fromEntries(new URLSearchParams(location.search));
 const previewText = (text: string) =>
@@ -87,7 +109,28 @@ function when(value: string) {
   if (ms < 86400000) return `${Math.floor(ms / 3600000)}h ago`;
   return new Date(value).toLocaleDateString();
 }
-function Mark({ text, event }: { text: string; event?: Event }) {
+function Mark({ text, event, plain = false }: { text: string; event?: Event; plain?: boolean }) {
+  if (!plain && event && event.kind !== 'user.message') {
+    const parts = responseParts(text);
+    if (parts.some((p) => p.kind === 'openui'))
+      return (
+        <>
+          {parts.map((p, index) =>
+            p.kind === 'openui' ? (
+              <RichResponse
+                key={index}
+                source={p.text}
+                id={`${event.id}:${index}`}
+                sessionId={event.sessionId}
+                streaming={event.kind === 'assistant.delta'}
+              />
+            ) : (
+              <Mark key={index} text={p.text} event={event} plain />
+            ),
+          )}
+        </>
+      );
+  }
   return (
     <Markdown
       remarkPlugins={[remarkGfm]}
@@ -104,6 +147,24 @@ function Mark({ text, event }: { text: string; event?: Event }) {
             <table>{children}</table>
           </div>
         ),
+        a: ({ href, children }) => {
+          const index = event
+            ? nativeFiles(event).findIndex((f) => f.path === href || encodeURI(f.path) === href)
+            : -1;
+          return event && index >= 0 ? (
+            <NativeFileLink event={event} index={index}>
+              {children}
+            </NativeFileLink>
+          ) : /^\/api\/(?:android\/apk|sessions\/[^/]+\/(?:attachments\/[a-fA-F0-9-]{36}|media\/[a-fA-F0-9-]{36}\/\d{1,2}))$/.test(
+              href || '',
+            ) ? (
+            <GatewayFileLink path={href!}>{children}</GatewayFileLink>
+          ) : (
+            <a href={href} target="_blank" rel="noopener noreferrer">
+              {children}
+            </a>
+          );
+        },
         img: ({ src, alt }) => {
           const index = event
             ? nativeFiles(event).findIndex((f) => f.path === src || encodeURI(f.path) === src)
@@ -371,67 +432,67 @@ export function App() {
           {shown.map((s) => {
             const recent = sessionRecency(s, lastOpened);
             return (
-                  <SessionRow
-                    session={s}
-                    selected={selected?.id === s.id}
-                    key={s.id}
-                    open={() => navigate({ session: s.id })}
-                  >
-                    <div className={`harness-mark ${s.harness}`} aria-hidden="true">
-                      {s.harness === 'claude'
-                        ? 'C'
-                        : s.harness === 'codex'
-                          ? '⌘'
-                          : s.harness.slice(0, 1).toUpperCase()}
-                    </div>
-                    <div className="session-summary">
-                      <div className="row-title">
-                        <strong>
-                          {s.pinned ? '★ ' : ''}
-                          {sessionLabel(s)}
-                        </strong>
-                      </div>
-                      <div className="session-meta compact-session-meta">
-                        <span>
-                          {s.agentPreset ? `${s.agentPreset} · ` : ''}
-                          {s.model || agentLabel(s.harness)}
-                        </span>
-                        <span>{s.hostId}</span>
-                      </div>
-                      <div className="session-cwd" title={s.cwd}>
-                        <span>CWD</span> <code>{s.cwd || 'Not reported'}</code>
-                      </div>
+              <SessionRow
+                session={s}
+                selected={selected?.id === s.id}
+                key={s.id}
+                open={() => navigate({ session: s.id })}
+              >
+                <div className={`harness-mark ${s.harness}`} aria-hidden="true">
+                  {s.harness === 'claude'
+                    ? 'C'
+                    : s.harness === 'codex'
+                      ? '⌘'
+                      : s.harness.slice(0, 1).toUpperCase()}
+                </div>
+                <div className="session-summary">
+                  <div className="row-title">
+                    <strong>
+                      {s.pinned ? '★ ' : ''}
+                      {sessionLabel(s)}
+                    </strong>
+                  </div>
+                  <div className="session-meta compact-session-meta">
+                    <span>
+                      {s.agentPreset ? `${s.agentPreset} · ` : ''}
+                      {s.model || agentLabel(s.harness)}
+                    </span>
+                    <span>{s.hostId}</span>
+                  </div>
+                  <div className="session-cwd" title={s.cwd}>
+                    <span>CWD</span> <code>{s.cwd || 'Not reported'}</code>
+                  </div>
 
-                      <p>
-                        {previewText(s.preview) ||
-                          (s.capabilities.sendMessage
-                            ? 'Start a conversation'
-                            : 'Chat connection needs attention')}
-                      </p>
-                      <div className="row-bottom">
-                        {isSaved(s) ? (
-                          <span className="saved-session-label">Saved session</span>
-                        ) : (
-                          <Status status={s.status} />
-                        )}
-                        <time dateTime={recent.timestamp} title={`Last ${recent.source.toLowerCase()}`}>
-                          {recent.source} {when(recent.timestamp).toLowerCase()}
-                        </time>
-                        {s.pendingCount > 0 && (
-                          <span className="attention-count">
-                            <CircleHelp size={14} aria-hidden="true" />
-                            {s.pendingCount} waiting
-                          </span>
-                        )}
-                        {s.queuedCount > 0 && (
-                          <span className="queued-count">{s.queuedCount} queued</span>
-                        )}
-                      </div>
-                    </div>
-                    {!isSaved(s) && read[s.id] !== s.lastActivity && (
-                      <span className="unread" aria-label="Unread activity" />
+                  <p>
+                    {previewText(s.preview) ||
+                      (s.capabilities.sendMessage
+                        ? 'Start a conversation'
+                        : 'Chat connection needs attention')}
+                  </p>
+                  <div className="row-bottom">
+                    {isSaved(s) ? (
+                      <span className="saved-session-label">Saved session</span>
+                    ) : (
+                      <Status status={s.status} />
                     )}
-                  </SessionRow>
+                    <time dateTime={recent.timestamp} title={`Last ${recent.source.toLowerCase()}`}>
+                      {recent.source} {when(recent.timestamp).toLowerCase()}
+                    </time>
+                    {s.pendingCount > 0 && (
+                      <span className="attention-count">
+                        <CircleHelp size={14} aria-hidden="true" />
+                        {s.pendingCount} waiting
+                      </span>
+                    )}
+                    {s.queuedCount > 0 && (
+                      <span className="queued-count">{s.queuedCount} queued</span>
+                    )}
+                  </div>
+                </div>
+                {!isSaved(s) && read[s.id] !== s.lastActivity && (
+                  <span className="unread" aria-label="Unread activity" />
+                )}
+              </SessionRow>
             );
           })}
           {shown.length === 0 && (
@@ -631,19 +692,26 @@ function Conversation({
   const scroll = useRef<HTMLDivElement>(null);
   const composer = useRef<HTMLDivElement>(null);
   const composerArea = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const input = composer.current;
-    if (!input) return;
-    input.style.height = 'auto';
-    input.style.height = `${Math.min(input.scrollHeight, 160)}px`;
-  }, [draft]);
+  const followFrame = useRef(0);
+  const followLatest = () => {
+    if (!followFrame.current)
+      followFrame.current = requestAnimationFrame(() => {
+        followFrame.current = 0;
+        if (pinned.current && restored.current && scroll.current)
+          scroll.current.scrollTop = Math.max(
+            0,
+            scroll.current.scrollHeight - scroll.current.clientHeight,
+          );
+      });
+  };
+  useEffect(() => () => cancelAnimationFrame(followFrame.current), []);
   useEffect(() => {
     const area = composerArea.current;
     const pane = area?.closest<HTMLElement>('.main-pane');
     if (!area || !pane) return;
     const observer = new ResizeObserver(() => {
       pane.style.setProperty('--composer-height', `${area.getBoundingClientRect().height}px`);
-      if (pinned.current && scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight;
+      followLatest();
     });
     observer.observe(area);
     return () => observer.disconnect();
@@ -668,6 +736,9 @@ function Conversation({
     overscan: 5,
     getItemKey: (index) => visible[index].id,
   });
+  // Preserve the reader's anchor; a single frame callback owns bottom following.
+  virtual.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) =>
+    !pinned.current && item.start < (instance.scrollOffset ?? 0);
   useEffect(() => {
     drafts.set(session.id, draft);
     try {
@@ -691,19 +762,21 @@ function Conversation({
     if (!visible.length) return;
     if (!restored.current) {
       const offset = scrollPositions.get(session.id);
-      if (offset !== undefined) virtual.scrollToOffset(offset);
-      else virtual.scrollToIndex(visible.length - 1, { align: 'end' });
+      if (offset !== undefined) {
+        pinned.current = false;
+        setAtBottom(false);
+        virtual.scrollToOffset(offset);
+      } else virtual.scrollToOffset(virtual.getTotalSize(), { align: 'end' });
       restored.current = true;
-    } else if (atBottom && visible.length !== lastCount.current)
-      virtual.scrollToIndex(visible.length - 1, { align: 'end' });
+    }
+    if (pinned.current && visible.length !== lastCount.current) followLatest();
     lastCount.current = visible.length;
-  }, [visible.length, virtual, session.id, atBottom, route.view]);
+  }, [visible.length, virtual, session.id, route.view]);
   useEffect(() => {
     const element = transcript.current;
     if (!element) return;
     const observer = new ResizeObserver(() => {
-      if (pinned.current && restored.current && scroll.current)
-        scroll.current.scrollTop = scroll.current.scrollHeight;
+      followLatest();
     });
     observer.observe(element);
     return () => observer.disconnect();
@@ -848,15 +921,37 @@ function Conversation({
       <>
         <PageHeader title="Agent tasks" back={() => navigate({ session: session.id })} />
         <section className="plan-card" aria-label="Agent plan">
-          {detail.data?.plan ? <>
-            <h2>{detail.data.plan.steps.filter(s => s.status === 'completed').length} of {detail.data.plan.steps.length} completed</h2>
-            {detail.data.plan.text && <p>{detail.data.plan.text}</p>}
-            <ol>{detail.data.plan.steps.map((step, index) => <li key={index} style={{ paddingBlock: 8 }}>
-              <strong>{step.status === 'completed' ? 'Completed' : step.status === 'in_progress' ? 'In progress' : 'Pending'}</strong> — {step.text}
-            </li>)}</ol>
-          </> : <><h2>No task list shared yet</h2><p>The agent’s structured plan will appear here when it shares one.</p></>}
+          {detail.data?.plan ? (
+            <>
+              <h2>
+                {detail.data.plan.steps.filter((s) => s.status === 'completed').length} of{' '}
+                {detail.data.plan.steps.length} completed
+              </h2>
+              {detail.data.plan.text && <p>{detail.data.plan.text}</p>}
+              <ol>
+                {detail.data.plan.steps.map((step, index) => (
+                  <li key={index} style={{ paddingBlock: 8 }}>
+                    <strong>
+                      {step.status === 'completed'
+                        ? 'Completed'
+                        : step.status === 'in_progress'
+                          ? 'In progress'
+                          : 'Pending'}
+                    </strong>{' '}
+                    — {step.text}
+                  </li>
+                ))}
+              </ol>
+            </>
+          ) : (
+            <>
+              <h2>No task list shared yet</h2>
+              <p>The agent’s structured plan will appear here when it shares one.</p>
+            </>
+          )}
         </section>
-        <details className="plan-card"><summary style={{ minHeight: 48 }}>Queued messages</summary>
+        <details className="plan-card">
+          <summary style={{ minHeight: 48 }}>Queued messages</summary>
           <QueueView session={session} tasks={detail.data?.tasks ?? []} />
         </details>
       </>
@@ -955,7 +1050,9 @@ function Conversation({
             <dd>{session.cwd || 'Not reported'}</dd>
           </dl>
           {session.capabilities.changeModel && (
-            <button onClick={() => navigate({ session: session.id, view: 'details' })}>Change model</button>
+            <button onClick={() => navigate({ session: session.id, view: 'details' })}>
+              Change model
+            </button>
           )}
         </section>
       )}
@@ -968,12 +1065,28 @@ function Conversation({
       <div
         className="conversation-scroll"
         ref={scroll}
+        onWheel={(e) => {
+          if (e.deltaY < 0) {
+            pinned.current = false;
+            setAtBottom(false);
+          }
+        }}
+        onTouchMove={() => {
+          pinned.current = false;
+          setAtBottom(false);
+        }}
+        onKeyDown={(e) => {
+          if (['ArrowUp', 'PageUp', 'Home'].includes(e.key)) {
+            pinned.current = false;
+            setAtBottom(false);
+          }
+        }}
         onScroll={() => {
           if (scroll.current) {
             scrollPositions.set(session.id, scroll.current.scrollTop);
             pinned.current =
               scroll.current.scrollHeight - scroll.current.scrollTop - scroll.current.clientHeight <
-              100;
+              4;
             setAtBottom(pinned.current);
           }
         }}
@@ -1028,7 +1141,11 @@ function Conversation({
                 transform: `translateY(${row.start}px)`,
               }}
             >
-              <EventCard event={visible[row.index]} />
+              <RichActionContext.Provider
+                value={(text) => setDraft((current) => (current ? `${current}\n${text}` : text))}
+              >
+                <EventCard event={visible[row.index]} />
+              </RichActionContext.Provider>
             </div>
           ))}
         </div>
@@ -1070,8 +1187,7 @@ function Conversation({
         <button
           className="jump-latest"
           onClick={() => {
-            virtual.scrollToIndex(visible.length - 1, { align: 'end' });
-            scroll.current?.scrollTo({ top: scroll.current.scrollHeight });
+            followLatest();
             pinned.current = true;
             setAtBottom(true);
           }}
@@ -1325,6 +1441,9 @@ function EventCard({ event }: { event: Event }) {
       <article className="artifact-card" aria-label="Generated artifact">
         <h3>{String(data.title ?? 'Generated file')}</h3>
         {text && <Mark text={text} />}
+        {typeof data.openui === 'string' && (
+          <RichResponse source={data.openui} id={event.id} sessionId={event.sessionId} />
+        )}
         {Array.isArray(data.nativeFiles) && <NativeMediaGallery event={event} />}
         <div className="artifact-files">
           {Array.isArray(data.attachments) &&

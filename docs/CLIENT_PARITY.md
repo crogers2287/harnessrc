@@ -170,3 +170,15 @@ Both clients expose **Session settings → Session model** when the adapter adve
 Android requires the signed 0.1.14 update. Its settings load models independently of permissions, and pending messages say **Accepted · awaiting native conversation** until an actual transcript echo arrives. Web model selection is available after refreshing the deployed app.
 
 Validation: 131 backend/shared tests, TypeScript, ESLint, production web build, Android unit tests/lint and signed APK build passed. A phone-size browser test applies a native catalog choice. A disposable Codex session launched under Herdr on Fred received and answered immediately, switched models while preserving permissions, and recovered a discarded send acknowledgement without another submission. Its test tab was closed afterward. The native model-picker instrumentation regression compiles; it was not run because the available emulator is offline. Physical-phone UI verification remains outstanding.
+
+## OpenUI responses and media, 2026-10-13
+
+Web and Android 0.1.15 render the same explicit OpenUI response format and `.openui` publications, with the full installed component library. User actions add a reviewable draft; no tools or approvals run from generated UI. Web loads the larger renderer only when a rich response appears. Android bundles an isolated artifact surface while keeping its editor/navigation and media playback native. See [OPENUI.md](OPENUI.md) for the security boundary and unsupported pipeline execution.
+
+Both clients map DSH Markdown filesystem links to exact authorized conversation files, support video/audio playback, and download files instead of opening the SPA. Image indices remain compatible with older versions. Passive media routes implement byte ranges and never render HTML/SVG inline. File size remains 20 MB. Phone codec, save-picker and embedded artifact gesture verification remains a physical-device check.
+
+Browser chat now has one scroll owner: row measurement preserves the reading anchor and bottom-follow updates are coalesced into one animation frame. Native Android retains its existing native scroll behavior.
+
+Verification for this release: 47 browser end-to-end checks passed, including media playback/seeking, exact byte downloads, rich form drafts/replay, keyboard-sized composition, and reading-position preservation. Android has 17 passing unit tests, lint and compiled instrumentation tests, with a signed 0.1.15 APK. The disposable emulator system-image directory is empty, so native playback/embedded-artifact runtime verification remains a physical-device check. The actual DSH coheed MP4 was read successfully through its authenticated native file API (12,313,078 bytes, video/mp4).
+
+Recovery now settles an uncertain message when its durable receipt is confirmed while retaining one visible bubble until the native echo arrives. Public JS/CSS/icon requests no longer consume the agent API rate quota, preventing blank reloads during heavy use; the API quota remains enforced and regression-tested.

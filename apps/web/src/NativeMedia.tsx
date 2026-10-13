@@ -3,8 +3,13 @@ import { useQuery } from '@tanstack/react-query';
 import { Image } from '@openuidev/react-ui/Image';
 import { Button } from '@harnessrc/ui';
 import { Download, X } from 'lucide-react';
-import { nativeFiles, type Event } from '@harnessrc/protocol';
-import { downloadNativeFile } from '@harnessrc/client-sdk';
+import { nativeFiles, mediaKind, type Event } from '@harnessrc/protocol';
+import {
+  downloadNativeFile,
+  nativeMediaUrl,
+  downloadResource,
+  mediaResourceUrl,
+} from '@harnessrc/client-sdk';
 
 type Preview = { blob: Blob; title: string; name: string };
 const PreviewContext = createContext<(preview: Preview) => void>(() => {});
@@ -62,7 +67,8 @@ export function NativeMedia({ event, index }: { event: Event; index: number }) {
   const file = nativeFiles(event)[index];
   const [url, setUrl] = useState('');
   const showPreview = useContext(PreviewContext);
-  const image = /\.(png|jpe?g|webp|gif|avif)$/i.test(file?.path ?? '');
+  const kind = mediaKind(file?.path ?? '');
+  const image = kind === 'image';
   const query = useQuery({
     queryKey: ['native-media', event.sessionId, event.id, index],
     queryFn: () => downloadNativeFile(event.sessionId, event.id, index),
@@ -106,6 +112,23 @@ export function NativeMedia({ event, index }: { event: Event; index: number }) {
             {query.isError ? 'Image unavailable' : 'Loading image…'}
           </div>
         ))}
+      {kind === 'video' && (
+        <video
+          controls
+          playsInline
+          preload="metadata"
+          aria-label={title}
+          src={nativeMediaUrl(event.sessionId, event.id, index)}
+        />
+      )}
+      {kind === 'audio' && (
+        <audio
+          controls
+          preload="metadata"
+          aria-label={title}
+          src={nativeMediaUrl(event.sessionId, event.id, index)}
+        />
+      )}
       <div className="native-media-caption">
         <strong>{title}</strong>
         <span>{name}</span>
@@ -132,5 +155,82 @@ export function NativeMediaGallery({ event }: { event: Event }) {
         <NativeMedia key={`${index}:${file.path}`} event={event} index={index} />
       ))}
     </div>
+  );
+}
+
+export function NativeFileLink({
+  event,
+  index,
+  children,
+}: {
+  event: Event;
+  index: number;
+  children: ReactNode;
+}) {
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  return (
+    <>
+      <button
+        className="native-file-link"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          setError('');
+          try {
+            const blob = await downloadNativeFile(event.sessionId, event.id, index);
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = nativeFiles(event)[index].path.split('/').pop() || 'file';
+            link.click();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+          } catch (e) {
+            setError(e instanceof Error ? e.message : 'Download failed');
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        {busy ? 'Downloading…' : children}
+      </button>
+      {error && <span role="alert">{error}</span>}
+    </>
+  );
+}
+
+/** Fetch first: auth errors remain in chat, and Android/web never navigate into an API error. */
+export function GatewayFileLink({ path, children }: { path: string; children: ReactNode }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  return (
+    <>
+      <a
+        href={mediaResourceUrl(path)}
+        aria-busy={busy}
+        onClick={async (event) => {
+          event.preventDefault();
+          if (busy) return;
+          setBusy(true);
+          setError('');
+          try {
+            const result = await downloadResource(path);
+            const url = URL.createObjectURL(result.blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = result.name;
+            link.click();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+          } catch (e) {
+            setError(e instanceof Error ? e.message : 'Download failed');
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        {busy ? 'Downloading…' : children}
+      </a>
+      {error && <span role="alert">{error}</span>}
+    </>
   );
 }

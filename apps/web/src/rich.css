@@ -1,0 +1,38 @@
+:root {
+  color-scheme: light;
+  font-family: system-ui, sans-serif;
+  color: #172622;
+  background: #fff;
+}
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  color: #e5eae8;
+  background: #151d19;
+}
+body {
+  margin: 0;
+  padding: 8px;
+}
+.rich-response {
+  min-width: 0;
+  overflow-x: auto;
+}
+.rich-response button,
+.rich-response input,
+.rich-response select {
+  min-height: 48px;
+}
+.rich-response pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
+:root {
+  --accent: #26786d;
+  --on-accent: #fff;
+}
+:root[data-theme='dark'] {
+  --accent: #93cbc0;
+  --on-accent: #173e37;
+}

@@ -7,6 +7,7 @@ export default ts.config(
       'apps/web/dist/**',
       'apps/android/**/build/**',
       'apps/android/.gradle/**',
+      'apps/android/app/src/main/assets/rich/**',
       'artifacts/**',
       'playwright-report/**',
       'test-results/**',

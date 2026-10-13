@@ -8,6 +8,7 @@ export default defineConfig({
     outDir: 'dist',
     emptyOutDir: true,
     rollupOptions: {
+      input: { app: 'apps/web/index.html', rich: 'apps/web/rich.html' },
       output: {
         manualChunks: {
           react: ['react', 'react-dom', '@tanstack/react-query', '@tanstack/react-virtual'],

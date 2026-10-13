@@ -1,8 +1,8 @@
 # Generated artifacts
 
-A harness can run any authorized Content Studio, ComfyUI, or other generation workflow, save its output, and publish the resulting file to its exact Relay conversation. Relay stores the bytes and a durable `artifact.created` event. Phone disconnects do not lose the output. PNG, JPEG, GIF and WebP render as image cards with a larger preview and downloads; other formats download as files. HTML/SVG are never executed as same-origin pages. File size is limited to 20 MB and shared upload storage to 1 GB.
+A harness can run any authorized Content Studio, ComfyUI, or other generation workflow, save its output, and publish the resulting file to its exact Relay conversation. Relay stores the bytes and a durable `artifact.created` event. Phone disconnects do not lose the output. PNG, JPEG, GIF and WebP render as image cards with a larger preview and downloads; MP4/WebM and supported audio render with inline controls; other formats download as files. HTML/SVG are never executed as same-origin pages. File size is limited to 20 MB and shared upload storage to 1 GB.
 
-This delivers artifacts, not a generative OpenUI runtime. OpenUI currently supplies composer controls. Running generated interactive HTML, editing images, annotation, pipeline job controls, and automatically discovering every pipeline output remain unsupported. Generation stays with the harness and its existing tools; no Content Studio or Comfy endpoint is hardcoded or inferred from model text.
+OpenUI now renders explicit rich assistant responses and published `.openui` artifacts: see [rich response format](OPENUI.md). Generated HTML execution, editing images, annotation, pipeline job controls, and automatically discovering every pipeline output remain unsupported. Generation stays with the harness and its existing tools; no Content Studio or Comfy endpoint is hardcoded or inferred from model text.
 
 ## Publish from a harness or pipeline
 

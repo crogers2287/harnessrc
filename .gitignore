@@ -13,3 +13,5 @@ apps/android/local.properties
 apps/android/**/build/
 *.jks
 *.keystore
+
+apps/android/app/src/main/assets/rich/

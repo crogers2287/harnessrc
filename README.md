@@ -50,3 +50,5 @@ The mobile-first composer supports files, photos/camera selection, upload progre
 Create sessions from your phone: [host folders, agents, models, and CFRproxy profiles](docs/SESSION_CREATION.md).
 
 Voice dictation with local transcription/cleanup: [setup and privacy](docs/VOICE.md). Mobile session long-press actions include shared Relay names, pinning, Close to History, and capability-gated Stop Turn. DSH native questions use the existing host event stream; see [DSH](docs/DSH.md).
+
+Rich responses now use the real OpenUI renderer on web and in an isolated, bundled Android artifact surface. Cards, charts, tables, forms and tabs can appear inside assistant replies; video/audio play inline and exact DSH file links download securely. See [OpenUI output format](docs/OPENUI.md), [artifact publishing](docs/ARTIFACTS.md), and [example](docs/examples/relay-rich-demo.openui). Generated form actions add a draft for review; they do not execute harness tools or approve commands.

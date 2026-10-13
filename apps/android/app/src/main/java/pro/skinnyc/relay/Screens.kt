@@ -52,6 +52,27 @@ fun Page(title: String, back: () -> Unit, content: @Composable ColumnScope.() ->
 }
 
 @Composable
+fun rememberFileSaver(vm: RelayModel): (String, String) -> Unit {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var pending by remember { mutableStateOf("") }
+    val save = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+        val path = pending
+        pending = ""
+        if (uri != null && path.isNotBlank()) scope.launch {
+            runCatching {
+                val bytes = vm.api.bytes(path)
+                withContext(Dispatchers.IO) {
+                    val output = context.contentResolver.openOutputStream(uri) ?: error("Cannot write selected file")
+                    output.use { it.write(bytes) }
+                }
+            }.onFailure { vm.error = "Download failed: ${it.message}" }
+        }
+    }
+    return { path, name -> pending = path; save.launch(name) }
+}
+
+@Composable
 fun MediaCard(vm: RelayModel, path: String, name: String, description: String, image: Boolean) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -81,6 +102,9 @@ fun MediaCard(vm: RelayModel, path: String, name: String, description: String, i
             .clip(RoundedCornerShape(16.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
     ) {
+        if (mediaType(name) in listOf("video", "audio")) {
+            NativePlayback(vm, path, name)
+        }
         if (image && !failed)
             AsyncImage(
                 model = vm.api.base + path,

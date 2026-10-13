@@ -65,7 +65,8 @@ test('mobile chat: native approval, serial queued work, reconnect, and settings'
   await page.getByLabel('Instruction', { exact: true }).fill('Second followup');
   await page.getByLabel('Instruction behavior').selectOption('queue');
   await page.getByRole('button', { name: 'Queue instruction', exact: true }).click();
-  await page.getByRole('button', { name: /Task queue,/ }).click();
+  await page.getByRole('button', { name: 'Agent tasks', exact: true }).click();
+  await page.getByText('Queued messages', { exact: true }).click();
   await expect(page.getByText('First followup', { exact: true })).toBeVisible();
   await expect(page.getByText('Second followup', { exact: true })).toBeVisible();
   await page.screenshot({ path: 'docs/screenshots/queue-mobile.png' });
@@ -87,7 +88,8 @@ test('mobile chat: native approval, serial queued work, reconnect, and settings'
   });
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Atlas API', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: /Task queue,/ }).click();
+  await page.getByRole('button', { name: 'Agent tasks', exact: true }).click();
+  await page.getByText('Queued messages', { exact: true }).click();
   await expect(page.getByText('completed', { exact: true })).toHaveCount(3, { timeout: 15000 });
   await page.getByRole('button', { name: 'Back to sessions' }).click();
   await page.screenshot({ path: 'docs/screenshots/conversation-mobile.png' });
@@ -295,6 +297,18 @@ test('live chat appends events without refetching history and preserves reading 
     element.dispatchEvent(new Event('scroll'));
   });
   await expect(page.getByRole('button', { name: 'Latest messages', exact: true })).toBeVisible();
+  // Small upward scrolls must also stop following; the old 100px threshold re-pinned them.
+  const pane = page.locator('.conversation-scroll');
+  await pane.evaluate((element) => {
+    element.scrollTop = element.scrollHeight - element.clientHeight - 50;
+    element.dispatchEvent(new WheelEvent('wheel', { deltaY: -50, bubbles: true }));
+    element.dispatchEvent(new Event('scroll'));
+  });
+  await expect(page.getByRole('button', { name: 'Latest messages', exact: true })).toBeVisible();
+  await pane.evaluate((element) => {
+    element.scrollTop = 0;
+    element.dispatchEvent(new Event('scroll'));
+  });
   const initialRequests = historyRequests;
   for (let n = 0; n < 3; n++) {
     stream.send(
@@ -1156,7 +1170,7 @@ test('voice records real browser audio, cleans into a draft, preserves typing an
     await new Promise((resolve) => setTimeout(resolve, 500));
     await route.fulfill({ json: { mode: 'send' } });
   });
-  await page.getByRole('button', { name: 'Send message', exact: true }).click();
+  await page.getByRole('button', { name: /^(Send message|Steer active turn)$/ }).click();
   await expect(draft).toHaveText('');
   await draft.fill('New draft while the acknowledgement arrives');
   await expect(page.getByLabel('Voice input', { exact: true })).toHaveCount(0);
@@ -1568,12 +1582,12 @@ test('DSH steering acknowledgement stays distinct from an applied model update',
   await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
   await page.getByLabel('Instruction', { exact: true }).fill('Steering feedback fixture');
   await page.getByRole('button', { name: 'Steer active turn', exact: true }).click();
-  await expect(page.getByText('Steering accepted · waiting for the next agent step')).toBeVisible();
+  await expect(page.getByText('Sent to active turn', { exact: true })).toBeVisible();
   await expect(
     page.getByText('Steering accepted. DSH will apply it at the next step.'),
   ).toBeVisible();
   await page.reload();
-  await expect(page.getByText('Steering accepted · waiting for the next agent step')).toBeVisible();
+  await expect(page.getByText('Sent to active turn', { exact: true })).toBeVisible();
   expect(submissions).toBe(1);
 });
 
@@ -1826,21 +1840,17 @@ test('session permission picker confirms native changes and displays failure', a
   await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
   await page.getByRole('button', { name: 'Session details', exact: true }).click();
   await page.getByLabel('Permission preset', { exact: true }).selectOption('read-only');
-  await expect(page.getByRole('button', { name: 'Apply permissions', exact: true })).toBeDisabled();
-  await page
-    .getByRole('checkbox', { name: 'Apply this permission change to this session' })
-    .check();
-  await page.getByRole('button', { name: 'Apply permissions', exact: true }).click();
-  await expect(page.getByText('Permissions saved in the harness.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Apply settings', exact: true })).toBeDisabled();
+  await page.getByRole('checkbox', { name: 'Apply this change to this session' }).check();
+  await page.getByRole('button', { name: 'Apply settings', exact: true }).click();
+  await expect(page.getByText('Settings saved in the harness.')).toBeVisible();
   expect(changes).toBe(1);
   await expect(page.getByLabel('Permission preset', { exact: true })).toHaveValue('read-only');
   await page.screenshot({ path: '/tmp/relay-permissions-mobile.png' });
   await page.getByLabel('Permission preset', { exact: true }).selectOption('danger-full-access');
   await expect(page.getByText(/Full access lets this agent/)).toBeVisible();
-  await page
-    .getByRole('checkbox', { name: 'Apply this permission change to this session' })
-    .check();
-  await page.getByRole('button', { name: 'Apply permissions', exact: true }).click();
+  await page.getByRole('checkbox', { name: 'Apply this change to this session' }).check();
+  await page.getByRole('button', { name: 'Apply settings', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('Permissions changed');
   expect(changes).toBe(1);
 });
@@ -1934,7 +1944,7 @@ test('Settings exposes the published native Android APK separately from PWA inst
   ).toBeVisible();
 });
 
-test('confirmed receipt reconciles without echo or resend and preserves the next web draft', async ({
+test('confirmed receipt keeps one bubble until native echo without resend and preserves the next draft', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
@@ -1956,18 +1966,24 @@ test('confirmed receipt reconciles without echo or resend and preserves the next
     sessionStorage.setItem(`relay-draft:${id}`, 'Keep my next instruction');
   }, id);
   let confirmed = false;
+  let nativeSeen = false;
   let posts = 0;
   page.on('request', (request) => {
     if (request.method() === 'POST' && /\/(messages|steer|tasks)$/.test(request.url())) posts++;
   });
   await page.route('**/message-receipts/*', (route) =>
     route.fulfill({
-      json: { nativeSeen: false, confirmed },
+      json: { nativeSeen, confirmed },
     }),
   );
   await page.goto('/?session=' + id);
   await expect(page.locator('.outgoing-message')).toContainText('Delivery not confirmed');
   confirmed = true;
+  await expect(page.locator('.outgoing-message').getByRole('status')).toHaveText('Sent', {
+    timeout: 12000,
+  });
+  await expect(page.locator('.outgoing-message')).toHaveCount(1);
+  nativeSeen = true;
   await expect(page.locator('.outgoing-message')).toHaveCount(0, { timeout: 12000 });
   await expect(page.getByLabel('Instruction', { exact: true })).toHaveText(
     'Keep my next instruction',
@@ -2283,6 +2299,14 @@ test('mobile native model picker applies a catalog model without submitting a me
     for (const s of body.sessions) s.capabilities.changeModel = true;
     await route.fulfill({ response, json: body });
   });
+  await page.routeWebSocket('**/ws', (socket) => {
+    socket.connectToServer().onMessage((message) => {
+      const data = JSON.parse(String(message));
+      if (data.type === 'invalidate')
+        for (const session of data.sessions) session.capabilities.changeModel = true;
+      socket.send(JSON.stringify(data));
+    });
+  });
   let model = 'old-model';
   let changes = 0;
   const catalog = () => ({
@@ -2320,4 +2344,99 @@ test('mobile native model picker applies a catalog model without submitting a me
     JSON.stringify({ provider: 'openai', model: 'new-model' }),
   );
   await page.screenshot({ path: 'test-results/model-picker-mobile.png', fullPage: true });
+});
+
+test('OpenUI response renders chart/table/form, saves a draft, and replays without duplication', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await pair(page);
+  await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
+  const { sessions } = await page.evaluate(async () => (await fetch('/api/sessions')).json());
+  const session = sessions.find((s: any) => s.project === 'Atlas API');
+  const source = `heading = CardHeader("Render comparison", "Same seed")
+chart = BarChart(["Turbo", "Teacher"], [Series("Seconds", [25, 236])])
+table = Table([Col("Model", ["Turbo", "Teacher"]), Col("Steps", [8, 40], "number")])
+form = Form("nextRender", Buttons([Button("Use these settings", Action([@ToAssistant("Prepare the next render")]))]), [FormControl("Direction", Input("direction", "Describe the next version", "text"))])
+root = Stack([heading, chart, table, form])`;
+  const query = new URLSearchParams({
+    requestId: crypto.randomUUID(),
+    generation: session.generation,
+    name: 'comparison.openui',
+    title: 'Interactive comparison',
+  });
+  const publish = await page.request.post(`/api/sessions/${session.id}/artifacts?${query}`, {
+    headers: { 'content-type': 'application/octet-stream', 'x-rc-request': '1' },
+    data: source,
+  });
+  expect(publish.ok()).toBeTruthy();
+  const card = page
+    .getByRole('article', { name: 'Generated artifact' })
+    .filter({ hasText: 'Interactive comparison' });
+  await expect(card.getByText('Render comparison', { exact: true })).toBeVisible();
+  await expect(card.getByRole('table')).toBeVisible();
+  await expect(card.getByRole('img', { name: 'Bar chart', exact: true })).toBeVisible();
+  await card.getByPlaceholder('Describe the next version').fill('Keep the same character');
+  await card.getByRole('button', { name: 'Use these settings', exact: true }).click();
+  await expect(page.getByLabel('Instruction', { exact: true })).toContainText(
+    'Prepare the next render',
+  );
+  await expect(page.getByLabel('Instruction', { exact: true })).toContainText(
+    'Keep the same character',
+  );
+  await expect(card.getByRole('status')).toHaveText(
+    'Added to your draft. Review and send when ready.',
+  );
+  await page.screenshot({ path: 'docs/screenshots/openui-mobile.png' });
+  await page.reload();
+  await expect(card).toHaveCount(1);
+  await expect(card.getByPlaceholder('Describe the next version')).toHaveValue(
+    'Keep the same character',
+  );
+});
+
+test('published video plays inline, seeks with byte ranges, and downloads real bytes', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await pair(page);
+  await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
+  const { sessions } = await page.evaluate(async () => (await fetch('/api/sessions')).json());
+  const session = sessions.find((s: any) => s.project === 'Atlas API');
+  const bytes = await readFile('packages/testing/fixtures/preview.mp4');
+  const query = new URLSearchParams({
+    requestId: crypto.randomUUID(),
+    generation: session.generation,
+    name: 'preview.mp4',
+    mime: 'video/mp4',
+    title: 'Inline video',
+  });
+  expect(
+    (
+      await page.request.post(`/api/sessions/${session.id}/artifacts?${query}`, {
+        headers: { 'content-type': 'application/octet-stream', 'x-rc-request': '1' },
+        data: bytes,
+      })
+    ).ok(),
+  ).toBeTruthy();
+  const card = page
+    .getByRole('article', { name: 'Generated artifact' })
+    .filter({ hasText: 'Inline video' });
+  const video = card.locator('video');
+  await expect(video).toBeVisible();
+  await expect
+    .poll(() => video.evaluate((v: HTMLVideoElement) => v.readyState))
+    .toBeGreaterThanOrEqual(1);
+  await video.evaluate((v: HTMLVideoElement) => {
+    v.currentTime = 1;
+  });
+  await expect
+    .poll(() => video.evaluate((v: HTMLVideoElement) => v.currentTime))
+    .toBeGreaterThanOrEqual(1);
+  const downloaded = page.waitForEvent('download');
+  await card.getByRole('button', { name: 'Download file', exact: true }).click();
+  const file = await downloaded;
+  expect(file.suggestedFilename()).toBe('preview.mp4');
+  expect(await readFile((await file.path())!)).toEqual(bytes);
+  await page.screenshot({ path: 'docs/screenshots/inline-video-mobile.png' });
 });
