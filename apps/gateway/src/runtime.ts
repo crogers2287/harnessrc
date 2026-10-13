@@ -1,3 +1,4 @@
+import { ClaudeQuestions } from './claude-questions.ts';
 import { SubagentReader } from '../../../packages/adapters/src/subagents.ts';
 import { importNativeImage } from './artifacts.ts';
 import { ClaudeSteering } from './claude-steering.ts';
@@ -23,6 +24,7 @@ import { InteractionBroker } from '@harnessrc/interaction-broker';
 import type { Config } from './config.ts';
 export class Runtime extends EventEmitter {
   subagents: SubagentReader;
+  claudeQuestions = new ClaudeQuestions(this);
   claudeSteering = new ClaudeSteering(this);
   dshHosts = new Map<string, DshHost>();
   clients = new Map<string, HerdrClient>();
@@ -89,6 +91,9 @@ export class Runtime extends EventEmitter {
       store,
       (id) => this.adapters.get(id),
       (s) => this.assertBinding(s),
+      (i, response) => {
+        if (i.metadata.questionFormat === 'choice-batch') this.claudeQuestions.answers(i, response);
+      },
     );
   }
   async assertBinding(s: Session) {
@@ -302,7 +307,12 @@ export class Runtime extends EventEmitter {
                   i.route === 'claude-hook' && i.status === 'pending' && i.leaseUntil > Date.now(),
               )
           ) {
-            s.capabilities = { ...s.capabilities, approveAction: true, rejectAction: true };
+            s.capabilities = {
+              ...s.capabilities,
+              answerQuestion: true,
+              approveAction: true,
+              rejectAction: true,
+            };
           }
         } else s.diagnostic = 'Herdr has not reported a native session identity yet.';
         if (counts.get(s.id)! > 1) {

@@ -40,11 +40,30 @@ export async function startHookServer(runtime: Runtime, socketPath: string) {
       try {
         const request = z
           .object({
-            method: z.enum(['open', 'poll', 'ack', 'steer-poll', 'steer-ack']),
+            method: z.enum([
+              'open',
+              'poll',
+              'ack',
+              'steer-poll',
+              'steer-ack',
+              'question-open',
+              'question-poll',
+              'question-ack',
+              'question-close',
+            ]),
             requestId: z.string().uuid(),
             payload: z.unknown().optional(),
           })
           .parse(JSON.parse(buf.slice(0, nl)));
+        if (request.method.startsWith('question-')) {
+          const result = await runtime.claudeQuestions.handle(
+            request.method,
+            request.requestId,
+            request.payload,
+          );
+          socket.end(JSON.stringify({ result }) + '\n');
+          return;
+        }
         if (request.method === 'steer-poll' || request.method === 'steer-ack') {
           const result = await runtime.claudeSteering.handle(
             request.method,

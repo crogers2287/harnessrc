@@ -48,6 +48,15 @@ test('Claude hook steering registers exact owner, delivers once with files and s
     bridge = f.gateway.runtime.claudeSteering;
     assert.equal(bridge.available(f.session), true);
     const inv = randomUUID();
+    assert.deepEqual(
+      (
+        await bridge.handle('steer-poll', randomUUID(), {
+          ...payload,
+          tool_name: 'AskUserQuestion',
+        })
+      ).output,
+      {},
+    );
     const claim = await bridge.handle('steer-poll', inv, payload);
     assert.match(JSON.stringify(claim.output), /Change direction/);
     assert.match(JSON.stringify(claim.output), /proof.txt/);

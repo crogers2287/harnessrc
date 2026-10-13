@@ -60,6 +60,7 @@ export class InteractionBroker {
     private store: Store,
     private adapter: (sessionId: string) => Adapter | undefined,
     private binding: (session: Session) => Promise<void>,
+    private validateHookResponse?: (interaction: Interaction, response: unknown) => void,
   ) {
     for (const s of store.sessions())
       for (const i of store.interactions(s.id))
@@ -138,6 +139,7 @@ export class InteractionBroker {
     )
       throw new Error('Interaction is expired or session owner changed');
     validateResponse(i.responseSchema, response);
+    if (i.route === 'claude-hook') this.validateHookResponse?.(i, response);
     await this.binding(session);
     const adapter = this.adapter(i.sessionId);
     if (i.route !== 'claude-hook' && !adapter?.respond)
@@ -145,6 +147,13 @@ export class InteractionBroker {
     adapter?.validateInteractionResponse?.(session, i, response);
     /* Claim after await: concurrent submits must re-check the persisted status. */ this.store.transaction(
       () => {
+        const owner = this.store.session(i.sessionId);
+        if (
+          owner.generation !== i.generation ||
+          owner.nativeSessionId !== i.nativeSessionId ||
+          !owner.connected
+        )
+          throw new Error('Session owner changed while validating the response');
         if (this.store.interaction(id).status !== 'pending')
           throw new Error('Interaction already claimed');
         i.status = 'responding';

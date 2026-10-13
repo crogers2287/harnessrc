@@ -15,6 +15,7 @@ const payloadSchema = z.object({
   ]),
   sender_pids: z.array(z.number().int().positive()).max(32),
   agent_id: z.string().optional(),
+  tool_name: z.string().optional(),
 });
 
 /** A mailbox consumed by the existing Claude process at a documented hook boundary.
@@ -118,6 +119,7 @@ export class ClaudeSteering {
       }
       return { output: {} };
     }
+    if (h.tool_name === 'AskUserQuestion') return { output: {} };
     // Start/prompt hooks register support but must not turn an old steer into a new turn.
     if (['SessionStart', 'UserPromptSubmit'].includes(h.hook_event_name)) return { output: {} };
     if (

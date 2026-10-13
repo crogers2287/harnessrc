@@ -1680,7 +1680,7 @@ function InteractionCard({
             : JSON.stringify(i.metadata.input, null, 2)}
         </pre>
       )}
-      {i.route === 'dsh-native' ? (
+      {i.route === 'dsh-native' || i.metadata.questionFormat === 'choice-batch' ? (
         <DshQuestions
           questions={i.metadata.dshQuestions as any}
           disabled={!active}

@@ -76,6 +76,10 @@ export async function sendMessage(
     } else if (state === 'idle' || state === 'done') {
       deliveryAttempted = true;
       result = { mode: 'send', task: await runtime.queue.sendNow(sessionId, value) };
+    } else if (state === 'blocked') {
+      throw new Error(
+        'The agent is waiting for an answer. Resolve its question or approval before sending. Your draft was not sent.',
+      );
     } else throw new Error('The agent is not ready for a message. Your message was not queued.');
     store.db
       .prepare("UPDATE message_receipts SET status='confirmed',result=? WHERE request_id=?")

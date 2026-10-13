@@ -16,10 +16,18 @@ for event in ['SessionStart','UserPromptSubmit','PreToolUse','PostToolUse','Post
  for group in groups:
   group['hooks']=[h for h in group.get('hooks',[]) if 'claude-steering-hook.mjs' not in h.get('command','')]
  groups.append({'hooks':[{'type':'command','command':command,'timeout':5}]})
+question_script=a.release/'scripts/claude-question-hook.mjs'
+if not question_script.is_file():raise SystemExit('Question hook missing from release')
+question_command='RC_HOOK_SOCKET='+shlex.quote(str(a.socket))+' '+shlex.quote(shutil.which('node'))+' '+shlex.quote(str(question_script))
+for event in ['PreToolUse','PostToolUse','PostToolUseFailure']:
+ groups=config.setdefault('hooks',{}).setdefault(event,[])
+ for group in groups:
+  group['hooks']=[h for h in group.get('hooks',[]) if 'claude-question-hook.mjs' not in h.get('command','')]
+ groups.append({'matcher':'AskUserQuestion','hooks':[{'type':'command','command':question_command,'timeout':86400 if event=='PreToolUse' else 5}]})
 a.settings.parent.mkdir(parents=True,exist_ok=True)
 if a.settings.exists():
  backup=a.settings.with_name(a.settings.name+'.before-relay-steering-'+str(time.time_ns()))
  shutil.copy2(a.settings,backup);os.chmod(backup,0o600)
 tmp=a.settings.with_name(a.settings.name+'.relay-next')
 tmp.write_text(json.dumps(config,indent=2)+'\n');os.chmod(tmp,0o600);os.replace(tmp,a.settings)
-print('Installed Relay steering hooks; existing hooks preserved.')
+print('Installed Relay steering and question hooks; existing hooks preserved.')

@@ -183,6 +183,11 @@ export async function createGateway(
       .filter((s) => auth.allowed(device, s.id))
       .map((s) => ({
         ...s,
+        status: store
+          .interactions(s.id)
+          .some((i) => ['pending', 'answered', 'responding', 'uncertain'].includes(i.status))
+          ? ('blocked' as const)
+          : s.status,
         ...(() => {
           const preference = store.db
             .prepare('SELECT name,pinned,archived FROM session_preferences WHERE session_id=?')

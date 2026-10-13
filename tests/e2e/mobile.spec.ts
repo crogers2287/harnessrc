@@ -2504,3 +2504,55 @@ test('agent tasks show native checklist and open view-only subagent conversation
   await expect(page.getByRole('textbox', { name: /Message/ })).toHaveCount(0);
   await page.screenshot({ path: '/tmp/relay-subagent-phone.png' });
 });
+
+test('Claude native question cards show choices and send exact batch answers', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const request = {
+    id: 'claude-question-proof',
+    source: 'claude',
+    route: 'claude-hook',
+    status: 'pending',
+    type: 'single-choice',
+    expiresAt: '2100-01-01T00:00:00Z',
+    prompt: 'Which framework?',
+    choices: [],
+    metadata: {
+      questionFormat: 'choice-batch',
+      dshQuestions: [
+        {
+          id: '0',
+          question: 'Which framework?',
+          multiSelect: false,
+          options: [
+            { label: 'React', description: 'Component library' },
+            { label: 'Vue', description: 'Progressive framework' },
+          ],
+        },
+      ],
+    },
+  };
+  let submitted: any;
+  await page.route('**/api/sessions/*', async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    if (body.session) {
+      body.session.status = 'blocked';
+      body.session.capabilities.answerQuestion = true;
+      body.interactions = [{ ...request, sessionId: body.session.id }];
+    }
+    await route.fulfill({ response, json: body });
+  });
+  await page.route('**/api/interactions/claude-question-proof/respond', async (route) => {
+    submitted = route.request().postDataJSON();
+    await route.fulfill({ json: { ...request, status: 'resolved' } });
+  });
+  await pair(page);
+  await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
+  await expect(page.getByRole('heading', { name: 'Which framework?', exact: true })).toBeVisible();
+  await page.getByRole('radio', { name: /React Component library/ }).check();
+  await page.getByRole('button', { name: 'Send response', exact: true }).click();
+  await expect
+    .poll(() => submitted)
+    .toEqual({ response: { answers: [{ id: '0', selected: ['React'], custom: '' }] } });
+  await page.screenshot({ path: '/tmp/relay-claude-question-phone.png' });
+});

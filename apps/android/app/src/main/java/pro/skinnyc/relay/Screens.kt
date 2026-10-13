@@ -181,7 +181,7 @@ fun QuestionCard(vm: RelayModel, request: JSONObject) {
                 .getOrDefault(false) &&
             (vm.session?.can("answerQuestion") == true || vm.session?.can("approveAction") == true)
     val metadata = request.obj("metadata")
-    val dsh = request.str("route") == "dsh-native"
+    val dsh = request.str("route") == "dsh-native" || metadata.str("questionFormat") == "choice-batch"
     val questions = if (dsh) metadata.rows("dshQuestions") else metadata.rows("questions")
     val answers = remember(id) { mutableStateMapOf<String, String>() }
     val choices = remember(id) { mutableStateMapOf<String, List<String>>() }
