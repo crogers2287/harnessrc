@@ -360,7 +360,6 @@ export async function createGateway(
   app.get('/api/sessions/:id', async (req) => {
     const { id } = req.params as { id: string };
     check(req, id);
-    await runtime.prepareConversation(id);
     return {
       session: sessionViews(req.device).find((s) => s.id === id),
       interactions: store.interactions(id),
