@@ -2440,3 +2440,67 @@ test('published video plays inline, seeks with byte ranges, and downloads real b
   expect(await readFile((await file.path())!)).toEqual(bytes);
   await page.screenshot({ path: 'docs/screenshots/inline-video-mobile.png' });
 });
+
+test('agent tasks show native checklist and open view-only subagent conversations', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const child = 'a'.repeat(64);
+  await page.route('**/api/sessions/*', async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    if (body.session)
+      body.plan = {
+        steps: [{ text: 'Check generated images', status: 'in_progress' }],
+        text: '',
+        updatedAt: new Date().toISOString(),
+      };
+    await route.fulfill({ response, json: body });
+  });
+  await page.route('**/api/sessions/*/subagents', (route) =>
+    route.fulfill({
+      json: {
+        supported: true,
+        subagents: [
+          {
+            id: child,
+            nativeSessionId: 'child',
+            name: 'Image reviewer',
+            model: 'Test model',
+            updatedAt: new Date().toISOString(),
+            status: 'observed',
+          },
+        ],
+      },
+    }),
+  );
+  await page.route('**/api/sessions/*/subagents/*/events?*', (route) =>
+    route.fulfill({
+      json: {
+        events: [
+          {
+            id: 'child-message',
+            sourceId: 'native-child',
+            sessionId: child,
+            nativeSessionId: 'child',
+            source: 'codex',
+            sequence: 1,
+            timestamp: new Date().toISOString(),
+            kind: 'assistant.message',
+            data: { text: 'The generated images look good.' },
+          },
+        ],
+      },
+    }),
+  );
+  await pair(page);
+  await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
+  await page.getByRole('button', { name: 'Agent tasks', exact: true }).click();
+  await expect(page.getByText('Check generated images')).toBeVisible();
+  await page.getByRole('button', { name: 'Sub-agent conversations', exact: true }).click();
+  await page.getByRole('button', { name: /Image reviewer/ }).click();
+  await expect(page.getByText('The generated images look good.')).toBeVisible();
+  await expect(page.getByText('View only · Test model')).toBeVisible();
+  await expect(page.getByRole('textbox', { name: /Message/ })).toHaveCount(0);
+  await page.screenshot({ path: '/tmp/relay-subagent-phone.png' });
+});

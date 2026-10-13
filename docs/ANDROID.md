@@ -139,3 +139,5 @@ The gateway fixes Codex Send and initial session instructions through the existi
 Install the signed update over your existing app to retain drafts and settings. Assistant OpenUI blocks and published `.openui` files render as interactive artifacts. Cards, charts, tables, forms, tabs and other installed components share the web renderer. Navigation and the composer remain Kotlin/Compose; the bundled artifact surface has no arbitrary network or agent tools. Forms add a draft for review.
 
 DSH file links save through the document picker; MP4/video and audio have native playback, seek and video fullscreen controls. No filesystem link launches Relay's homepage. Passive media API responses are session-authorized and support byte ranges. See OPENUI.md for exact format, limits and physical-device checks.
+
+Version 0.1.16 adds **Agent tasks → Sub-agent conversations** for linked Claude and Codex native histories. These child chats are view-only: there is no Send/Steer composer. DSH's native `todo_write` checklist now appears under Agent tasks through the shared gateway fix.

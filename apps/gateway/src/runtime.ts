@@ -1,3 +1,4 @@
+import { SubagentReader } from '../../../packages/adapters/src/subagents.ts';
 import { importNativeImage } from './artifacts.ts';
 import { ClaudeSteering } from './claude-steering.ts';
 import { DshHost } from './dsh-host.ts';
@@ -21,6 +22,7 @@ import { TaskQueue } from '@harnessrc/task-queue';
 import { InteractionBroker } from '@harnessrc/interaction-broker';
 import type { Config } from './config.ts';
 export class Runtime extends EventEmitter {
+  subagents: SubagentReader;
   claudeSteering = new ClaudeSteering(this);
   dshHosts = new Map<string, DshHost>();
   clients = new Map<string, HerdrClient>();
@@ -37,6 +39,7 @@ export class Runtime extends EventEmitter {
     public config: Config,
   ) {
     super();
+    this.subagents = new SubagentReader(config.transcripts);
     for (const s of store.sessions()) {
       s.connected = false;
       s.status = 'offline';

@@ -27,3 +27,9 @@ Readers import emitted supported record types; they do not manufacture reasoning
 Next priorities: complete native CLI question routing and upstream owner-bound prompt preconditions; add complete file attachment/diff/subagent contracts; validate Hermes/OpenCode/OMP live readers; test physical devices and native push infrastructure. Browser notifications require an open app; no closed-app push claim.
 
 See [attachment delivery](ATTACHMENTS.md) for same-filesystem configuration, limits, permissions and native file-reader behavior. Image picker/upload is implemented; verified Codex native steering also passes native localImage inputs. Other delivery paths use local file references.
+
+## Read-only linked sub-agent viewer
+
+Claude and Codex now expose a parent-authorized sub-agent catalog and paginated conversation reader through **Agent tasks → Sub-agent conversations** in web and Android 0.1.16. Codex requires explicit `thread_spawn.parent_thread_id` metadata; Claude requires its native parent-owned `subagents` folder. Fred's transcript survey discovered 311 children across 58 readable parent sessions and loaded a real child history. Stable source IDs prevent replay duplicates. This does not add child control or attachment/interactive artifact capabilities. Other harnesses explicitly show that linked child reading is not available.
+
+Task lists include DSH's `todo_write`, Claude `TodoWrite`, Codex `update_plan`/`functions.update_plan`, and native plan events. Free-form prose is not guessed into tasks; Claude's newer TaskCreate/TaskUpdate tools still need separate support.

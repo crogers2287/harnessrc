@@ -1,3 +1,4 @@
+import { Subagents } from './Subagents.tsx';
 import { RichActionContext } from './rich-context.ts';
 import { lazy, Suspense } from 'react';
 const LazyRichResponse = lazy(() => import('./RichResponse.tsx'));
@@ -916,10 +917,23 @@ function Conversation({
       setLoadingMore(false);
     }
   };
+  if (route.view === 'subagents')
+    return (
+      <>
+        <PageHeader title="Sub-agents" back={() => navigate({ session: session.id })} />
+        <Subagents sessionId={session.id} renderEvent={(event) => <EventCard event={event} />} />
+      </>
+    );
   if (route.view === 'queue')
     return (
       <>
         <PageHeader title="Agent tasks" back={() => navigate({ session: session.id })} />
+        <button
+          className="secondary"
+          onClick={() => navigate({ session: session.id, view: 'subagents' })}
+        >
+          Sub-agent conversations
+        </button>
         <section className="plan-card" aria-label="Agent plan">
           {detail.data?.plan ? (
             <>

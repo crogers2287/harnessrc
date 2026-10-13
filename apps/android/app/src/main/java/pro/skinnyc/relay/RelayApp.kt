@@ -248,7 +248,8 @@ fun RelayApp(
                 "settings" -> SettingsScreen(vm) { screen = "" }
                 "new" -> LaunchScreen(vm, showSessions = { screen = ""; scope.launch { drawer.open() } }) { screen = "" }
                 "details" -> DetailsScreen(vm) { screen = "" }
-                "tasks" -> AgentTasksScreen(vm, openQueue = { screen = "queue" }) { screen = "" }
+                "subagents" -> SubagentsScreen(vm) { screen = "tasks" }
+                "tasks" -> AgentTasksScreen(vm, openQueue = { screen = "queue" }, openSubagents = { screen = "subagents" }) { screen = "" }
                 "queue" -> QueueScreen(vm) { screen = "" }
                 else ->
                     Column(

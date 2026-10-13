@@ -360,12 +360,35 @@ export async function createGateway(
   app.get('/api/sessions/:id', async (req) => {
     const { id } = req.params as { id: string };
     check(req, id);
+    await runtime.prepareConversation(id);
     return {
       session: sessionViews(req.device).find((s) => s.id === id),
       interactions: store.interactions(id),
       tasks: store.tasks(id),
       plan: store.latestPlan(id),
     };
+  });
+  app.get('/api/sessions/:id/subagents', async (req) => {
+    const { id } = req.params as { id: string };
+    check(req, id);
+    const session = store.session(id);
+    return {
+      supported: runtime.subagents.supported(session),
+      subagents: await runtime.subagents.list(session),
+    };
+  });
+  app.get('/api/sessions/:id/subagents/:child/events', async (req) => {
+    const { id, child } = z
+      .object({ id: z.string(), child: z.string().regex(/^[a-f0-9]{64}$/) })
+      .parse(req.params);
+    check(req, id);
+    const query = z
+      .object({
+        before: z.coerce.number().int().min(1).default(Number.MAX_SAFE_INTEGER),
+        limit: z.coerce.number().int().min(1).max(200).default(100),
+      })
+      .parse(req.query);
+    return runtime.subagents.conversation(store.session(id), child, query.before, query.limit);
   });
   app.get('/api/sessions/:id/events', async (req) => {
     const { id } = req.params as { id: string };
