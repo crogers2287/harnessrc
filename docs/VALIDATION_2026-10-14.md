@@ -1,5 +1,13 @@
 # Provider restart and download validation, 2026-10-14
 
+## Follow-up: 0.1.19 startup, model and DNS recovery
+
+Gateway/web `06d8ab4` deployed. Android 0.1.19 / versionCode 20 published: 4,861,189 bytes, SHA-256 `476ddd7371ec115bf5e4445ee9edacbc3d38a04a30853f74fe025f5b1993c6d3`. Signature and authenticated HTTPS checksum verify. BuildConfig contains the gateway's provisioned Tailscale hostname/address; no TLS verification override is installed.
+
+The user's existing Tidyhive Claude restart was waiting on the native folder-trust screen before session hooks could bind. After the user's authorization to continue startup prompts, the fixed native bootstrap selection was delivered through Herdr to that verified pane/process/CWD. The original conversation UUID then reappeared on the replacement terminal. The deployed receipt check reconciled it to `started`; live session metadata subsequently showed `tidyhive`, `codex/gpt-6.1-sol`, connected and working. No second restart was launched.
+
+Final backend suite: 158 passed. TypeScript, ESLint and web build pass. Android: 21 JVM tests, lint, instrumentation APK compilation and signed release build pass. Added regressions cover the narrow/wrapped Claude trust menu, wrong folders/menus and replaced foreground processes, read-only late receipt reconciliation, old-model transcript replay, hostname-scoped DNS fallback, successful normal DNS, unrelated hosts and invalid/non-tailnet pins. Physical-phone DNS fallback remains unverified. The earlier 50-test browser run remains the web UI baseline; this follow-up changes shared gateway behavior and native connectivity rather than web components.
+
 Gateway/web deployed from `fbdfd3a`. Signed Android 0.1.18 / versionCode 19 was published using the existing private signing key. Its served download is 4,860,513 bytes, SHA-256 `e158bc070ff3c3ec2bd32fb748822fedb6995fbc19127b567e7b33a17352b761`; APK signature verification and the authenticated HTTPS download checksum pass.
 
 ## Automated checks
