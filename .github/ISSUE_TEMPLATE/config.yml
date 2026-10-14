@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Agent installation guide
+    url: https://github.com/crogers2287/harnessrc/blob/feat/universal-agent-remote/docs/AGENT_INSTALL.md
+    about: Start here for the supported branch and end-to-end setup.

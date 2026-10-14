@@ -2,7 +2,11 @@
 
 A self-hosted React PWA, native Android app, and Fastify gateway for persistent coding agents. Herdr owns processes, panes, workspaces, and lifecycle; Relay stores structured conversations, exact native interactions, and queued work. Original terminal sessions remain usable.
 
-**Phase 1 implementation with mock-backed validation.** Existing Claude/Codex CLI sessions are discovered automatically and accept chat messages and durable queued follow-ups through Herdr. The inbox groups by agent and shows session titles and full CWDs. Claude's documented PermissionRequest hook resolves actual permission decisions. A separate sole-writer Codex bridge, launched under Herdr, supports native turns, questions, approvals, steering, and durable queued work. It never attaches a second writer to an existing CLI thread. Live Fred CLI chat and serial queue dispatch have been verified. Key-free tailnet HTTP/WebSocket access is implemented; outside the tailnet, pairing remains required. Full native CLI question parity and physical Android/iOS verification remain outstanding. See the [capability matrix](docs/CAPABILITIES.md).
+**Phase 1 implementation with mock-backed validation.** Existing Claude/Codex CLI sessions are discovered automatically and accept chat messages and durable queued follow-ups through Herdr. The inbox groups by agent and shows session titles and full CWDs. Claude's documented hooks resolve native AskUserQuestion replies and PermissionRequest decisions. A separate sole-writer Codex bridge, launched under Herdr, supports native turns, questions, approvals, steering, and durable queued work. It never attaches a second writer to an existing CLI thread. Live Fred CLI chat and serial queue dispatch have been verified. Key-free tailnet HTTP/WebSocket access is implemented; outside the tailnet, pairing remains required. Full native CLI question parity and physical Android/iOS verification remain outstanding. See the [capability matrix](docs/CAPABILITIES.md).
+
+## Install on your own server with an agent
+
+Start with the [complete agent installation guide](docs/AGENT_INSTALL.md): required Herdr ownership, Tailscale on every client/server, valid HTTPS/custom subdomains, CFRproxy provider routing, every Hermes Telegram profile’s model picker, host-neutral configuration generation, verification and issue reporting. Clone `feat/universal-agent-remote` explicitly while the implementation PR remains unmerged.
 
 ## Native Android app
 
