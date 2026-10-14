@@ -606,10 +606,69 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
+    var preparedDownload by mutableStateOf<PreparedDownload?>(
+        runCatching { prefs.getString("download.prepared", null)?.let { text ->
+            val p = JSONObject(text)
+            PreparedDownload(p.str("file"), p.str("name"), p.str("stage"), p.str("uri"))
+        } }.getOrNull()
+    )
+        private set
+    var preparingDownload by mutableStateOf(false)
+        private set
+
+    private fun persistDownload(value: PreparedDownload?) {
+        preparedDownload = value
+        if (value == null) prefs.edit().remove("download.prepared").commit()
+        else prefs.edit().putString("download.prepared", json("file" to value.file, "name" to value.name, "stage" to value.stage, "uri" to value.uri).toString()).commit()
+    }
+    private var downloadPreparation: Job? = null
+    fun cancelDownloadPreparation() { downloadPreparation?.cancel(); preparingDownload = false }
+    fun prepareDownload(path: String, name: String) {
+        if (preparingDownload || preparedDownload != null) { error = "Finish the current file save first"; return }
+        preparingDownload = true
+        error = ""
+        downloadPreparation = viewModelScope.launch {
+            val file = File(getApplication<Application>().cacheDir, "relay-download-${UUID.randomUUID()}")
+            try {
+                api.downloadTo(path, file)
+                persistDownload(PreparedDownload(file.absolutePath, name.take(200)))
+            } catch (e: Exception) {
+                file.delete()
+                if (e is CancellationException) throw e
+                error = "Download failed: ${e.message}"
+            } finally { preparingDownload = false }
+        }
+    }
+    fun markDownloadChoosing() { preparedDownload?.let { persistDownload(it.copy(stage = "choosing")) } }
+    fun savePreparedDownload(uri: android.net.Uri?) {
+        val pending = preparedDownload ?: return
+        val file = File(pending.file)
+        if (uri == null) { if (file.canonicalFile.parentFile == getApplication<Application>().cacheDir.canonicalFile && file.name.startsWith("relay-download-")) file.delete(); persistDownload(null); return }
+        persistDownload(pending.copy(stage = "saving", uri = uri.toString()))
+        val resolver = getApplication<Application>().contentResolver
+        runCatching { resolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    check(file.canonicalFile.parentFile == getApplication<Application>().cacheDir.canonicalFile && file.name.startsWith("relay-download-") && file.length() > 0) { "Prepared download is unavailable; download again" }
+                    val output = resolver.openOutputStream(uri, "wt") ?: error("Cannot write the selected file")
+                    file.inputStream().use { input -> output.use { copyDownload(input, it, file.length()) } }
+                }
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                error = "Could not save file: ${e.message}"
+            } finally { file.delete(); persistDownload(null) }
+        }
+    }
+    init {
+        preparedDownload?.takeIf { it.stage == "saving" && it.uri.isNotBlank() }?.let { savePreparedDownload(android.net.Uri.parse(it.uri)) }
+    }
+
     fun operation(
         path: String,
         body: JSONObject,
         method: String = "POST",
+        failure: (Exception) -> Unit = {},
         done: (JSONObject) -> Unit = {},
     ) {
         if (working) return
@@ -623,6 +682,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 error = friendly(e)
+                failure(e)
                 detail(selected)
             } finally {
                 working = false

@@ -66,6 +66,11 @@ fun RelayApp(
     nativeKeyboardVisible: Boolean,
     consumeShare: () -> Unit,
 ) {
+    DownloadController(vm) { RelayAppContent(vm, shared, nativeKeyboardVisible, consumeShare) }
+}
+
+@Composable
+private fun RelayAppContent(vm: RelayModel, shared: Intent?, nativeKeyboardVisible: Boolean, consumeShare: () -> Unit) {
     val drawer = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     var screen by rememberSaveable { mutableStateOf("") }
@@ -337,7 +342,8 @@ fun RelayApp(
             }
         }
     }
-    rowActions?.let { s -> SessionActions(vm, s) { rowActions = null } }
+    if (vm.preparingDownload) AlertDialog(onDismissRequest = vm::cancelDownloadPreparation, title = { Text("Preparing download") }, text = { LinearProgressIndicator(Modifier.fillMaxWidth()) }, confirmButton = {}, dismissButton = { TextButton(onClick = vm::cancelDownloadPreparation) { Text("Cancel") } })
+    rowActions?.let { s -> SessionActions(vm, vm.sessions.find { it.id == s.id } ?: s) { rowActions = null } }
     if (confirmShare && shared != null)
         AlertDialog(
             onDismissRequest = {
@@ -646,7 +652,7 @@ fun Message(vm: RelayModel, event: ChatEvent) {
         return
     }
     val native = conversationFiles(event.kind, event.body)
-    val saveFile = rememberFileSaver(vm)
+    val saveFile = LocalFileSaver.current
     var text = displayText(event.text)
     Regex("!\\[([^]]*)]\\(<?(/[^\\s<>]+?)>?(?:\\s+\"[^\"]*\")?\\)").findAll(event.text).forEach {
         if (native.any { file -> file.str("path") == it.groupValues[2] }) text = text.replace(it.value, "")

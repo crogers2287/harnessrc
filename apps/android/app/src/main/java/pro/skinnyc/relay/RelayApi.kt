@@ -88,6 +88,14 @@ class RelayApi(var base: String = DEFAULT_ENDPOINT) {
             }
         }
 
+    suspend fun downloadTo(path: String, file: java.io.File) = withContext(Dispatchers.IO) {
+        execute(request(path).build()).use { response ->
+            if (!response.isSuccessful) throw ApiFailure(response.code, "Could not download this file (${response.code}). Ask the agent to publish it as an attachment.")
+            val body = response.body ?: error("The gateway returned no file")
+            body.byteStream().use { input -> file.outputStream().use { output -> copyDownload(input, output, body.contentLength()) } }
+        }
+    }
+
     fun websocket(listener: WebSocketListener): WebSocket =
         client.newWebSocket(request("/ws").build(), listener)
 }

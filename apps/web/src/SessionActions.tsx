@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { MoreHorizontal, Pin, Pencil, Archive, RotateCcw, X, Square, Info } from 'lucide-react';
 import { api } from '@harnessrc/client-sdk';
+import { ProviderSwap } from './ProviderSwap.tsx';
 import type { SessionView } from '@harnessrc/protocol';
 export const sessionLabel = (s: SessionView) =>
   s.relayName || s.sessionName || s.tabName || s.project;
@@ -73,7 +74,7 @@ export function SessionRow({
 }
 
 function SessionActions({ session: s, close }: { session: SessionView; close: () => void }) {
-  const [mode, setMode] = useState<'menu' | 'rename' | 'archive' | 'interrupt'>('menu');
+  const [mode, setMode] = useState<'menu' | 'rename' | 'archive' | 'interrupt' | 'swap'>('menu');
   const [name, setName] = useState(sessionLabel(s));
   const dialog = useRef<HTMLDialogElement>(null);
   const backdropPress = useRef(false);
@@ -129,13 +130,15 @@ function SessionActions({ session: s, close }: { session: SessionView; close: ()
       <header>
         <div>
           <h2 id="session-action-title">
-            {mode === 'rename'
-              ? 'Rename conversation'
-              : mode === 'archive'
-                ? 'Close conversation?'
-                : mode === 'interrupt'
-                  ? 'Stop current turn?'
-                  : sessionLabel(s)}
+            {mode === 'swap'
+              ? 'Swap provider'
+              : mode === 'rename'
+                ? 'Rename conversation'
+                : mode === 'archive'
+                  ? 'Close conversation?'
+                  : mode === 'interrupt'
+                    ? 'Stop current turn?'
+                    : sessionLabel(s)}
           </h2>
           <p>
             {s.agentPreset || s.harness} · {s.hostId}
@@ -149,6 +152,9 @@ function SessionActions({ session: s, close }: { session: SessionView; close: ()
         <div className="session-action-list">
           {s.canManage && (
             <>
+              <button onClick={() => setMode('swap')}>
+                <RotateCcw size={20} /> Swap provider
+              </button>
               <button onClick={() => setMode('rename')}>
                 <Pencil size={20} /> Rename
               </button>
@@ -181,6 +187,8 @@ function SessionActions({ session: s, close }: { session: SessionView; close: ()
             <code>{s.cwd}</code>
           </div>
         </div>
+      ) : mode === 'swap' ? (
+        <ProviderSwap session={s} close={close} />
       ) : mode === 'rename' ? (
         <form
           onSubmit={(e) => {

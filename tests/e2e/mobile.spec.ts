@@ -2556,3 +2556,97 @@ test('Claude native question cards show choices and send exact batch answers', a
     .toEqual({ response: { answers: [{ id: '0', selected: ['React'], custom: '' }] } });
   await page.screenshot({ path: '/tmp/relay-claude-question-phone.png' });
 });
+
+test('long-press provider swap chooses model and permissions and retains the exact restart request', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  // This tests the idle restart form; earlier suite tests mutate the shared mock's turn state.
+  await page.routeWebSocket('**/ws', () => {});
+  await page.route('**/api/sessions', async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    for (const session of body.sessions) session.status = 'idle';
+    await route.fulfill({ response, json: body });
+  });
+  await pair(page);
+  const state = await (await page.request.get('/api/sessions')).json();
+  const s =
+    state.sessions.find((s: any) => s.sessionName === 'Atlas API' || s.project === 'Atlas API') ??
+    state.sessions[0];
+  await page.route(`**/api/sessions/${s.id}/provider-swap`, async (route) => {
+    if (route.request().method() === 'GET')
+      return route.fulfill({
+        json: {
+          supported: true,
+          generation: s.generation,
+          profiles: [
+            {
+              id: 'proxy',
+              label: 'Codex CFRproxy',
+              provider: 'CFRproxy',
+              connected: true,
+              models: [{ id: 'fred/flash-next', name: 'Flash Next' }],
+              defaultModel: 'fred/flash-next',
+              allowCustomModel: true,
+              permissions: [{ id: 'ask', name: 'Ask before changes' }],
+            },
+          ],
+        },
+      });
+    const body = route.request().postDataJSON();
+    expect(body.generation).toBe(s.generation);
+    expect(body.profileId).toBe('proxy');
+    expect(body.permission).toBe('ask');
+    expect(body.model).toBe('fred/flash-next');
+    expect(body.confirm).toBe(true);
+    return route.fulfill({
+      json: {
+        requestId: body.requestId,
+        status: 'started',
+        diagnostic: 'Conversation resumed. Queued work remains paused for review.',
+      },
+    });
+  });
+  await page.route(`**/api/sessions/${s.id}/provider-swap/*`, (route) =>
+    route.fulfill({
+      json: {
+        status: 'started',
+        diagnostic: 'Conversation resumed. Queued work remains paused for review.',
+      },
+    }),
+  );
+  const row = page
+    .locator('button.session-row')
+    .filter({ hasText: s.relayName || s.sessionName || s.project })
+    .first();
+  const bounds = (await row.boundingBox())!;
+  await page.mouse.move(bounds.x + 40, bounds.y + 30);
+  await page.mouse.down();
+  await page.waitForTimeout(550);
+  await page.mouse.up();
+  const sheet = page.locator('dialog.session-action-sheet');
+  await sheet.getByRole('button', { name: 'Swap provider', exact: true }).click();
+  await expect(sheet.getByRole('combobox', { name: 'Provider', exact: true })).toHaveValue('proxy');
+  await sheet
+    .getByRole('combobox', { name: 'Permissions after restart', exact: true })
+    .selectOption('ask');
+  await expect(sheet.getByRole('button', { name: 'Restart and resume' })).toBeDisabled();
+  await sheet.getByRole('checkbox').check();
+  await expect(sheet.getByRole('button', { name: 'Restart and resume' })).toBeEnabled();
+  await page.screenshot({ path: 'docs/screenshots/provider-swap-mobile.png' });
+  const request = page.waitForRequest(
+    (r) => r.url().endsWith('/provider-swap') && r.method() === 'POST',
+  );
+  await sheet.getByRole('button', { name: 'Restart and resume' }).click();
+  const body = (await request).postDataJSON();
+  await expect(sheet.getByText(/Conversation resumed/)).toBeVisible();
+  expect(
+    await page.evaluate(
+      (id) => JSON.parse(sessionStorage.getItem(`relay-provider-swap-${id}`)!).requestId,
+      s.id,
+    ),
+  ).toBe(body.requestId);
+  await sheet.getByRole('button', { name: 'Return to conversation' }).click();
+  await expect(sheet).toHaveCount(0);
+});

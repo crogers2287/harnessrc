@@ -52,50 +52,13 @@ fun Page(title: String, back: () -> Unit, content: @Composable ColumnScope.() ->
 }
 
 @Composable
-fun rememberFileSaver(vm: RelayModel): (String, String) -> Unit {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var pending by remember { mutableStateOf("") }
-    val save = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
-        val path = pending
-        pending = ""
-        if (uri != null && path.isNotBlank()) scope.launch {
-            runCatching {
-                val bytes = vm.api.bytes(path)
-                withContext(Dispatchers.IO) {
-                    val output = context.contentResolver.openOutputStream(uri) ?: error("Cannot write selected file")
-                    output.use { it.write(bytes) }
-                }
-            }.onFailure { vm.error = "Download failed: ${it.message}" }
-        }
-    }
-    return { path, name -> pending = path; save.launch(name) }
-}
-
-@Composable
 fun MediaCard(vm: RelayModel, path: String, name: String, description: String, image: Boolean) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var expanded by remember { mutableStateOf(false) }
     var scale by remember { mutableFloatStateOf(1f) }
     var failed by remember { mutableStateOf(false) }
-    val save =
-        rememberLauncherForActivityResult(
-            ActivityResultContracts.CreateDocument("application/octet-stream")
-        ) { uri ->
-            if (uri != null)
-                scope.launch {
-                    runCatching {
-                            val bytes = vm.api.bytes(path)
-                            withContext(Dispatchers.IO) {
-                                context.contentResolver.openOutputStream(uri)?.use {
-                                    it.write(bytes)
-                                }
-                            }
-                        }
-                        .onFailure { vm.error = "Download failed: ${it.message}" }
-                }
-        }
+    val saveFile = LocalFileSaver.current
     Column(
         Modifier.fillMaxWidth()
             .padding(vertical = 8.dp)
@@ -131,7 +94,7 @@ fun MediaCard(vm: RelayModel, path: String, name: String, description: String, i
                 else if (description.isNotBlank())
                     Text(description, maxLines = 2, style = MaterialTheme.typography.bodySmall)
             }
-            ActionIcon(Icons.Outlined.Download, "Save $name") { save.launch(name) }
+            ActionIcon(Icons.Outlined.Download, "Save $name") { saveFile(path, name) }
         }
     }
     if (expanded)
@@ -149,7 +112,7 @@ fun MediaCard(vm: RelayModel, path: String, name: String, description: String, i
                             expanded = false
                             scale = 1f
                         }
-                        ActionIcon(Icons.Outlined.Download, "Download image") { save.launch(name) }
+                        ActionIcon(Icons.Outlined.Download, "Download image") { saveFile(path, name) }
                     }
                     Box(
                         Modifier.weight(1f).fillMaxWidth().pointerInput(Unit) {
@@ -384,12 +347,17 @@ fun QuestionCard(vm: RelayModel, request: JSONObject) {
 fun SessionActions(vm: RelayModel, session: Session, close: () -> Unit) {
     var name by remember { mutableStateOf(session.title) }
     var interrupt by remember { mutableStateOf(false) }
+    var swapping by remember { mutableStateOf(false) }
     ModalBottomSheet(onDismissRequest = close) {
         Column(
-            Modifier.fillMaxWidth().padding(24.dp).navigationBarsPadding(),
+            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp).navigationBarsPadding().imePadding(),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(session.title, style = MaterialTheme.typography.titleLarge)
+            if (swapping) {
+                ProviderSwapForm(vm, session, close)
+            } else {
+            OutlinedButton(onClick = { swapping = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Swap provider") }
             OutlinedTextField(
                 name,
                 { name = it },
@@ -444,7 +412,8 @@ fun SessionActions(vm: RelayModel, session: Session, close: () -> Unit) {
                     else "Hide from inbox"
                 )
             }
-            if (session.can("interruptTurn"))
+            }
+            if (!swapping && session.can("interruptTurn"))
                 TextButton(onClick = { interrupt = true }) {
                     Text("Stop current turn", color = MaterialTheme.colorScheme.error)
                 }
