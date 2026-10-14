@@ -10,6 +10,8 @@ Start with the [complete agent installation guide](docs/AGENT_INSTALL.md): requi
 
 ## Native Android app
 
+Hold a session → **Swap provider** to resume supported Claude Code/Codex conversations in the same directory with another configured provider/model, including CFRproxy. See [provider-swap support and recovery](docs/PROVIDER_SWAP.md).
+
 Relay now has a Kotlin / Jetpack Compose Android client with a real Android editor, keyboard image paste, native file sharing and microphone recording. Download the signed APK from **Settings → Download Android APK** in the web app while connected to Tailscale. This is separate from the PWA. See [Android installation, build and verification](docs/ANDROID.md) and the [web/Android parity matrix and release contract](docs/CLIENT_PARITY.md).
 
 ## Run the credential-free demo

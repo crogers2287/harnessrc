@@ -1,5 +1,15 @@
 # Relay for Android
 
+## 0.1.18: provider restart and file saves
+
+Hold a supported session → **Swap provider** to resume its exact conversation with a selected provider/model/permissions. Web has the equivalent action. See [support and recovery limits](PROVIDER_SWAP.md).
+
+Saves use one activity-level document picker and ViewModel work instead of launchers/coroutines inside scrolling message rows. Relay fetches into private cache first and rejects non-2xx, empty or truncated responses before opening the picker. Replay/virtualization cannot discard the pending source or cancel its copy. Source/destination metadata survives activity recreation; a destination copy can resume after process recreation. Storage-provider write failures still produce an error and may leave an incomplete destination.
+
+Published attachments remain downloadable after exact resume changes owner generation. Unpublished drafts and files from other native conversations remain inaccessible; old-generation files cannot be reused as new agent inputs without re-upload. Local-path links never published as attachments remain unsupported.
+
+Kotlin tests cover binary copying and empty/truncated rejection. Backend tests cover historical ownership. Physical system-picker verification remains outstanding.
+
 A native Kotlin / Jetpack Compose client of the existing Relay gateway. This is **not a WebView or installed browser page**. Herdr and the gateway continue to own agent sessions. Android 9+ is required.
 
 ## Install

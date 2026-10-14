@@ -20,7 +20,9 @@ Both clients are first-class Relay clients. A user-facing feature or fix must be
 | Queue edit, cancel, pause/resume | Implemented | Implemented | App.tsx / QueueScreen |
 | Reorder pending tasks | Implemented | Missing | Add native reorder controls against the existing gateway route |
 | Model and session permissions | Implemented | Implemented | Capability gated; confirm permission changes |
+| Restart exact conversation with another provider | Implemented | Implemented (0.1.18+) | Long-press → Swap provider; local Claude/Codex only; see PROVIDER_SWAP.md |
 | File/image upload, previews, download | Implemented | Implemented | Native keyboard image insertion is Android-specific; browser permission/platform restrictions remain |
+| File saves survive disappearing message rows | Browser-managed | App-root picker/ViewModel (0.1.18+) | Fetch and validate before opening picker; physical system-picker check outstanding |
 | Dictation, cleanup, editable result | Implemented | Implemented | Shared gateway speech service; never auto-send |
 | Streaming, earlier history, reader scroll preservation | Implemented | Implemented | Browser and native regressions are separate |
 | Native task-notice formatting and source timestamps | Implemented | Implemented | Shared TS behavior has a separate Kotlin implementation: test both for format changes |

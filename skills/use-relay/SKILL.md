@@ -21,6 +21,8 @@ Use `relay_settings` to read supported models, permissions or mode before changi
 
 ## Inspect, launch and deliver
 
+For an authorized provider restart, use `relay_provider_options`, wait for idle state and resolved questions, and choose a matching profile/model/permission. Call `relay_restart_provider` with the current generation, explicit confirmation and a retained UUID. Read `relay_provider_receipt` after timeout; never launch another owner to work around uncertainty. Exact restart is currently limited to local Herdr-owned Claude/Codex. It preserves native history/CWD and leaves queued work paused. See `docs/PROVIDER_SWAP.md` for native Codex unload/resume and manual hard-crash recovery limits.
+
 The plan is in `relay_attach.plan`; task queue items are separate. `relay_subagents` lists child agents and reads their conversations without controlling them. `relay_preferences` renames/pins/archives; archive does not terminate the agent.
 
 For a new session, read `relay_launch_profiles`, choose a supported profile/model/permission/DSH preset, browse `relay_folders`, and optionally create a project with `relay_create_folder`. Launch with a retained UUID. Use `relay_launch_receipt` after timeout and inspect the session list before another launch. All launches run inside Herdr; no arbitrary commands or environment are accepted.

@@ -1,5 +1,7 @@
 # Agent control through Relay MCP
 
+Provider restart tools are available: `relay_provider_options`, `relay_restart_provider`, and `relay_provider_receipt`. They resume supported Claude/Codex conversations through Herdr with a selected provider/model and permissions. See [provider swap](PROVIDER_SWAP.md) for idle-state requirements, request identity and recovery limits.
+
 Relay now exposes a standard **stdio MCP server**. A Claude, Codex, Hermes or other MCP-capable agent can discover a project session, attach to its conversation, send/steer, answer authorized native interactions, and use supported model/permission controls. The controller does not need to understand terminal panes. It does not own the worker process: **Herdr remains mandatory** for lifecycle and all launches.
 
 The MCP adapter runs beside the controlling agent and connects over HTTPS to the existing Relay gateway. It reuses the same authenticated REST routes as Android/web, including session grants, native binding checks, delivery idempotency, interaction validation, attachment storage and audits. No additional listening port or background supervisor is needed. STDOUT is reserved for MCP messages.
