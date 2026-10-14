@@ -1,4 +1,6 @@
 import { readFile, stat } from 'node:fs/promises';
+import { request as httpsRequest } from 'node:https';
+import { isIP } from 'node:net';
 
 /** MCP is a client of the existing authenticated API, never a second harness owner. */
 export class RelayClient {
@@ -7,6 +9,7 @@ export class RelayClient {
     url: string,
     private options: {
       cookieFile?: string;
+      connectIp?: string;
       timeoutMs?: number;
       fetch?: (url: string, init: RequestInit) => Promise<Response>;
     } = {},
@@ -20,6 +23,44 @@ export class RelayClient {
     )
       throw new Error('Relay requires HTTPS outside loopback');
     this.origin = u.origin;
+    if (options.connectIp && (u.protocol !== 'https:' || !isIP(options.connectIp)))
+      throw new Error('RELAY_CONNECT_IP requires HTTPS and a valid IP address');
+  }
+  /** Override DNS only: SNI, Host and certificate identity remain the configured HTTPS host. */
+  private pinnedFetch(url: string, init: RequestInit): Promise<Response> {
+    const target = new URL(url);
+    return new Promise((resolve, reject) => {
+      const request = httpsRequest(
+        target,
+        {
+          hostname: this.options.connectIp,
+          servername: target.hostname,
+          method: init.method,
+          headers: { ...(init.headers as Record<string, string>), host: target.host },
+          signal: init.signal ?? undefined,
+        },
+        (response) => {
+          const chunks: Buffer[] = [];
+          let size = 0;
+          response.on('data', (chunk: Buffer) => {
+            size += chunk.length;
+            if (size > 4 * 1024 * 1024) {
+              const error = new Error('Relay response too large; request a smaller page');
+              reject(error);
+              response.destroy(error);
+              return;
+            }
+            chunks.push(chunk);
+          });
+          response.on('error', reject);
+          response.on('end', () =>
+            resolve(new Response(Buffer.concat(chunks), { status: response.statusCode ?? 500 })),
+          );
+        },
+      );
+      request.on('error', reject);
+      request.end(init.body as string | Uint8Array | undefined);
+    });
   }
   async request(route: string, method = 'GET', body?: unknown, generation?: string) {
     if (!route.startsWith('/api/')) throw new Error('Not a Relay API route');
@@ -37,7 +78,9 @@ export class RelayClient {
     const binary = Buffer.isBuffer(body);
     if (body !== undefined)
       headers['content-type'] = binary ? 'application/octet-stream' : 'application/json';
-    const response = await (this.options.fetch ?? fetch)(this.origin + route, {
+    const fetcher =
+      this.options.fetch ?? (this.options.connectIp ? this.pinnedFetch.bind(this) : fetch);
+    const response = await fetcher(this.origin + route, {
       method,
       headers,
       redirect: 'error',

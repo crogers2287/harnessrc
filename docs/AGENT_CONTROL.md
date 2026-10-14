@@ -58,6 +58,7 @@ Codex and other clients can register the same stdio command using their normal M
 | Environment | Effect |
 | --- | --- |
 | `RELAY_URL` | Required HTTPS origin; plain HTTP only for loopback tests. Credentials/paths/query strings are rejected. |
+| `RELAY_CONNECT_IP=100.x.y.z` | Optional known server address when system DNS has no MagicDNS. Overrides DNS only; original HTTPS SNI/Host and certificate verification remain enabled. No redirect following. |
 | `RELAY_READ_ONLY=1` | Exposes only observation tools; mutation calls are not registered. |
 | `RELAY_SESSION_IDS=id1,id2` | Limits this adapter to exact Relay IDs; unrelated sessions cannot be attached or controlled. Launch/folder tools are hidden. An empty value means no sessions. |
 | `RELAY_FILE_ROOTS=["/projects","/outputs"]` | JSON array of permitted local upload roots. Defaults to the adapter's working directory. Symlinks are resolved before containment checks. |
@@ -103,3 +104,5 @@ Integration tests use the official MCP client, real HTTP to an isolated gateway 
 For a live **read-only** smoke check, list tools, then `relay_sessions`, then `relay_attach` on the requested project. Confirm the same ID/model/CWD/generation visible in the app. Mutating tests must use a disposable authorized worker, not inject unsolicited messages into production projects. On 401 check Tailscale and the verified endpoint; on 403 check grants/origin; on owner-change reattach; on blocked inspect exact pending interactions. For uncertain delivery check the original receipt before another action. Raise reproducible [installation issues](https://github.com/crogers2287/harnessrc/issues/new/choose) with versions and redacted diagnostics.
 
 Protocol/SDK reference: [official MCP server guide](https://modelcontextprotocol.io/docs/develop/build-server).
+
+If a controller deliberately disables Tailscale DNS, get the server address from its verified Tailscale configuration/status and add `--connect-ip 100.x.y.z` to the installer (or `RELAY_CONNECT_IP` to the MCP environment). This avoids changing system DNS and still verifies the certificate against `RELAY_URL`. Do not guess an IP or disable TLS verification. On Fred, the validated origin is `https://fred.taile5e8a3.ts.net:11543`, with server IP `100.98.154.42`; these are deployment-specific values, not defaults for another installation.

@@ -5,7 +5,10 @@ import { RelayClient } from './client.ts';
 if (!process.env.RELAY_URL)
   throw new Error('Set RELAY_URL to your authenticated Relay HTTPS/Tailscale origin');
 const server = createRelayMcp(
-  new RelayClient(process.env.RELAY_URL, { cookieFile: process.env.RELAY_COOKIE_FILE }),
+  new RelayClient(process.env.RELAY_URL, {
+    cookieFile: process.env.RELAY_COOKIE_FILE,
+    connectIp: process.env.RELAY_CONNECT_IP,
+  }),
   {
     readOnly: process.env.RELAY_READ_ONLY === '1',
     sessionIds:

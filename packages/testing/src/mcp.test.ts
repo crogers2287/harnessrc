@@ -196,6 +196,11 @@ test('real stdio MCP executable initializes and reads Relay without contaminatin
 });
 test('MCP client refuses insecure remote URLs, redirects, missing auth and public cookie files', async () => {
   assert.throws(() => new RelayClient('http://example.test'), /HTTPS/);
+  assert.throws(
+    () => new RelayClient('https://example.test', { connectIp: 'not-an-ip' }),
+    /valid IP/,
+  );
+  assert.throws(() => new RelayClient('http://localhost', { connectIp: '127.0.0.1' }), /HTTPS/);
   assert.throws(() => new RelayClient('https://user:secret@example.test'), /credentials/);
   const f = await fixture();
   const m = await connect(f);

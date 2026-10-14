@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Merge a Relay stdio MCP connection and skill without deleting existing servers."""
-import argparse, json, os, shutil, tempfile, time
+import argparse, json, os, shutil, tempfile, time, ipaddress
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -11,6 +11,7 @@ p.add_argument('--release', type=Path, required=True)
 p.add_argument('--url', required=True, help='Verified Relay Tailscale HTTPS origin')
 p.add_argument('--skill-dir', type=Path, required=True, help='Client skills root')
 p.add_argument('--read-only', action='store_true')
+p.add_argument('--connect-ip', help='Optional trusted server IP when system DNS lacks MagicDNS; TLS hostname verification remains enabled')
 a = p.parse_args()
 u = urlparse(a.url)
 if u.scheme != 'https' or u.username or u.password or u.query or u.fragment or u.path not in ['', '/']:
@@ -25,6 +26,9 @@ if not node:
 entry = {'command': node, 'args': ['--import', str(release/'node_modules/tsx/dist/loader.mjs'), str(release/'apps/mcp/src/main.ts')], 'env': {'RELAY_URL': a.url}}
 if a.read_only:
     entry['env']['RELAY_READ_ONLY'] = '1'
+if a.connect_ip:
+    ipaddress.ip_address(a.connect_ip)
+    entry['env']['RELAY_CONNECT_IP'] = a.connect_ip
 text = a.settings.read_text() if a.settings.exists() else ''
 if a.client == 'hermes':
     import yaml
@@ -36,7 +40,10 @@ else:
 if not isinstance(config, dict) or not isinstance(config.get(key, {}), dict):
     p.error('Expected a configuration object and MCP server map')
 servers = config.setdefault(key, {})
-if 'relay' in servers and servers['relay'] != entry:
+existing = servers.get('relay')
+# A DNS-only upgrade of the exact managed entry preserves all other settings.
+without_ip = dict(entry, env={k:v for k,v in entry['env'].items() if k != 'RELAY_CONNECT_IP'})
+if existing is not None and existing not in [entry, without_ip]:
     p.error('An existing different relay entry needs manual review; no files changed')
 servers['relay'] = entry
 skill = a.skill_dir/'use-relay'
