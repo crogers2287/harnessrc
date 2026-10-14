@@ -356,7 +356,10 @@ export async function createGateway(
   app.get('/api/sessions/:id/provider-swap/:requestId', async (req, reply) => {
     const { id, requestId } = z.object({ id: z.string(), requestId: z.uuid() }).parse(req.params);
     check(req, id);
-    const receipt = providerSwaps.receipt(requestId);
+    const saved = providerSwaps.receipt(requestId);
+    if (!saved || saved.sessionId !== id)
+      return reply.code(404).send({ error: 'Restart receipt not found' });
+    const receipt = await providerSwaps.inspect(requestId);
     if (!receipt || receipt.sessionId !== id)
       return reply.code(404).send({ error: 'Restart receipt not found' });
     return receipt;

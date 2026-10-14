@@ -4,6 +4,7 @@ import type { Runtime } from './runtime.ts';
 import type { Launcher } from './launch.ts';
 import { idleDescendants, resumeCodexProvider } from './codex-provider-resume.ts';
 import { CodexDaemon } from '../../../packages/adapters/src/codex-daemon.ts';
+import { acceptClaudeResumeTrust } from './claude-resume-trust.ts';
 
 export const swapInput = z
   .object({
@@ -45,6 +46,44 @@ export class ProviderSwaps {
       .prepare('SELECT receipt FROM provider_swaps WHERE id=?')
       .get(id);
     return row ? (JSON.parse(String(row.receipt)) as SwapReceipt) : undefined;
+  }
+  async inspect(id: string) {
+    const receipt = this.receipt(id);
+    if (
+      !receipt ||
+      receipt.status !== 'uncertain' ||
+      !['confirm', 'bind'].includes(receipt.phase ?? '') ||
+      !receipt.paneId ||
+      !receipt.terminalId
+    )
+      return receipt;
+    const s = this.runtime.store.session(receipt.sessionId);
+    const client = this.runtime.clients.get(s.hostId)!;
+    const name = `relay-swap-${id.replaceAll('-', '').slice(0, 20)}`;
+    const { agent } = await client.request('agent.get', { target: receipt.paneId });
+    if (
+      agent.terminal_id !== receipt.terminalId ||
+      agent.name !== name ||
+      agent.agent !== s.harness ||
+      agent.agent_session?.value !== s.nativeSessionId ||
+      !agent.interactive_ready
+    )
+      return receipt;
+    await this.runtime.refresh(s.hostId);
+    if (this.runtime.store.session(s.id).terminalId !== receipt.terminalId) return receipt;
+    const current = this.runtime.store.session(s.id);
+    current.model = receipt.model;
+    current.modelUpdatedAt = new Date().toISOString();
+    this.runtime.store.saveSession(current);
+    receipt.status = 'started';
+    receipt.phase = 'bind';
+    receipt.diagnostic = 'Conversation resumed. Queued work remains paused for review.';
+    this.runtime.store.db
+      .prepare(
+        "UPDATE provider_swaps SET receipt=? WHERE id=? AND json_extract(receipt,'$.status')='uncertain'",
+      )
+      .run(JSON.stringify(receipt), id);
+    return receipt;
   }
   async catalog(id: string) {
     const s = this.runtime.store.session(id);
@@ -301,10 +340,19 @@ export class ProviderSwaps {
       }
       receipt.phase = 'confirm';
       save();
+      let acceptedTrust = false;
       for (let n = 0; ; n++) {
         const { agent } = await client.request('agent.get', { target: receipt.paneId });
         if (agent.terminal_id !== receipt.terminalId || agent.name !== name)
           throw new Error('Replacement owner changed');
+        if (!acceptedTrust && s.harness === 'claude')
+          acceptedTrust = await acceptClaudeResumeTrust(
+            client,
+            receipt.paneId,
+            receipt.terminalId,
+            name,
+            resolved,
+          );
         if (
           agent.agent_session?.value === s.nativeSessionId &&
           agent.agent === s.harness &&
@@ -328,6 +376,9 @@ export class ProviderSwaps {
       )
         throw new Error('Relay resume binding was not confirmed');
       receipt.status = 'started';
+      current.model = value.model;
+      current.modelUpdatedAt = new Date().toISOString();
+      store.saveSession(current);
       receipt.diagnostic = 'Conversation resumed. Queued work remains paused for review.';
       save();
       store.audit(deviceId, 'session.provider-swap.completed', id, {

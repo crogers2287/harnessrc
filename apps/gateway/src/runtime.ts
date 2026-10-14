@@ -162,6 +162,20 @@ export class Runtime extends EventEmitter {
           }
         }
         s.tabName = snapshot.tabs.find((t) => t.tab_id === a.tab_id)?.label;
+        if (a.name?.startsWith('relay-swap-')) {
+          const swap = this.store.db
+            .prepare(
+              "SELECT id,session_id FROM provider_swaps WHERE json_extract(receipt,'$.terminalId')=?",
+            )
+            .get(s.terminalId);
+          if (swap && a.name === `relay-swap-${String(swap.id).replaceAll('-', '').slice(0, 20)}`) {
+            const original = this.store.session(String(swap.session_id));
+            const savedName = this.store.db
+              .prepare('SELECT name FROM session_preferences WHERE session_id=?')
+              .get(original.id)?.name;
+            s.sessionName = String(savedName || original.sessionName || original.project);
+          }
+        }
         s.paneName = snapshot.panes.find((p) => p.pane_id === a.pane_id)?.label;
         seen.add(s.id);
         const old = this.store.sessions().find((x) => x.id === s.id);

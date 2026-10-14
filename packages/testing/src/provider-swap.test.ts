@@ -175,6 +175,36 @@ test('ambiguous start persists uncertainty across restart without starting anoth
   }
 });
 
+test('receipt checks reconcile an exact late native binding without sending input or launching again', async () => {
+  const f = await setup();
+  try {
+    const receipt = await f.swaps.restart(f.session.id, f.input, 'device');
+    receipt.status = 'uncertain';
+    receipt.phase = 'confirm';
+    f.gateway.store.db
+      .prepare('UPDATE provider_swaps SET receipt=? WHERE id=?')
+      .run(JSON.stringify(receipt), f.input.requestId);
+    const offset = f.calls.length;
+    assert.equal((await f.swaps.inspect(f.input.requestId))?.status, 'started');
+    assert.deepEqual(
+      f.calls.slice(offset).map((c) => c.method),
+      ['agent.get'],
+    );
+    assert.equal(f.swaps.receipt(f.input.requestId)?.status, 'started');
+    assert.equal(f.gateway.store.session(f.session.id).model, f.input.model);
+    f.gateway.store.event(f.gateway.store.session(f.session.id), {
+      sourceId: 'old-model',
+      source: 'claude',
+      kind: 'assistant.message',
+      timestamp: '2020-01-01T00:00:00Z',
+      data: { text: 'Old reply', model: 'old-opus' },
+    });
+    assert.equal(f.gateway.store.session(f.session.id).model, f.input.model);
+  } finally {
+    await f.close();
+  }
+});
+
 test('Codex provider restart unloads the exact native thread and restores idle descendants before provider override', async () => {
   const { resumeCodexProvider } =
     await import('../../../apps/gateway/src/codex-provider-resume.ts');

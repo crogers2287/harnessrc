@@ -22,6 +22,10 @@ Loaded daemon-backed Codex threads ignore provider overrides. Relay uses documen
 
 Claude uses native `--resume <UUID>` with profile/model/permission arguments. Local Codex without a daemon uses `resume <UUID>` with those arguments. Herdr remains the supervisor.
 
+Claude's known folder-trust startup screen is continued automatically during authorized launches/resumes. Relay verifies the selected CWD, exact Herdr pane/terminal/name, live foreground process and the specific trust menu before sending its fixed native selection through Herdr. This covers the bootstrap prompt before Claude's question hooks exist; other questions/approvals use their usual interaction path and selected permissions.
+
+If startup hooks bind late, a receipt check can reconcile an uncertain `confirm`/`bind` result only after the exact replacement owner reports the original native conversation ID. Receipt checks never send input or launch processes. Confirmed swaps update the displayed model with a new timestamp so older history cannot restore the pre-swap model. Internal restart process names are mapped back to the original conversation title during startup as well as after binding.
+
 ## Uncertain restarts
 
 Clients persist the original UUID/body before submitting. **Check restart** reads its durable receipt; **Retry same request** reuses the UUID and cannot start a second replacement. A definite validation rejection without a saved receipt permits editing choices. A timeout does not mean nothing happened.

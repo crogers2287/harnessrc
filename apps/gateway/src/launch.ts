@@ -1,4 +1,5 @@
 import { launchPermissionSchema } from './launch-permissions.ts';
+import { acceptClaudeResumeTrust } from './claude-resume-trust.ts';
 import type { DshHost } from './dsh-host.ts';
 import { CodexDaemon } from '../../../packages/adapters/src/codex-daemon.ts';
 import { realpath, readdir, stat, mkdir, open } from 'node:fs/promises';
@@ -415,6 +416,7 @@ export class Launcher {
         }
       }
       const target = `relay-${input.requestId.replaceAll('-', '').slice(0, 24)}`;
+      let acceptedTrust = false;
       // The socket start result acknowledges process launch; CLI readiness is a later event.
       for (let attempt = 0; ; attempt++) {
         const { agent } = await client.request('agent.get', { target: receipt.paneId });
@@ -424,8 +426,21 @@ export class Launcher {
           (agent.agent && agent.agent !== p.harness)
         )
           throw new Error('New session owner changed');
+        if (!acceptedTrust && p.harness === 'claude')
+          acceptedTrust = await acceptClaudeResumeTrust(
+            client,
+            receipt.paneId,
+            receipt.terminalId,
+            target,
+            resolved,
+          );
         if (agent.agent === p.harness && agent.interactive_ready) {
-          if (receipt.nativeSessionId && agent.agent_session?.value !== receipt.nativeSessionId) {
+          if (acceptedTrust && !agent.agent_session) {
+            if (attempt >= 100) throw new Error('Claude startup identity not confirmed');
+          } else if (
+            receipt.nativeSessionId &&
+            agent.agent_session?.value !== receipt.nativeSessionId
+          ) {
             if (attempt >= 100) throw new Error('Native launch identity not confirmed');
           } else break;
         }
