@@ -257,6 +257,16 @@ export class ProviderSwaps {
             result.modelProvider !== (profile.codexProvider ?? 'openai')
           )
             throw new Error('Native provider/model resume was not confirmed');
+          const sandboxTypes = {
+            'read-only': 'readOnly',
+            'workspace-write': 'workspaceWrite',
+            'danger-full-access': 'dangerFullAccess',
+          };
+          if (
+            (permission?.sandbox && result.sandbox?.type !== sandboxTypes[permission.sandbox]) ||
+            (permission?.approvalPolicy && result.approvalPolicy !== permission.approvalPolicy)
+          )
+            throw new Error('Native resume permissions were not confirmed');
         } finally {
           native.close();
         }
