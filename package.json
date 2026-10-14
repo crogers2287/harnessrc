@@ -13,6 +13,7 @@
   "scripts": {
     "dev": "tsx scripts/dev.ts",
     "start": "tsx apps/gateway/src/main.ts",
+    "mcp": "tsx apps/mcp/src/main.ts",
     "build": "vite build --config apps/web/vite.config.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
@@ -27,6 +28,7 @@
     "@fastify/rate-limit": "^10.3.0",
     "@fastify/static": "^10.1.5",
     "@fastify/websocket": "^11.2.0",
+    "@modelcontextprotocol/sdk": "1.32.1",
     "@openuidev/react-lang": "0.3.2",
     "@openuidev/react-ui": "0.17.0",
     "@tanstack/react-query": "^5.90.0",

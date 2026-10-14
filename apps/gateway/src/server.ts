@@ -107,7 +107,7 @@ export async function createGateway(
         .header('Access-Control-Allow-Origin', req.headers.origin)
         .header('Vary', 'Origin')
         .header('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS')
-        .header('Access-Control-Allow-Headers', 'Content-Type, X-RC-Request')
+        .header('Access-Control-Allow-Headers', 'Content-Type, X-RC-Request, X-RC-Generation')
         .header('Access-Control-Allow-Private-Network', 'true');
       if (req.method === 'OPTIONS') return reply.code(204).send();
     }
@@ -151,9 +151,17 @@ export async function createGateway(
       .send({ error: error instanceof ZodError ? 'Invalid request' : (error as Error).message });
   });
   const check = (req: FastifyRequest, id: string, control = false) => {
-    store.session(id);
+    const session = store.session(id);
     if (!auth.allowed(req.device, id, control))
       throw Object.assign(new Error('Session permission denied'), { statusCode: 403 });
+    if (
+      control &&
+      req.headers['x-rc-generation'] !== undefined &&
+      req.headers['x-rc-generation'] !== session.generation
+    )
+      throw Object.assign(new Error('Session owner changed; attach again before controlling it'), {
+        statusCode: 409,
+      });
   };
   app.get('/api/voice', async () => ({ enabled: voice.enabled, maxSeconds: 180 }));
   app.post(
