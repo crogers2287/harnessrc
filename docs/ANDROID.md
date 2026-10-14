@@ -1,5 +1,11 @@
 # Relay for Android
 
+## 0.1.19: tailnet DNS and restart recovery
+
+Signed builds made on the gateway's Tailscale host provision its Self DNSName and IPv4 tailnet address from `tailscale status --json`. If system DNS fails for that exact hostname, Android can connect to the provisioned address. The request URL, HTTPS hostname, SNI and certificate validation stay unchanged. Other hosts use normal DNS; invalid/non-tailnet pins fail closed. CI/off-tailnet builds have no auto-provisioned pin. A working Tailscale connection is still required.
+
+Successful restart receipt checks clear stale connection errors. The gateway also reconciles late native resume bindings, restores the conversation title and selected model, and continues the known Claude project-trust startup prompt for authorized launches/resumes. Existing session permissions remain in force.
+
 ## 0.1.18: provider restart and file saves
 
 Hold a supported session → **Swap provider** to resume its exact conversation with a selected provider/model/permissions. Web has the equivalent action. See [support and recovery limits](PROVIDER_SWAP.md).

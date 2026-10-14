@@ -38,6 +38,7 @@ fun ProviderSwapForm(vm: RelayModel, session: Session, close: () -> Unit) {
         do {
             try {
                 receipt = vm.api.api("/api/sessions/${session.id}/provider-swap/${request.str("requestId")}")
+                error = ""
                 missing = false
                 if (receipt?.str("status") == "started") vm.reload()
             } catch (e: Exception) {

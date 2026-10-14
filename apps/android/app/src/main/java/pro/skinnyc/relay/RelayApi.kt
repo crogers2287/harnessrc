@@ -21,6 +21,7 @@ class RelayApi(var base: String = DEFAULT_ENDPOINT) {
 
     val client =
         OkHttpClient.Builder()
+            .dns(TailnetDns(BuildConfig.TAILNET_HOST, BuildConfig.TAILNET_IP))
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(130, TimeUnit.SECONDS)
             .callTimeout(135, TimeUnit.SECONDS)
