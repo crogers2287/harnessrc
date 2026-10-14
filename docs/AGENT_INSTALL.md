@@ -409,3 +409,7 @@ Read `README.md` → this guide → `docs/ARCHITECTURE.md` → `docs/SECURITY.md
 | CFRproxy | Its `main.go`, `launch.go`, `internal/api`, `internal/proxy`, `internal/store`, `scripts/sync_hermes_cfrproxy.py` and `docs` |
 
 Hotspots are ownership/generation checks, native request identity, uncertain-delivery reconciliation, proxy/model selection, tailnet ingress trust and credential handling. Adapt file paths and schemas around these rules rather than bypassing them. Report which checkpoints passed and which remain blocked; a config file alone is not an installed system.
+
+## Agentic access after installation
+
+Install the [Relay MCP control plane and use-relay skill](AGENT_CONTROL.md) in each controlling agent, including separately configured Hermes profiles. The controller connects to your verified HTTPS/Tailscale ingress and uses the same permission, ownership, interaction and receipt routes as the app. This lets an agent attach to the project conversation and coordinate the existing harness without navigating panes or launching a second writer. Herdr remains mandatory.

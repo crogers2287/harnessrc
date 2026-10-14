@@ -56,3 +56,7 @@ Create sessions from your phone: [host folders, agents, models, and CFRproxy pro
 Voice dictation with local transcription/cleanup: [setup and privacy](docs/VOICE.md). Mobile session long-press actions include shared Relay names, pinning, Close to History, and capability-gated Stop Turn. DSH native questions use the existing host event stream; see [DSH](docs/DSH.md).
 
 Rich responses now use the real OpenUI renderer on web and in an isolated, bundled Android artifact surface. Cards, charts, tables, forms and tabs can appear inside assistant replies; video/audio play inline and exact DSH file links download securely. See [OpenUI output format](docs/OPENUI.md), [artifact publishing](docs/ARTIFACTS.md), and [example](docs/examples/relay-rich-demo.openui). Generated form actions add a draft for review; they do not execute harness tools or approve commands.
+
+## Agent control plane
+
+Agents can use Relay through its standard stdio MCP server to discover/attach to existing Herdr-owned sessions, read plans and sub-agent conversations, send/steer, answer authorized interactions, change supported models/permissions, launch sessions, and publish artifacts. [Setup and tool reference](docs/AGENT_CONTROL.md) · [Use Relay skill](skills/use-relay/SKILL.md).
