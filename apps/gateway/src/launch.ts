@@ -276,6 +276,8 @@ export class Launcher {
       // Match CFRproxy's launcher: --model alone leaves internal/fast requests
       // on native aliases and unknown model IDs default to a 200k window.
       env.ANTHROPIC_MODEL = model;
+      env.ANTHROPIC_DEFAULT_MODEL = model;
+      env.ANTHROPIC_DEFAULT_FABLE_MODEL = model;
       env.ANTHROPIC_SMALL_FAST_MODEL = model;
       env.ANTHROPIC_DEFAULT_OPUS_MODEL = model;
       env.ANTHROPIC_DEFAULT_SONNET_MODEL = model;

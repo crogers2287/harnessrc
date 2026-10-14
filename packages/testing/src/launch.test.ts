@@ -563,6 +563,8 @@ test('Claude CFR launches pin internal model aliases and the advertised context 
     const env = await launcher.launchEnvironment(profile, 'codex/gpt-test');
     for (const key of [
       'ANTHROPIC_MODEL',
+      'ANTHROPIC_DEFAULT_MODEL',
+      'ANTHROPIC_DEFAULT_FABLE_MODEL',
       'ANTHROPIC_SMALL_FAST_MODEL',
       'ANTHROPIC_DEFAULT_OPUS_MODEL',
       'ANTHROPIC_DEFAULT_SONNET_MODEL',
