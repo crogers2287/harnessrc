@@ -276,9 +276,11 @@ export class Launcher {
       // Match CFRproxy's launcher: --model alone leaves internal/fast requests
       // on native aliases and unknown model IDs default to a 200k window.
       env.ANTHROPIC_MODEL = model;
-      // Native cached compaction retains the previous response's model on
-      // cross-provider resume. Cold compaction uses the current main-loop model.
-      env.CLAUDE_CODE_COLD_COMPACT = '1';
+      // Cached compaction can retain the previous response's native model.
+      // Pin routing at the authenticated proxy boundary as well as in the CLI.
+      env.ANTHROPIC_CUSTOM_HEADERS = [env.ANTHROPIC_CUSTOM_HEADERS, `X-CFR-Model: ${model}`]
+        .filter(Boolean)
+        .join('\n');
       env.ANTHROPIC_DEFAULT_MODEL = model;
       env.ANTHROPIC_DEFAULT_FABLE_MODEL = model;
       env.ANTHROPIC_SMALL_FAST_MODEL = model;
