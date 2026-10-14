@@ -223,10 +223,10 @@ node --import tsx scripts/render-install-config.ts \
   --workspace ACTUAL_WORKSPACE_ID \
   --origin https://ACTUAL_SERVER.ACTUAL_TAILNET.ts.net \
   --tailnet-origin https://ACTUAL_SERVER.ACTUAL_TAILNET.ts.net:11543 \
-  > "$HOME/.config/relay/config.json"
+  > "$HOME/.config/relay/config.candidate.json"
 ```
 
-Back up an existing config before generating; merge if it already manages sessions. Output uses `hostId: local`, this user's home/transcript/project roots, localhost CFRproxy, and Claude/Codex launch profiles. It intentionally omits guessed Codex daemon paths, other hosts, unsafe full-access presets, provider keys, voice servers and DSH tokens.
+Review the candidate before activation. If `config.json` exists, back it up privately and merge; do not replace a config that already manages sessions. For a fresh install, activate the reviewed candidate with `install -m600 "$HOME/.config/relay/config.candidate.json" "$HOME/.config/relay/config.json"`. Output uses `hostId: local`, this user's home/transcript/project roots, localhost CFRproxy, and Claude/Codex launch profiles. It intentionally omits guessed Codex daemon paths, other hosts, unsafe full-access presets, provider keys, voice servers and DSH tokens.
 
 Choose an actual supported default model in each launch profile's `defaultModel`, or explicitly choose one in the app. Do not copy an unrelated account default into CFRproxy. The model catalog URL is loopback and includes all enabled proxy models. Permission presets are trusted installation configuration; the app chooses supported values, not arbitrary CLI flags. Test permission readback before sending the first task.
 
