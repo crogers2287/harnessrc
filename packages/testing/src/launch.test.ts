@@ -572,6 +572,7 @@ test('Claude CFR launches pin internal model aliases and the advertised context 
     ])
       assert.equal(env[key], 'codex/gpt-test');
     assert.equal(env.CLAUDE_CODE_MAX_CONTEXT_TOKENS, '500000');
+    assert.equal(env.CLAUDE_CODE_COLD_COMPACT, '1');
     const unknown = await launcher.launchEnvironment(profile, 'custom/model');
     assert.equal(unknown.ANTHROPIC_MODEL, 'custom/model');
     assert.equal(unknown.CLAUDE_CODE_MAX_CONTEXT_TOKENS, undefined);
