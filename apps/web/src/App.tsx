@@ -77,7 +77,7 @@ import {
   useAttachments,
   SentAttachment,
 } from './attachments.tsx';
-import { api, Connection } from '@harnessrc/client-sdk';
+import { api, ApiError, Connection } from '@harnessrc/client-sdk';
 import type { SessionView, Event, Interaction, Task } from '@harnessrc/protocol';
 import { Status, IconButton, Empty } from '@harnessrc/ui';
 type AgentPlan = { steps: { text: string; status: string }[]; text: string; updatedAt: string };
@@ -830,8 +830,15 @@ function Conversation({
     },
     onError: (_error, submitted) => {
       if (submitted.mode !== 'queue') {
-        outgoing.finish(submitted.key, 'uncertain');
-        setNotice('Delivery was not confirmed. Your message is preserved above.');
+        if (_error instanceof ApiError && [400, 401, 403, 413, 422, 429].includes(_error.status)) {
+          outgoing.dismiss(submitted.key);
+          setDraft((current) => current || submitted.prompt);
+          submission.current = undefined;
+          setNotice(_error.message);
+        } else {
+          outgoing.finish(submitted.key, 'uncertain');
+          setNotice('Delivery was not confirmed. Your message is preserved above.');
+        }
       } else
         setNotice(
           'Your draft is preserved. Check the queue before retrying if delivery is uncertain.',

@@ -2650,3 +2650,25 @@ test('long-press provider swap chooses model and permissions and retains the exa
   await sheet.getByRole('button', { name: 'Return to conversation' }).click();
   await expect(sheet).toHaveCount(0);
 });
+
+test('definite send rejection restores draft without an uncertain delivery bubble', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await pair(page);
+  await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
+  await page.route('**/api/sessions/*/messages', (route) =>
+    route.fulfill({
+      status: 422,
+      json: { error: 'The agent is not ready. Your draft was not sent.' },
+    }),
+  );
+  const draft = page.getByLabel('Instruction', { exact: true });
+  await draft.fill('Preserve this rejected instruction');
+  await page.getByRole('button', { name: /^(Send message|Steer active turn)$/ }).click();
+  await expect(draft).toHaveText('Preserve this rejected instruction');
+  await expect(page.locator('.outgoing-message')).toHaveCount(0);
+  await expect(
+    page.getByText('The agent is not ready. Your draft was not sent.', { exact: true }).first(),
+  ).toBeVisible();
+});

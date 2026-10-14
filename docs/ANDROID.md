@@ -163,3 +163,5 @@ Install the signed update over your existing app to retain drafts and settings. 
 DSH file links save through the document picker; MP4/video and audio have native playback, seek and video fullscreen controls. No filesystem link launches Relay's homepage. Passive media API responses are session-authorized and support byte ranges. See OPENUI.md for exact format, limits and physical-device checks.
 
 Version 0.1.16 adds **Agent tasks → Sub-agent conversations** for linked Claude and Codex native histories. These child chats are view-only: there is no Send/Steer composer. DSH's native `todo_write` checklist now appears under Agent tasks through the shared gateway fix.
+
+0.1.20 release validation: 21 JVM tests, lintDebug, instrumentation APK compilation and the signed release build pass. Published APK SHA-256: `b89be506f09bb214ba9e8ee03f6021309662e29fa9c665b62955a873b34d1cf8`; `apksigner verify` passes and the authenticated HTTPS download matches that checksum. The gateway pre-dispatch regression is covered in the 159-test shared suite; browser checks also cover rejected-draft restoration and retained uncertainty after transport loss.

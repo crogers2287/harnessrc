@@ -6,30 +6,30 @@ Both clients are first-class Relay clients. A user-facing feature or fix must be
 
 “Implemented” below describes code coverage, not a claim of physical-device or every-harness verification. All control operations require gateway capabilities and the correct ownership mode.
 
-| Workflow | Web | Android APK | Evidence / gap |
-| --- | --- | --- | --- |
-| Session search, harness filter, profile/model/CWD, saved sessions | Implemented | Implemented | App.tsx / RelayApp.kt, Protocol.kt |
-| Recency-first session list (last opened or agent activity) | Implemented | Implemented | Client-local open timestamps; pinned sessions remain above the chronological list |
-| Rename, pin, archive, supported turn interruption | Implemented | Implemented | SessionActions / Screens.kt |
-| Start session, folder selection, DSH profile, model/custom model | Implemented | Implemented | NewSession.tsx / LaunchScreen |
-| Send, Steer, explicit Queue | Implemented | Implemented | Gateway messages API is authoritative |
-| Outgoing chat bubble remains until native transcript echo | Implemented | Implemented | A gateway-accepted receipt alone no longer hides the message |
-| Appearance theme and accent palette | Implemented | Implemented | Both have system/light/dark and persistent teal, blue, violet, and amber accents |
-| Uncertain delivery recovery | Retains card, Restore draft / Dismiss | Durable original-key Retry safely | Gap: web does not yet provide the equivalent original-key retry control; Restore draft must not be described as safe retry |
-| Questions, approvals, stale request handling | Implemented | Implemented | Same interaction API; native request_user_input supported on verified CLI Codex; other async formats and CLI approvals remain limited |
-| Queue edit, cancel, pause/resume | Implemented | Implemented | App.tsx / QueueScreen |
-| Reorder pending tasks | Implemented | Missing | Add native reorder controls against the existing gateway route |
-| Model and session permissions | Implemented | Implemented | Capability gated; confirm permission changes |
-| Restart exact conversation with another provider | Implemented | Implemented (0.1.18+) | Long-press → Swap provider; local Claude/Codex only; see PROVIDER_SWAP.md |
-| File/image upload, previews, download | Implemented | Implemented | Native keyboard image insertion is Android-specific; browser permission/platform restrictions remain |
-| File saves survive disappearing message rows | Browser-managed | App-root picker/ViewModel (0.1.18+) | Fetch and validate before opening picker; physical system-picker check outstanding |
-| Dictation, cleanup, editable result | Implemented | Implemented | Shared gateway speech service; never auto-send |
-| Streaming, earlier history, reader scroll preservation | Implemented | Implemented | Browser and native regressions are separate |
-| Native task-notice formatting and source timestamps | Implemented | Implemented | Shared TS behavior has a separate Kotlin implementation: test both for format changes |
-| Tailnet access | Implemented | Implemented | Gateway authorization remains mandatory |
-| Off-tailnet device pairing | Implemented | Missing | Android currently fails closed outside authorized tailnet access |
-| Notification preferences | Browser notifications while open | Missing | Neither client implements reliable closed-app push |
-| Installation/update | PWA install and APK download | Signed APK installation | A web deployment cannot update installed Kotlin code |
+| Workflow                                                          | Web                                   | Android APK                         | Evidence / gap                                                                                                                        |
+| ----------------------------------------------------------------- | ------------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Session search, harness filter, profile/model/CWD, saved sessions | Implemented                           | Implemented                         | App.tsx / RelayApp.kt, Protocol.kt                                                                                                    |
+| Recency-first session list (last opened or agent activity)        | Implemented                           | Implemented                         | Client-local open timestamps; pinned sessions remain above the chronological list                                                     |
+| Rename, pin, archive, supported turn interruption                 | Implemented                           | Implemented                         | SessionActions / Screens.kt                                                                                                           |
+| Start session, folder selection, DSH profile, model/custom model  | Implemented                           | Implemented                         | NewSession.tsx / LaunchScreen                                                                                                         |
+| Send, Steer, explicit Queue                                       | Implemented                           | Implemented                         | Gateway messages API is authoritative                                                                                                 |
+| Outgoing chat bubble remains until native transcript echo         | Implemented                           | Implemented                         | A gateway-accepted receipt alone no longer hides the message                                                                          |
+| Appearance theme and accent palette                               | Implemented                           | Implemented                         | Both have system/light/dark and persistent teal, blue, violet, and amber accents                                                      |
+| Uncertain delivery recovery                                       | Retains card, Restore draft / Dismiss | Durable original-key Retry safely   | Gap: web does not yet provide the equivalent original-key retry control; Restore draft must not be described as safe retry            |
+| Questions, approvals, stale request handling                      | Implemented                           | Implemented                         | Same interaction API; native request_user_input supported on verified CLI Codex; other async formats and CLI approvals remain limited |
+| Queue edit, cancel, pause/resume                                  | Implemented                           | Implemented                         | App.tsx / QueueScreen                                                                                                                 |
+| Reorder pending tasks                                             | Implemented                           | Missing                             | Add native reorder controls against the existing gateway route                                                                        |
+| Model and session permissions                                     | Implemented                           | Implemented                         | Capability gated; confirm permission changes                                                                                          |
+| Restart exact conversation with another provider                  | Implemented                           | Implemented (0.1.18+)               | Long-press → Swap provider; local Claude/Codex only; see PROVIDER_SWAP.md                                                             |
+| File/image upload, previews, download                             | Implemented                           | Implemented                         | Native keyboard image insertion is Android-specific; browser permission/platform restrictions remain                                  |
+| File saves survive disappearing message rows                      | Browser-managed                       | App-root picker/ViewModel (0.1.18+) | Fetch and validate before opening picker; physical system-picker check outstanding                                                    |
+| Dictation, cleanup, editable result                               | Implemented                           | Implemented                         | Shared gateway speech service; never auto-send                                                                                        |
+| Streaming, earlier history, reader scroll preservation            | Implemented                           | Implemented                         | Browser and native regressions are separate                                                                                           |
+| Native task-notice formatting and source timestamps               | Implemented                           | Implemented                         | Shared TS behavior has a separate Kotlin implementation: test both for format changes                                                 |
+| Tailnet access                                                    | Implemented                           | Implemented                         | Gateway authorization remains mandatory                                                                                               |
+| Off-tailnet device pairing                                        | Implemented                           | Missing                             | Android currently fails closed outside authorized tailnet access                                                                      |
+| Notification preferences                                          | Browser notifications while open      | Missing                             | Neither client implements reliable closed-app push                                                                                    |
+| Installation/update                                               | PWA install and APK download          | Signed APK installation             | A web deployment cannot update installed Kotlin code                                                                                  |
 
 ## Change and release contract
 
@@ -196,3 +196,9 @@ Navigation detail: Android child Back returns to the child catalog; the web chil
 ### Claude AskUserQuestion (Android 0.1.17)
 
 Web and Android recognize choice-batch metadata on Claude's exact hook interactions, preserving descriptions, multi-select and custom replies. The shared session view reports blocking native interactions as blocked, rather than working. Web regression coverage verifies options and exact batch responses; native unit/lint/build and real Claude headless hook roundtrip pass. Older APKs receive a compatible question list and their legacy answer format remains valid; 0.1.17 adds the full multi-select batch UI. Real terminal concurrent answering and physical phone rendering remain separate checks.
+
+### Definite pre-dispatch rejection and uncertain delivery recovery (Android 0.1.20)
+
+Both clients keep drafts editable when the gateway positively rejects a message before native dispatch (including HTTP 422 for idle-to-busy races). This differs from transport uncertainty, which retains the original request identity and must never automatically resend. Web restores an empty composer and removes the rejected optimistic bubble; Android preserves its durable draft. The gateway marks dispatch attempted only after queue and attachment preflight pass.
+
+Android 0.1.20 adds **Keep draft / clear notice** for an uncertain receipt. Its confirmation explains that the agent may already have received the message. This only dismisses local delivery state, preserves the draft, and sends nothing. Web already provides separate **Restore draft** and **Dismiss** actions. Physical-phone confirmation and draft recovery remain unverified; unit/lint/release builds do not establish device behavior.
