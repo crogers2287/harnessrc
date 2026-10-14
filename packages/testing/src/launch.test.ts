@@ -1,3 +1,4 @@
+import { createServer } from 'node:http';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, symlink, rm } from 'node:fs/promises';
@@ -226,8 +227,16 @@ test('new Codex threads are named before their first Herdr CLI owner starts; rep
     nativeCalls.push({ method, params });
     if (method === 'thread/start') return { thread: { id: nativeId } };
     if (method === 'thread/name/set' || method === 'thread/settings/update') return {};
-    if (method === 'turn/start') { prompts++; return { turn: { id: 'first-turn' } }; }
-    if (method === 'thread/resume') return { thread: { id: nativeId }, sandbox: { type: permissionsMismatch ? 'readOnly' : 'workspaceWrite' }, approvalPolicy: 'on-request' };
+    if (method === 'turn/start') {
+      prompts++;
+      return { turn: { id: 'first-turn' } };
+    }
+    if (method === 'thread/resume')
+      return {
+        thread: { id: nativeId },
+        sandbox: { type: permissionsMismatch ? 'readOnly' : 'workspaceWrite' },
+        approvalPolicy: 'on-request',
+      };
     throw new Error('Unexpected native operation: ' + method);
   };
   const store = new Store(':memory:');
@@ -302,7 +311,11 @@ test('new Codex threads are named before their first Herdr CLI owner starts; rep
     assert.equal(nativeCalls[0].params.modelProvider, 'local_models');
     assert.equal(nativeCalls[0].params.model, 'codex/gpt-6.1-sol');
     assert.equal(nativeCalls[1].params.threadId, nativeId);
-    assert.deepEqual(nativeCalls[2].params, { threadId: nativeId, permissions: ':workspace', approvalPolicy: 'on-request' });
+    assert.deepEqual(nativeCalls[2].params, {
+      threadId: nativeId,
+      permissions: ':workspace',
+      approvalPolicy: 'on-request',
+    });
     assert.deepEqual(start.args, [
       'resume',
       nativeId,
@@ -315,7 +328,10 @@ test('new Codex threads are named before their first Herdr CLI owner starts; rep
     assert.equal(nativeCalls.length, 5);
     assert.equal(launcher.receipt(request.requestId)?.nativeSessionId, nativeId);
     permissionsMismatch = true;
-    assert.equal((await launcher.launch({ ...request, requestId: randomUUID() }, 'device')).status, 'uncertain');
+    assert.equal(
+      (await launcher.launch({ ...request, requestId: randomUUID() }, 'device')).status,
+      'uncertain',
+    );
     assert.equal(prompts, 1, 'never send the first instruction with unconfirmed permissions');
   } finally {
     CodexDaemon.prototype.request = original;
@@ -520,5 +536,53 @@ test('DSH confirms launch permissions before sending the first instruction', asy
     assert.ok(!calls.includes('prompt'));
   } finally {
     store.close();
+  }
+});
+
+test('Claude CFR launches pin internal model aliases and the advertised context window', async () => {
+  const server = createServer((_request, response) => {
+    response.setHeader('content-type', 'application/json');
+    response.end(JSON.stringify({ data: [{ id: 'codex/gpt-test', context_window: 500000 }] }));
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address() as { port: number };
+  const store = new Store(':memory:');
+  const profile = launchProfileSchema.parse({
+    id: 'claude-cfrproxy',
+    modelsEndpoint: `http://127.0.0.1:${address.port}/v1/models`,
+    hostId: 'fred',
+    label: 'Proxy',
+    harness: 'claude',
+    provider: 'CFRproxy',
+    workspaceId: 'w1',
+    roots: ['/tmp'],
+    models: [{ id: 'codex/gpt-test', name: 'Test', contextWindow: 500000 }],
+  });
+  const launcher = new Launcher(store, [profile], new Map());
+  try {
+    const env = await launcher.launchEnvironment(profile, 'codex/gpt-test');
+    for (const key of [
+      'ANTHROPIC_MODEL',
+      'ANTHROPIC_SMALL_FAST_MODEL',
+      'ANTHROPIC_DEFAULT_OPUS_MODEL',
+      'ANTHROPIC_DEFAULT_SONNET_MODEL',
+      'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+    ])
+      assert.equal(env[key], 'codex/gpt-test');
+    assert.equal(env.CLAUDE_CODE_MAX_CONTEXT_TOKENS, '500000');
+    const unknown = await launcher.launchEnvironment(profile, 'custom/model');
+    assert.equal(unknown.ANTHROPIC_MODEL, 'custom/model');
+    assert.equal(unknown.CLAUDE_CODE_MAX_CONTEXT_TOKENS, undefined);
+    assert.deepEqual(
+      await launcher.launchEnvironment({ ...profile, provider: 'Harness default' }, 'native'),
+      {},
+    );
+    assert.deepEqual(
+      await launcher.launchEnvironment({ ...profile, harness: 'codex' }, 'native'),
+      {},
+    );
+  } finally {
+    store.close();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });

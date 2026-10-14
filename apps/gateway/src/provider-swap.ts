@@ -144,12 +144,7 @@ export class ProviderSwaps {
     if (value.permission && !permissions.some((p) => p.id === value.permission))
       throw new Error('Permission preset unavailable');
     const permission = profile.permissionPresets.find((p) => p.id === value.permission);
-    const env: Record<string, string> = {};
-    for (const [target, source] of Object.entries(profile.environment)) {
-      const secret = process.env[source];
-      if (!secret) throw new Error('Provider credentials are not configured on this host');
-      env[target] = secret;
-    }
+    const env = await this.launcher.launchEnvironment(profile, value.model);
     await this.runtime.assertBinding(s);
     const state = await this.runtime.adapters.get(id)?.turnState?.(s);
     if (

@@ -120,6 +120,14 @@ test('provider swap closes the verified old owner before exact resume, preserves
       'proxy/model',
     ]);
     assert.equal(f.calls.find((c) => c.method === 'tab.create')!.params.cwd, f.session.cwd);
+    assert.equal(
+      f.calls.find((c) => c.method === 'tab.create')!.params.env.ANTHROPIC_SMALL_FAST_MODEL,
+      'proxy/model',
+    );
+    assert.equal(
+      f.calls.find((c) => c.method === 'tab.create')!.params.env.ANTHROPIC_MODEL,
+      'proxy/model',
+    );
     assert.equal(f.gateway.store.session(f.session.id).queuePaused, true);
     const count = f.calls.length;
     assert.deepEqual(await f.swaps.restart(f.session.id, f.input, 'device'), receipt);

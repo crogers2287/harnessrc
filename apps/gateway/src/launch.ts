@@ -28,7 +28,15 @@ export const launchProfileSchema = z.object({
   args: z.array(z.string()).default([]),
   permissionPresets: z.array(launchPermissionSchema).default([]),
   modelFlag: z.string().default('--model'),
-  models: z.array(z.object({ id: z.string(), name: z.string() })).default([]),
+  models: z
+    .array(
+      z.object({
+        id: z.string(),
+        name: z.string(),
+        contextWindow: z.number().int().positive().optional(),
+      }),
+    )
+    .default([]),
   allowCustomModel: z.boolean().default(false),
   // Map child environment names to gateway environment names; values never leave Fred.
   environment: z.record(z.string(), z.string()).default({}),
@@ -202,8 +210,11 @@ export class Launcher {
       };
     }
   }
-  private modelCache = new Map<string, { at: number; models: { id: string; name: string }[] }>();
-  async models(p: LaunchProfile) {
+  private modelCache = new Map<
+    string,
+    { at: number; models: { id: string; name: string; contextWindow?: number }[] }
+  >();
+  async models(p: LaunchProfile): Promise<{ id: string; name: string; contextWindow?: number }[]> {
     if (p.harness === 'dsh') {
       const host = this.dshHosts.get(p.hostId);
       if (!host?.connected) return [];
@@ -229,16 +240,50 @@ export class Launcher {
       });
       if (!response.ok) return p.models;
       const body = z
-        .object({ data: z.array(z.object({ id: z.string().max(160) })).max(2000) })
+        .object({
+          data: z
+            .array(
+              z.object({
+                id: z.string().max(160),
+                context_window: z.number().int().positive().max(10_000_000).optional(),
+                context_length: z.number().int().positive().max(10_000_000).optional(),
+              }),
+            )
+            .max(2000),
+        })
         .parse(await response.json());
       const models = body.data
         .filter((m) => /^[a-zA-Z0-9][a-zA-Z0-9._:/@+-]*$/.test(m.id))
-        .map((m) => ({ id: m.id, name: m.id }));
+        .map((m) => ({
+          id: m.id,
+          name: m.id,
+          contextWindow: m.context_window ?? m.context_length,
+        }));
       this.modelCache.set(p.id, { at: Date.now(), models });
       return models;
     } catch {
       return p.models;
     }
+  }
+  async launchEnvironment(p: LaunchProfile, model: string) {
+    const env: Record<string, string> = {};
+    for (const [target, source] of Object.entries(p.environment)) {
+      const value = process.env[source];
+      if (!value) throw new Error('Provider credentials are not configured on this host');
+      env[target] = value;
+    }
+    if (p.harness === 'claude' && p.provider.toLowerCase() === 'cfrproxy' && model) {
+      // Match CFRproxy's launcher: --model alone leaves internal/fast requests
+      // on native aliases and unknown model IDs default to a 200k window.
+      env.ANTHROPIC_MODEL = model;
+      env.ANTHROPIC_SMALL_FAST_MODEL = model;
+      env.ANTHROPIC_DEFAULT_OPUS_MODEL = model;
+      env.ANTHROPIC_DEFAULT_SONNET_MODEL = model;
+      env.ANTHROPIC_DEFAULT_HAIKU_MODEL = model;
+      const context = (await this.models(p)).find((m) => m.id === model)?.contextWindow;
+      if (context) env.CLAUDE_CODE_MAX_CONTEXT_TOKENS = String(context);
+    }
+    return env;
   }
   receipt(requestId: string): LaunchReceipt | undefined {
     const row = this.store.db.prepare('SELECT receipt FROM launches WHERE id=?').get(requestId);
@@ -282,12 +327,7 @@ export class Launcher {
         (!p.allowCustomModel && !(await this.models(p)).some((m) => m.id === input.model)))
     )
       throw new Error('Choose a supported model');
-    const env: Record<string, string> = {};
-    for (const [target, source] of Object.entries(p.environment)) {
-      const value = process.env[source];
-      if (!value) throw new Error('Provider credentials are not configured on this host');
-      env[target] = value;
-    }
+    const env = await this.launchEnvironment(p, input.model || p.defaultModel || '');
     const receipt: LaunchReceipt = {
       requestId: input.requestId,
       hostId: p.hostId,
