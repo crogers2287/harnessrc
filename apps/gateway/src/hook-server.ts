@@ -100,7 +100,7 @@ export async function startHookServer(runtime: Runtime, socketPath: string) {
             ],
             responseSchema: { type: 'string', enum: ['allow', 'deny'] },
             route: 'claude-hook',
-            expiresAt: new Date(Date.now() + 9 * 60 * 1000).toISOString(),
+            expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
             metadata: {
               tool: h.tool_name,
               input: redact(h.tool_input),

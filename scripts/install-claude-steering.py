@@ -24,10 +24,18 @@ for event in ['PreToolUse','PostToolUse','PostToolUseFailure']:
  for group in groups:
   group['hooks']=[h for h in group.get('hooks',[]) if 'claude-question-hook.mjs' not in h.get('command','')]
  groups.append({'matcher':'AskUserQuestion','hooks':[{'type':'command','command':question_command,'timeout':86400 if event=='PreToolUse' else 5}]})
+permission_script=a.release/'scripts/claude-permission-hook.ts'
+loader=a.release/'node_modules/tsx/dist/loader.mjs'
+if not permission_script.is_file() or not loader.is_file():raise SystemExit('Permission hook or tsx loader missing from release')
+permission_command='RC_HOOK_SOCKET='+shlex.quote(str(a.socket))+' '+shlex.quote(shutil.which('node'))+' --import '+shlex.quote(str(loader))+' '+shlex.quote(str(permission_script))
+groups=config.setdefault('hooks',{}).setdefault('PermissionRequest',[])
+for group in groups:
+ group['hooks']=[h for h in group.get('hooks',[]) if 'claude-permission-hook.ts' not in h.get('command','')]
+groups.append({'hooks':[{'type':'command','command':permission_command,'timeout':86400}]})
 a.settings.parent.mkdir(parents=True,exist_ok=True)
 if a.settings.exists():
  backup=a.settings.with_name(a.settings.name+'.before-relay-steering-'+str(time.time_ns()))
  shutil.copy2(a.settings,backup);os.chmod(backup,0o600)
 tmp=a.settings.with_name(a.settings.name+'.relay-next')
 tmp.write_text(json.dumps(config,indent=2)+'\n');os.chmod(tmp,0o600);os.replace(tmp,a.settings)
-print('Installed Relay steering and question hooks; existing hooks preserved.')
+print('Installed Relay steering, question and permission hooks; existing hooks preserved.')

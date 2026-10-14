@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { fixture, eventually } from './helpers.ts';
 import { hash } from '../../../apps/gateway/src/auth.ts';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import WebSocket from 'ws';
 import path from 'node:path';
+import { symlink, writeFile, readFile } from 'node:fs/promises';
 test('API rejects unauthenticated, cross-origin, and CSRF control requests', async () => {
   const f = await fixture({ startRuntime: false });
   try {
@@ -138,9 +139,15 @@ test('WebSocket requires matching origin and revocation closes an existing conne
 test('real hook executable returns Claude documented permission output for its exact invocation', async () => {
   const f = await fixture({ harness: 'claude' });
   try {
+    const current = path.join(f.dir, 'current');
+    await symlink(process.cwd(), current, 'dir');
     const child = spawn(
       process.execPath,
-      ['--import', 'tsx', 'scripts/claude-permission-hook.ts'],
+      [
+        '--import',
+        path.join(current, 'node_modules/tsx/dist/loader.mjs'),
+        path.join(current, 'scripts/claude-permission-hook.ts'),
+      ],
       {
         cwd: process.cwd(),
         env: { ...process.env, RC_HOOK_SOCKET: path.join(f.dir, 'hooks.sock') },
@@ -154,6 +161,7 @@ test('real hook executable returns Claude documented permission output for its e
       JSON.stringify({
         session_id: f.session.nativeSessionId,
         hook_event_name: 'PermissionRequest',
+        agent_id: 'background-research-agent',
         tool_name: 'Bash',
         tool_input: { command: 'npm test', api_key: 'private' },
       }),
@@ -162,6 +170,7 @@ test('real hook executable returns Claude documented permission output for its e
       f.gateway.store.interactions(f.session.id).some((i) => i.status === 'pending'),
     );
     const i = f.gateway.store.interactions(f.session.id)[0];
+    assert.ok(Date.parse(i.expiresAt) - Date.now() > 23 * 60 * 60 * 1000);
     assert.equal((i.metadata.input as any).api_key, '[REDACTED]');
     const result = await f.gateway.app.inject({
       method: 'POST',
@@ -176,6 +185,44 @@ test('real hook executable returns Claude documented permission output for its e
     });
     assert.equal(f.gateway.store.interaction(i.id).status, 'resolved');
     assert.equal(f.mock.prompts.length, 0);
+  } finally {
+    await f.close();
+  }
+});
+test('Claude installer preserves unrelated hooks and installs all-tool approvals idempotently', async () => {
+  const f = await fixture({ startRuntime: false });
+  try {
+    const settings = path.join(f.dir, 'claude-settings.json');
+    const original = { type: 'command', command: 'user-owned-hook', timeout: 12 };
+    await writeFile(
+      settings,
+      JSON.stringify({ hooks: { PermissionRequest: [{ matcher: 'Bash', hooks: [original] }] } }),
+    );
+    for (let n = 0; n < 2; n++) {
+      const result = spawnSync(
+        'python3',
+        [
+          'scripts/install-claude-steering.py',
+          '--release',
+          process.cwd(),
+          '--socket',
+          path.join(f.dir, 'hooks.sock'),
+          '--settings',
+          settings,
+        ],
+        { encoding: 'utf8' },
+      );
+      assert.equal(result.status, 0, result.stderr);
+    }
+    const config = JSON.parse(await readFile(settings, 'utf8'));
+    const groups = config.hooks.PermissionRequest;
+    assert.deepEqual(groups[0].hooks, [original]);
+    const installed = groups
+      .flatMap((g: any) => g.hooks)
+      .filter((h: any) => h.command.includes('claude-permission-hook.ts'));
+    assert.equal(installed.length, 1);
+    assert.equal(installed[0].timeout, 86400);
+    assert.equal(groups.find((g: any) => g.hooks.includes(installed[0])).matcher, undefined);
   } finally {
     await f.close();
   }

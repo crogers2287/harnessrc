@@ -178,7 +178,7 @@ python3 "$HOME/harnessrc/scripts/install-claude-steering.py" \
   --release "$HOME/harnessrc" --socket "$HOME/.local/state/relay/hooks.sock"
 ```
 
-This preserves other hooks, registers exact main-process question routing, and backs up settings. Load changed hooks according to the installed Claude version; already-open native prompts cannot be attached retroactively. Do not restart busy sessions. The separate documented PermissionRequest hook in `deploy/claude-hooks.example.json` can be merged for command/file approvals: use real absolute Node/tsx/script paths, preserve hooks, and never replace settings wholesale. See [Claude hook behavior](claude-steering.md).
+This preserves other hooks, registers exact main-process question routing, and backs up settings. Load changed hooks according to the installed Claude version; already-open native prompts cannot be attached retroactively. Do not restart busy sessions. The installer also merges the documented PermissionRequest hook for command/file/MCP approvals, including subagent requests. It preserves unrelated hooks and uses the real absolute Node/tsx/script paths. `deploy/claude-hooks.example.json` is available for manual setup. See [Claude hook behavior](claude-steering.md).
 
 ### Codex: provider choice matters
 

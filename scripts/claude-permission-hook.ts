@@ -1,8 +1,14 @@
 #!/usr/bin/env -S npx tsx
 import { randomUUID } from 'node:crypto';
+import { realpathSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
 /** Documented synchronous PermissionRequest command hook. No terminal key injection. */
-export async function permissionHook(socket: string, payload: unknown, timeoutMs = 8 * 60 * 1000) {
+export async function permissionHook(
+  socket: string,
+  payload: unknown,
+  timeoutMs = 24 * 60 * 60 * 1000,
+) {
   const requestId = randomUUID();
   /* Hook transport uses a transport-generated id; this uniquely pins this invocation. */
   const net = await import('node:net');
@@ -63,7 +69,11 @@ export async function permissionHook(socket: string, payload: unknown, timeoutMs
   }
   return {};
 }
-if (import.meta.url === `file://${process.argv[1]}`) {
+// tsx resolves the module's real path; production invokes it through current -> release.
+if (
+  process.argv[1] &&
+  realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1])
+) {
   let input = '';
   for await (const chunk of process.stdin) {
     input += chunk;

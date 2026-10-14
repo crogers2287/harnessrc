@@ -24,4 +24,12 @@ The hook waits up to the configured 24-hour command deadline, heartbeating its r
 
 Validated with installed Claude Code 2.1.296 in a new isolated headless session: its genuine AskUserQuestion reached the broker, Relay supplied Alpha, and the native model continued with Received: Alpha. This used an isolated fixture owner map and real process ancestry, not a second writer to a user session. Existing interactive-terminal concurrent-answer behavior still needs physical/live validation.
 
+## Tool approvals, including subagents
+
+The installer also merges a synchronous PermissionRequest hook for all tool names, including MCP tools. It presents an exact allow-once/deny card in both clients, without consuming the parent's steering mailbox. The hook waits up to 24 hours while maintaining a short live lease; stopping its owning process invalidates the request. Offline hooks leave Claude's native approval flow intact.
+
+Production launches this TypeScript hook through `current`, a symlink to the deployed release. Its executable entry check compares canonical filesystem paths so tsx's resolved module URL does not silently bypass the entry point. The automated integration test launches through this same symlink/loader layout, submits a subagent PermissionRequest, answers through the authenticated interaction endpoint, and verifies documented native output and resolved status.
+
+An approval that already fell back to Claude's terminal before this fix must be answered there once. Relay cannot retroactively create an executable hook for that invocation, and never grants the approval automatically. Subsequent requests use the corrected hook once Claude loads the merged settings.
+
 Official input/output contract: [Claude hook reference — tools requiring user interaction](https://code.claude.com/docs/en/hooks#tools-that-require-user-interaction).
