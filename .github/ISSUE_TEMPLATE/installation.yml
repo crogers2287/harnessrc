@@ -1,0 +1,40 @@
+name: Installation or integration problem
+description: Help wiring Relay, Herdr, CFRproxy, Tailscale, HTTPS, or Hermes Telegram.
+title: "[Setup] "
+body:
+  - type: markdown
+    attributes:
+      value: "Follow docs/AGENT_INSTALL.md first. Do not include tokens, passwords, OAuth files, proxy databases, pairing keys, or private transcripts. Replace private domains/IPs with consistent placeholders."
+  - type: textarea
+    id: goal
+    attributes:
+      label: Expected behavior and exact failure
+      description: Which installation step failed? Include the sanitized error and reproduction.
+    validations:
+      required: true
+  - type: textarea
+    id: versions
+    attributes:
+      label: Versions and checkout
+      description: OS/architecture, Relay git SHA/branch, Node/npm, Herdr version/protocol, CFRproxy git SHA, harness versions, Hermes version, Tailscale version; web or APK version.
+    validations:
+      required: true
+  - type: textarea
+    id: topology
+    attributes:
+      label: Topology and affected profiles
+      description: Same machine or multiple? Systemd Unix account, Herdr pane ownership, local/remote proxy, own tailnet/shared node, custom DNS or ts.net, HTTPS ports, all affected Hermes profiles. No secrets.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized evidence and checks
+      description: TLS certificate validity, hostname resolution, Tailscale connectivity, gateway/proxy health, redacted diagnostics, relevant log excerpt, model picker/provider ID. Describe screenshots after removing private content.
+    validations:
+      required: true
+  - type: textarea
+    id: attempts
+    attributes:
+      label: What the installation agent tried
+      description: Changes made, backups, what still works, workaround, minimal proposed fix. Do not restart or modify unrelated agents to reproduce.

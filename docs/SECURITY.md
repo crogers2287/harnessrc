@@ -1,0 +1,11 @@
+# Security model
+
+The gateway is privileged remote execution software. Deploy under the Herdr Unix account, bound to loopback, behind authenticated private-network HTTPS (initial recommendation: Tailscale Serve). Herdr and hook/bridge Unix sockets stay local and private; never publish them as public TCP endpoints.
+
+First-device pairing uses a random local key stored with mode 0600. Once paired, additional devices require administrator-created expiring one-use codes. Access tokens are random, hashed in SQLite, valid 15 minutes, and transmitted through HttpOnly, SameSite=Strict cookies. Refresh tokens expire after 30 days and rotate atomically. HTTPS deployments require Secure cookies. No access tokens are persisted in browser localStorage. Device revocation invalidates existing WebSockets as well as requests. Administrators can assign per-session read/control grants; authorization is enforced server-side and capability flags are masked for readers.
+
+Mutation requests require the custom request header and accepted Origin when supplied; WebSockets require exact Origin. Pairing is rate limited, API input uses Zod, gateway bodies and local bridge records are bounded, and authenticated responses use no-store. Audit records capture device, action and object identity without copying prompts/secrets. Interrupt requires explicit confirmation. Native approvals are never automatic or inferred from model text. Queue and broker state transitions guard duplicate/stale/replayed requests.
+
+Configured transcript roots are privileged configuration. Readers reject symlink escapes. Text/key redaction removes common credential patterns but is not a complete DLP guarantee; avoid unnecessary secrets in agents' conversations. Normalized message content is intentionally persisted to support replay. Protect the data directory and backups like source code. Native Codex persistence belongs to Codex; Relay cannot govern that product's retention.
+
+Trusted local processes under the same Unix account can access sockets and credentials. This is not isolation against a compromised host account. Tailscale authentication complements, rather than replaces, device and session authorization. Never log pairing keys or put them in issue reports. No native push service or remote-host enrollment has been implemented.
