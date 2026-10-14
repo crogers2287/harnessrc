@@ -3,6 +3,7 @@ import { nativeFiles } from '@harnessrc/protocol';
 import { publishArtifact } from './artifacts.ts';
 import { VoiceService, MAX_VOICE_BYTES, voiceMimeSchema } from './voice.ts';
 import { sendMessage } from './messages.ts';
+import { ProviderSwaps } from './provider-swap.ts';
 import { randomUUID } from 'node:crypto';
 import { deliverSteer } from './steering.ts';
 import { Launcher, launchRequestSchema } from './launch.ts';
@@ -49,6 +50,7 @@ export async function createGateway(
     runtime.dshHosts,
   );
   launcher.recover();
+  const providerSwaps = new ProviderSwaps(runtime, launcher);
   const tailnet = new TailnetAuth(options.tailnetLookup);
   const auth = new Auth(store, config.dataDir);
   const app = Fastify({ logger: false, bodyLimit: 256 * 1024, trustProxy: false });
@@ -154,6 +156,21 @@ export async function createGateway(
     const session = store.session(id);
     if (!auth.allowed(req.device, id, control))
       throw Object.assign(new Error('Session permission denied'), { statusCode: 403 });
+    if (
+      control &&
+      !req.url.split('?')[0].endsWith('/provider-swap') &&
+      store.db
+        .prepare(
+          "SELECT 1 FROM provider_swaps WHERE session_id=? AND json_extract(receipt,'$.status')='restarting'",
+        )
+        .get(id)
+    )
+      throw Object.assign(
+        new Error(
+          'Provider restart is in progress; inspect its receipt before controlling this session',
+        ),
+        { statusCode: 409 },
+      );
     if (
       control &&
       req.headers['x-rc-generation'] !== undefined &&
@@ -325,6 +342,25 @@ export async function createGateway(
     },
   );
   app.get('/api/sessions', async (req) => ({ sessions: sessionViews(req.device) }));
+  app.get('/api/sessions/:id/provider-swap', async (req) => {
+    const { id } = req.params as { id: string };
+    check(req, id);
+    return providerSwaps.catalog(id);
+  });
+  app.post('/api/sessions/:id/provider-swap', async (req) => {
+    const { id } = req.params as { id: string };
+    check(req, id, true);
+    launchAdmin(req);
+    return providerSwaps.restart(id, req.body, req.device.id);
+  });
+  app.get('/api/sessions/:id/provider-swap/:requestId', async (req, reply) => {
+    const { id, requestId } = z.object({ id: z.string(), requestId: z.uuid() }).parse(req.params);
+    check(req, id);
+    const receipt = providerSwaps.receipt(requestId);
+    if (!receipt || receipt.sessionId !== id)
+      return reply.code(404).send({ error: 'Restart receipt not found' });
+    return receipt;
+  });
   app.get('/api/hosts', async (req) => ({
     hosts: [
       ...runtime.clients.values(),
@@ -476,7 +512,7 @@ export async function createGateway(
   app.get('/api/sessions/:id/attachments/:file', async (req, reply) => {
     const { id, file } = req.params as { id: string; file: string };
     check(req, id);
-    const { row, bytes } = runtime.attachments.read(store.session(id), file);
+    const { row, bytes } = runtime.attachments.read(store.session(id), file, true);
     return sendMedia(req, reply, String(row.name), String(row.mime), bytes);
   });
   app.delete('/api/sessions/:id/attachments/:file', async (req) => {

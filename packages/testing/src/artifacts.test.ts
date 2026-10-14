@@ -58,8 +58,39 @@ test('artifacts publish once, survive restart, enforce owner and permission, and
       1,
     );
     const changed = f.session;
+    const unpublished = f.gateway.runtime.attachments.add(
+      changed,
+      'draft.txt',
+      'text/plain',
+      Buffer.from('private draft'),
+    );
     changed.generation = 'replacement';
     f.gateway.store.saveSession(changed);
+    const historical = await f.gateway.app.inject({
+      url: `/api/sessions/${id}/attachments/${file.id}`,
+      headers: f.headers,
+    });
+    assert.equal(historical.statusCode, 200, historical.body);
+    assert.deepEqual(historical.rawPayload, payload);
+    assert.throws(() => f.gateway.runtime.attachments.read(changed, file.id), /owner/);
+    assert.throws(
+      () => f.gateway.runtime.attachments.read(changed, unpublished.id, true),
+      /not published/,
+    );
+    assert.throws(
+      () =>
+        f.gateway.runtime.attachments.read(
+          { ...changed, nativeSessionId: 'another-conversation' },
+          file.id,
+          true,
+        ),
+      /conversation/,
+    );
+    assert.throws(
+      () =>
+        f.gateway.runtime.attachments.read({ ...changed, id: 'another-session' }, file.id, true),
+      /conversation/,
+    );
     assert.equal((await post()).statusCode, 409);
     assert.equal(f.mock.prompts.length, 0);
   } finally {

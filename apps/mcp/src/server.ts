@@ -196,6 +196,42 @@ export function createRelayMcp(
     },
   );
   add(
+    'relay_provider_options',
+    'Read matching provider/model/permission choices for exact same-harness restart and conversation resume.',
+    session,
+    false,
+    (a) => client.request(route(a, '/provider-swap')),
+  );
+  add(
+    'relay_restart_provider',
+    'Restart an idle local Claude/Codex harness with a selected provider/model, same native conversation ID and CWD. Requires authorization and confirmation; pauses queued work. Retain the request UUID and inspect its receipt after uncertainty.',
+    {
+      ...write,
+      requestId: key,
+      profileId: id,
+      model: id,
+      permission: z.string().optional(),
+      confirm: z.literal(true),
+    },
+    true,
+    (a) =>
+      client.request(route(a, '/provider-swap'), 'POST', {
+        requestId: a.requestId,
+        generation: a.generation,
+        profileId: a.profileId,
+        model: a.model,
+        permission: a.permission,
+        confirm: true,
+      }),
+  );
+  add(
+    'relay_provider_receipt',
+    'Check the original provider restart UUID. An uncertain restart must never be replaced with a new UUID to force another process launch.',
+    { ...session, requestId: key },
+    false,
+    (a) => client.request(route(a, `/provider-swap/${a.requestId}`)),
+  );
+  add(
     'relay_interrupt',
     'Stop the running turn if the harness supports native interruption. Requires explicit confirmation.',
     { ...write, confirm: z.literal(true) },

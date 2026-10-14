@@ -145,25 +145,27 @@ export class Launcher {
       description: o.description ?? '',
     }));
   }
-  async catalog() {
+  async catalog(filter?: { hostId: string; harness: string }) {
     return Promise.all(
-      this.profiles.map(async (p) => ({
-        id: p.id,
-        hostId: p.hostId,
-        label: p.label,
-        harness: p.harness,
-        provider: p.provider,
-        models: await this.models(p),
-        allowCustomModel: p.allowCustomModel,
-        defaultModel: p.defaultModel,
-        projectHome: p.roots[0],
-        permissions: await this.permissionOptions(p),
-        ...(p.harness === 'dsh' ? await this.presets(p) : {}),
-        connected:
-          this.dshHosts.get(p.hostId)?.connected ??
-          this.clients.get(p.hostId)?.host.connected ??
-          false,
-      })),
+      this.profiles
+        .filter((p) => !filter || (p.hostId === filter.hostId && p.harness === filter.harness))
+        .map(async (p) => ({
+          id: p.id,
+          hostId: p.hostId,
+          label: p.label,
+          harness: p.harness,
+          provider: p.provider,
+          models: await this.models(p),
+          allowCustomModel: p.allowCustomModel,
+          defaultModel: p.defaultModel,
+          projectHome: p.roots[0],
+          permissions: await this.permissionOptions(p),
+          ...(p.harness === 'dsh' ? await this.presets(p) : {}),
+          connected:
+            this.dshHosts.get(p.hostId)?.connected ??
+            this.clients.get(p.hostId)?.host.connected ??
+            false,
+        })),
     );
   }
   async presets(p: LaunchProfile) {
@@ -435,28 +437,54 @@ export class Launcher {
         // Apply the chosen policy only after the verified owner is ready, then read it back.
         const native = new CodexDaemon(socket);
         try {
-          const profiles = { 'read-only': ':read-only', 'workspace-write': ':workspace', 'danger-full-access': ':danger-full-access' };
-          const sandboxTypes = { 'read-only': 'readOnly', 'workspace-write': 'workspaceWrite', 'danger-full-access': 'dangerFullAccess' };
+          const profiles = {
+            'read-only': ':read-only',
+            'workspace-write': ':workspace',
+            'danger-full-access': ':danger-full-access',
+          };
+          const sandboxTypes = {
+            'read-only': 'readOnly',
+            'workspace-write': 'workspaceWrite',
+            'danger-full-access': 'dangerFullAccess',
+          };
           await native.request('thread/settings/update', {
             threadId: receipt.nativeSessionId,
             permissions: profiles[permission.sandbox],
             approvalPolicy: permission.approvalPolicy,
           });
-          const state = await native.request('thread/resume', { threadId: receipt.nativeSessionId, excludeTurns: true });
-          if (state.thread?.id !== receipt.nativeSessionId ||
-              state.sandbox?.type !== sandboxTypes[permission.sandbox] ||
-              (permission.approvalPolicy && state.approvalPolicy !== permission.approvalPolicy))
+          const state = await native.request('thread/resume', {
+            threadId: receipt.nativeSessionId,
+            excludeTurns: true,
+          });
+          if (
+            state.thread?.id !== receipt.nativeSessionId ||
+            state.sandbox?.type !== sandboxTypes[permission.sandbox] ||
+            (permission.approvalPolicy && state.approvalPolicy !== permission.approvalPolicy)
+          )
             throw new Error('Launch permissions were not confirmed');
-        } finally { native.close(); }
+        } finally {
+          native.close();
+        }
       }
       if (receipt.nativeSessionId && socket) {
         const { agent } = await client.request('agent.get', { target: receipt.paneId });
-        if (agent.terminal_id !== receipt.terminalId || agent.name !== target || agent.agent_session?.value !== receipt.nativeSessionId) throw new Error('Native launch owner changed before first instruction');
+        if (
+          agent.terminal_id !== receipt.terminalId ||
+          agent.name !== target ||
+          agent.agent_session?.value !== receipt.nativeSessionId
+        )
+          throw new Error('Native launch owner changed before first instruction');
         const native = new CodexDaemon(socket);
         try {
-          const result = await native.request('turn/start', { threadId: receipt.nativeSessionId, clientUserMessageId: input.requestId, input: [{ type: 'text', text: input.prompt }] });
+          const result = await native.request('turn/start', {
+            threadId: receipt.nativeSessionId,
+            clientUserMessageId: input.requestId,
+            input: [{ type: 'text', text: input.prompt }],
+          });
           if (!result.turn?.id) throw new Error('Native first turn was not confirmed');
-        } finally { native.close(); }
+        } finally {
+          native.close();
+        }
       } else await client.request('agent.prompt', { target, text: input.prompt }, 15000);
       receipt.status = 'started';
     } catch {

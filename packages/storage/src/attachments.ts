@@ -82,8 +82,24 @@ export class Attachments {
       )
       .all(session.id, session.generation) as Attachment[];
   }
-  read(session: Session, id: string) {
-    const row = this.get(session, id);
+  read(session: Session, id: string, historical = false) {
+    const row = historical
+      ? this.store.db
+          .prepare('SELECT * FROM attachments WHERE id=? AND session_id=?')
+          .get(id, session.id)
+      : this.get(session, id);
+    if (!row || row.native_session_id !== session.nativeSessionId)
+      throw new Error('Attachment does not belong to this conversation');
+    if (
+      historical &&
+      row.generation !== session.generation &&
+      !this.store.db
+        .prepare(
+          "SELECT 1 FROM artifacts WHERE session_id=? AND attachment_id=? UNION ALL SELECT 1 FROM events WHERE session_id=? AND EXISTS (SELECT 1 FROM json_each(events.body,'$.data.attachments') WHERE json_extract(value,'$.id')=?) LIMIT 1",
+        )
+        .get(session.id, id, session.id, id)
+    )
+      throw new Error('Historical attachment was not published in this conversation');
     const bytes = readFileSync(path.join(this.root, String(row.filename)));
     if (createHash('sha256').update(bytes).digest('hex') !== row.sha256)
       throw new Error('Attachment changed on disk');
