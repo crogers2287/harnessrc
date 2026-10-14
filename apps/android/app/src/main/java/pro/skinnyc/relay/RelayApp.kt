@@ -523,6 +523,17 @@ fun Chat(vm: RelayModel, modifier: Modifier) {
                                 Text("Retry safely")
                             }
                         }
+                        if (pending.str("state") == "uncertain") {
+                            var dismiss by remember(pending.str("idempotencyKey")) { mutableStateOf(false) }
+                            TextButton(enabled = !vm.sending, onClick = { dismiss = true }) { Text("Keep draft / clear notice") }
+                            if (dismiss) AlertDialog(
+                                onDismissRequest = { dismiss = false },
+                                title = { Text("Clear delivery notice?") },
+                                text = { Text("The agent may have received this message. Your draft stays editable; check the conversation before sending the same instruction again. This does not resend anything.") },
+                                confirmButton = { TextButton(onClick = { vm.dismissUncertain(pending.str("idempotencyKey")); dismiss = false }) { Text("Keep draft") } },
+                                dismissButton = { TextButton(onClick = { dismiss = false }) { Text("Cancel") } },
+                            )
+                        }
                     }
                 }
             }

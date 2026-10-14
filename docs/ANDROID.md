@@ -1,5 +1,11 @@
 # Relay for Android
 
+## 0.1.20: definite rejection and uncertain-draft recovery
+
+A queue lock or pending interaction can appear between native-state preflight and dispatch. The gateway now marks delivery as attempted only at the adapter call; definite `DeliveryDeferred` rejections return 422 and preserve the draft instead of creating false uncertain delivery. Replaying a failed task cannot be reported as success; genuinely ambiguous native calls remain uncertain.
+
+Android offers **Keep draft / clear notice** after an uncertain delivery. Confirmation explains that the agent may have received the earlier message. Clearing the notice preserves the current draft and attachments, sends no request, and does not change the gateway receipt. Original-key Retry safely remains available. Definite rejections also clear stale outgoing indicators when the user has switched to another session.
+
 ## 0.1.19: tailnet DNS and restart recovery
 
 Signed builds made on the gateway's Tailscale host provision its Self DNSName and IPv4 tailnet address from `tailscale status --json`. If system DNS fails for that exact hostname, Android can connect to the provisioned address. The request URL, HTTPS hostname, SNI and certificate validation stay unchanged. Other hosts use normal DNS; invalid/non-tailnet pins fail closed. CI/off-tailnet builds have no auto-provisioned pin. A working Tailscale connection is still required.

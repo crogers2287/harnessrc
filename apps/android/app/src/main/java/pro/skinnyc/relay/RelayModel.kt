@@ -582,7 +582,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
                         saved.put("text", original).put("voiceOriginal", submittedVoice)
                         recovery.put("restoredRevision", submittedRevision)
                     }
-                    saved.put("outgoing", JSONObject(recovery.toString()).put("state", "uncertain"))
+                    saved.put("outgoing", if (e is ApiFailure && e.status in listOf(400, 401, 403, 413, 422, 429)) JSONObject.NULL else JSONObject(recovery.toString()).put("state", "uncertain"))
                     prefs.edit().putString("draft:$id", saved.toString()).apply()
                 }
             } finally {
@@ -604,6 +604,18 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
             pending.str("mode"),
             pending.str("originalDraft").ifBlank { pending.str("prompt") },
         )
+    }
+
+    fun dismissUncertain(requestId: String) {
+        val pending = outgoing ?: return
+        if (sending || pending.str("state") != "uncertain" || pending.str("idempotencyKey") != requestId) return
+        if (draft.isEmpty()) {
+            draft = pending.str("originalDraft").ifBlank { pending.str("prompt") }
+            draftRevision++
+        }
+        outgoing = null
+        error = ""
+        saveDraft()
     }
 
     var preparedDownload by mutableStateOf<PreparedDownload?>(
