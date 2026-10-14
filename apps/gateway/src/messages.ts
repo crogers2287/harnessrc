@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { taskInputSchema, type Task } from '@harnessrc/protocol';
+import { DeliveryDeferred, taskInputSchema, type Task } from '@harnessrc/protocol';
 import type { Runtime } from './runtime.ts';
 
 /** Send/steer is resolved from current native state, never from a stale phone status. */
@@ -74,8 +74,18 @@ export async function sendMessage(
       );
       result = { mode: 'steer' };
     } else if (state === 'idle' || state === 'done') {
-      deliveryAttempted = true;
-      result = { mode: 'send', task: await runtime.queue.sendNow(sessionId, value) };
+      result = {
+        mode: 'send',
+        task: await runtime.queue.sendNow(sessionId, value, () => {
+          deliveryAttempted = true;
+        }),
+      };
+      if (result.task?.status === 'uncertain') {
+        deliveryAttempted = true;
+        throw new Error(
+          'Earlier native delivery remains uncertain; inspect the conversation before recovery',
+        );
+      }
     } else if (state === 'blocked') {
       throw new Error(
         'The agent is waiting for an answer. Resolve its question or approval before sending. Your draft was not sent.',
@@ -89,7 +99,7 @@ export async function sendMessage(
     });
     return result;
   } catch (error) {
-    if (!deliveryAttempted) {
+    if (!deliveryAttempted || error instanceof DeliveryDeferred) {
       store.db
         .prepare('DELETE FROM message_attachments WHERE request_id=?')
         .run(value.idempotencyKey);

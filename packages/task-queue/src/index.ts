@@ -69,12 +69,19 @@ export class TaskQueue {
       return task;
     });
   }
-  async sendNow(sessionId: string, input: unknown): Promise<Task> {
+  async sendNow(sessionId: string, input: unknown, onAttempt?: () => void): Promise<Task> {
     const value = taskInputSchema.parse(input);
     const prior = this.store
       .tasks(sessionId)
       .find((task) => task.idempotencyKey === value.idempotencyKey);
-    if (prior) return this.add(sessionId, value, 'immediate'); // Validate the replay; never dispatch again.
+    if (prior) {
+      const replay = this.add(sessionId, value, 'immediate');
+      if (replay.status === 'failed')
+        throw new DeliveryDeferred(
+          replay.error || 'The earlier send was rejected. Submit a new message.',
+        );
+      return replay; // Validate the replay; never dispatch again.
+    }
     if (this.busy.has(sessionId))
       throw new DeliveryDeferred('Another delivery is in progress. Your message was not queued.');
     const session = this.store.session(sessionId);
@@ -92,6 +99,7 @@ export class TaskQueue {
     try {
       const task = this.add(sessionId, value, 'immediate');
       try {
+        onAttempt?.();
         const result = await adapter.send(session, task);
         task.status = 'running';
         task.correlation = result.correlation;

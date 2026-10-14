@@ -107,13 +107,50 @@ test('an idle-to-busy race records a failed immediate send, not a future queued 
       throw new DeliveryDeferred('Native turn started concurrently');
     };
     const input = { prompt: 'send now only', idempotencyKey: randomUUID() };
-    assert.equal((await post(f, input)).statusCode, 409);
+    assert.equal((await post(f, input)).statusCode, 422);
     const tasks = f.gateway.store.tasks(f.session.id);
     assert.equal(tasks.length, 1);
     assert.equal(tasks[0].status, 'failed');
-    assert.equal((await post(f, input)).statusCode, 409);
+    assert.equal((await post(f, input)).statusCode, 422);
     assert.equal(f.gateway.store.tasks(f.session.id).length, 1);
   } finally {
+    await f.close();
+  }
+});
+
+test('a concurrent immediate dispatch rejected before task creation is definitively not sent', async () => {
+  const f = await fixture({ startRuntime: false });
+  let release!: () => void;
+  try {
+    let entered!: () => void;
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const adapter = f.gateway.runtime.adapters.get(f.session.id)!;
+    const send = adapter.send!.bind(adapter);
+    adapter.send = async (session, task) => {
+      entered();
+      await blocked;
+      return send(session, task);
+    };
+    const first = post(f, { prompt: 'First request', idempotencyKey: randomUUID() });
+    await started;
+    const id = randomUUID();
+    const second = await post(f, { prompt: 'Second request', idempotencyKey: id });
+    assert.equal(second.statusCode, 422, second.body);
+    assert.match(second.json().error, /not queued/);
+    assert.equal(
+      f.gateway.store.db.prepare('SELECT 1 FROM message_receipts WHERE request_id=?').get(id),
+      undefined,
+    );
+    assert.equal(f.gateway.store.tasks(f.session.id).length, 1);
+    release();
+    assert.equal((await first).statusCode, 200);
+  } finally {
+    release?.();
     await f.close();
   }
 });

@@ -194,7 +194,6 @@ test('receipt checks reconcile an exact late native binding without sending inpu
     assert.equal(f.gateway.store.session(f.session.id).model, f.input.model);
     f.gateway.store.event(f.gateway.store.session(f.session.id), {
       sourceId: 'old-model',
-      source: 'claude',
       kind: 'assistant.message',
       timestamp: '2020-01-01T00:00:00Z',
       data: { text: 'Old reply', model: 'old-opus' },
