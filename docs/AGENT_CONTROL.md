@@ -106,3 +106,11 @@ For a live **read-only** smoke check, list tools, then `relay_sessions`, then `r
 Protocol/SDK reference: [official MCP server guide](https://modelcontextprotocol.io/docs/develop/build-server).
 
 If a controller deliberately disables Tailscale DNS, get the server address from its verified Tailscale configuration/status and add `--connect-ip 100.x.y.z` to the installer (or `RELAY_CONNECT_IP` to the MCP environment). This avoids changing system DNS and still verifies the certificate against `RELAY_URL`. Do not guess an IP or disable TLS verification. On Fred, the validated origin is `https://fred.taile5e8a3.ts.net:11543`, with server IP `100.98.154.42`; these are deployment-specific values, not defaults for another installation.
+
+## Fred rollout evidence — 2026-10-14
+
+The read-only SDK client initialized the deployed stdio server, authenticated through Tailscale Serve without pairing/token injection, discovered project matches, and attached to a live Codex `harnessrc` session. It read three history events and confirmed the owner generation. Fred's intentional system-DNS configuration required the documented IP override; HTTPS verification remained enabled. No production instruction, approval, permission change or stop action was sent during this smoke test.
+
+The local Claude/Codex MCP connections and Hermes default plus 16 profile configurations were registered. The use-relay skill was installed into their skill directories. All unrelated Hermes configuration values were compared against the private backups and preserved. Existing worker processes were not restarted. Controllers pick up the tools through their normal MCP refresh/new conversation flow; registration does not prove every already-running client has refreshed its tool set.
+
+Validation: full check passed 150 backend tests, type checking, linting and web build. The subsequent DNS override passed type checking/linting and all six MCP integration tests. Skill validation passed. Native send/respond/stop/model support continues to follow the existing harness adapters; the isolated tests and live read-only attachment do not claim a new native capability for every harness.
