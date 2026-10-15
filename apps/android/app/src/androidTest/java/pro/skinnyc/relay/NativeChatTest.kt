@@ -394,6 +394,16 @@ class NativeChatTest {
         compose.onNodeWithContentDescription("Latest messages").performClick()
         compose.waitForIdle()
         assertTrue(position() > before)
+        // Touch-down pauses following before Android recognizes a scroll gesture.
+        compose.onNodeWithTag("conversation").performTouchInput { down(center); up() }
+        compose.waitForIdle()
+        val touched = position()
+        emit(28)
+        Thread.sleep(500)
+        compose.waitForIdle()
+        assertEquals(touched, position(), 0.001f)
+        compose.onNodeWithContentDescription("Latest messages").assertExists()
+
     }
 
     @Test

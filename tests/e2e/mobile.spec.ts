@@ -309,6 +309,17 @@ test('live chat appends events without refetching history and preserves reading 
     element.scrollTop = 0;
     element.dispatchEvent(new Event('scroll'));
   });
+  // A layout-induced visit to the bottom must not undo reader intent.
+  await pane.evaluate((element) => {
+    element.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    element.scrollTop = element.scrollHeight;
+    element.dispatchEvent(new Event('scroll'));
+  });
+  await expect(page.getByRole('button', { name: 'Latest messages', exact: true })).toBeVisible();
+  await pane.evaluate((element) => {
+    element.scrollTop = 0;
+    element.dispatchEvent(new Event('scroll'));
+  });
   const initialRequests = historyRequests;
   for (let n = 0; n < 3; n++) {
     stream.send(

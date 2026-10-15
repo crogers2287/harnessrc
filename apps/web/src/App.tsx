@@ -750,7 +750,7 @@ function Conversation({
   });
   // Preserve the reader's anchor; a single frame callback owns bottom following.
   virtual.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) =>
-    !pinned.current && item.start < (instance.scrollOffset ?? 0);
+    !pinned.current && item.end <= (instance.scrollOffset ?? 0);
   useEffect(() => {
     drafts.set(session.id, draft);
     try {
@@ -1092,8 +1092,12 @@ function Conversation({
       <div
         className="conversation-scroll"
         ref={scroll}
+        onPointerDown={() => {
+          pinned.current = false;
+          setAtBottom(false);
+        }}
         onWheel={(e) => {
-          if (e.deltaY < 0) {
+          if (e.deltaY !== 0) {
             pinned.current = false;
             setAtBottom(false);
           }
@@ -1103,7 +1107,7 @@ function Conversation({
           setAtBottom(false);
         }}
         onKeyDown={(e) => {
-          if (['ArrowUp', 'PageUp', 'Home'].includes(e.key)) {
+          if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(e.key)) {
             pinned.current = false;
             setAtBottom(false);
           }
@@ -1111,9 +1115,14 @@ function Conversation({
         onScroll={() => {
           if (scroll.current) {
             scrollPositions.set(session.id, scroll.current.scrollTop);
-            pinned.current =
-              scroll.current.scrollHeight - scroll.current.scrollTop - scroll.current.clientHeight <
-              4;
+            // Layout/virtualizer scroll events must never resume following.
+            if (
+              scroll.current.scrollHeight -
+                scroll.current.scrollTop -
+                scroll.current.clientHeight >=
+              4
+            )
+              pinned.current = false;
             setAtBottom(pinned.current);
           }
         }}

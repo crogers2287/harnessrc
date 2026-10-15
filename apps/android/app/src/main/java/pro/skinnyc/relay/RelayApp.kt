@@ -17,6 +17,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.shape.*
 import androidx.compose.material.icons.Icons
@@ -32,6 +34,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.*
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
@@ -466,22 +470,7 @@ fun Chat(vm: RelayModel, modifier: Modifier) {
         remember(vm.selected, list) {
             object : NestedScrollConnection {
                 override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                    if (source == NestedScrollSource.Drag && available.y > 0f) follow = false
-                    return Offset.Zero
-                }
-
-                override fun onPostScroll(
-                    consumed: Offset,
-                    available: Offset,
-                    source: NestedScrollSource,
-                ): Offset {
-                    if (
-                        source == NestedScrollSource.Drag &&
-                            consumed.y < 0f &&
-                            !list.canScrollForward
-                    ) {
-                        follow = true
-                    }
+                    if (source == NestedScrollSource.Drag && available.y != 0f) follow = false
                     return Offset.Zero
                 }
             }
@@ -501,7 +490,14 @@ fun Chat(vm: RelayModel, modifier: Modifier) {
     Box(modifier.fillMaxWidth()) {
         LazyColumn(
             state = list,
-            modifier = Modifier.fillMaxSize().nestedScroll(readerScroll).testTag("conversation"),
+            modifier = Modifier.fillMaxSize().nestedScroll(readerScroll)
+                .pointerInput(vm.selected) {
+                    awaitEachGesture {
+                        // Pause before touch slop/drag recognition, including selectable text.
+                        awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                        follow = false
+                    }
+                }.testTag("conversation"),
             contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(if (vm.compactSpacing) 8.dp else 20.dp),
         ) {

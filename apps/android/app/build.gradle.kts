@@ -6,8 +6,8 @@ android {
         applicationId = "pro.skinnyc.relay"
         minSdk = 28
         targetSdk = 36
-        versionCode = 24
-        versionName = "0.1.23"
+        versionCode = 25
+        versionName = "0.1.24"
         buildConfigField("String", "TAILNET_HOST", "\"${System.getenv("RELAY_ANDROID_TAILNET_HOST") ?: ""}\"")
         buildConfigField("String", "TAILNET_IP", "\"${System.getenv("RELAY_ANDROID_TAILNET_IP") ?: ""}\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

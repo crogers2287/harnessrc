@@ -228,3 +228,9 @@ All 23 instrumentation tests passed on a disposable Android 15 x86_64 emulator, 
 Gateway `7e207bb` fixes the shared media endpoint used by Android and web inline links and file cards. Previously the endpoint required a DSH host even for Codex/Claude references. Explicit assistant file references on configured `localFiles` hosts now resolve locally; remote DSH reads retain their native transport. Authentication, session/event/native-session binding, a 20 MB limit, bounded regular-file reads and attachment disposition remain enforced. Missing files and symlinks fail cleanly.
 
 Validation: 167 backend tests, TypeScript and ESLint passed. Live Canna Sol downloads returned HTTP 200 and byte-for-byte matches for `SUMMARY.md` (4,644 bytes) and `manifest.json` (2,795 bytes). No client sources changed; installed APK 0.1.23 uses the repaired endpoint without an update. Phone tap behavior was not rerun on a physical device.
+
+### Reader-controlled scrolling — 2026-10-15
+
+Web and Android now pause bottom-following as soon as the reader touches the conversation or scrolls it. Reaching the bottom through a layout change or scroll gesture does not resume following; use Latest messages to resume. This closes the touch-down/delayed-scroll race on Android and prevents web scroll events from silently re-pinning the reader. The web virtualizer only compensates resized rows fully above the viewport, not the partially visible row being read.
+
+Validation: browser live-stream regression passed, including a synthetic layout-induced bottom scroll; Android emulator reader-position regression passed for incoming messages/tools, repeated status refreshes, explicit Latest messages, and touch-down before drag recognition. Android unit tests, lint, debug and signed release builds passed; TypeScript, ESLint and web production build passed. APK 0.1.24 is required for the native fix. Physical-phone behavior still needs confirmation.
