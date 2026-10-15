@@ -21,3 +21,9 @@ Design: existing system typography and semantic teal/blue/violet/amber accents. 
 - Existing native clipboard, dictation, Back and scroll-follow implementations remain in place. These additions do not introduce automatic chat submissions, automatic retries or a second harness owner.
 
 Artifact document previews cover text/code formats; Office/PDF files remain downloadable and shareable. Provider/permission/mode actions continue to depend on the harness's actual capabilities.
+
+## Delivery
+
+Web/gateway release `0178b1d` deployed and healthy. Live authenticated phone-sized browser opened the command center without page errors or horizontal overflow. Android 0.1.21 published through the signed build script; authenticated APK download was 4,899,521 bytes and matched SHA-256 `12b5f207af13691b4e39b9bfc52968c124cd79ea78cabe535aefeecec339a7a6`. Five final browser checks passed after dialog centering.
+
+The intervening Flapi-health restart error was fixed separately in CFRproxy `0cec02c`: normalize the Artifact tool's standalone NUL regex escape without dropping tools or changing its schema meaning. The deployed proxy accepts all 192 original tools through ccBudget/DeepSeek in both buffered and streamed requests. The original pattern already succeeded on Codex. The affected native conversation was preserved and its project instruction was not resent.
