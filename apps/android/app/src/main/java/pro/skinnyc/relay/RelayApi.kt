@@ -8,20 +8,23 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import okhttp3.*
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 
 class ApiFailure(val status: Int, message: String) : IOException(message)
 
-class RelayApi(var base: String = DEFAULT_ENDPOINT) {
+class RelayApi(var base: String = DEFAULT_ENDPOINT, var tailnetIp: String = "") {
     companion object {
-        const val DEFAULT_ENDPOINT = "https://fred.taile5e8a3.ts.net:11543"
+        const val DEFAULT_ENDPOINT = ""
     }
 
     val client =
         OkHttpClient.Builder()
-            .dns(TailnetDns(BuildConfig.TAILNET_HOST, BuildConfig.TAILNET_IP))
+            .dns(object : Dns {
+                override fun lookup(hostname: String) = TailnetDns(base.toHttpUrlOrNull()?.host.orEmpty(), tailnetIp).lookup(hostname)
+            })
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(130, TimeUnit.SECONDS)
             .callTimeout(135, TimeUnit.SECONDS)

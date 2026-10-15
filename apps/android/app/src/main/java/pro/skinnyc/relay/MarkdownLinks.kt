@@ -64,9 +64,7 @@ class SelectableMarkdownView(context: Context) : AppCompatTextView(context) {
 
 fun resolveChatLink(base: String, destination: String): String? {
     // No file:, javascript:, intent: or content: launches from model-generated Markdown.
-    return base
-        .toHttpUrlOrNull()
-        ?.resolve(destination)
+    return (destination.toHttpUrlOrNull() ?: base.toHttpUrlOrNull()?.resolve(destination))
         ?.takeIf { it.username.isEmpty() && it.password.isEmpty() }
         ?.toString()
 }

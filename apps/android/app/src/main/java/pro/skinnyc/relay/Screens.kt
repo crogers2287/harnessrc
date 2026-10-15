@@ -452,9 +452,29 @@ fun SessionActions(vm: RelayModel, session: Session, close: () -> Unit) {
 }
 
 @Composable
+fun ConnectionSettings(vm: RelayModel, connected: () -> Unit) {
+    var endpoint by remember(vm.api.base) { mutableStateOf(vm.api.base) }
+    var fallbackIp by remember(vm.api.base) { mutableStateOf(vm.api.tailnetIp) }
+    Text("Your Relay server", style = MaterialTheme.typography.titleMedium)
+    Text("Connect this phone and your server to Tailscale. Enter your Relay HTTPS address. Your server must authorize this Tailscale device.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+    OutlinedTextField(endpoint, { endpoint = it }, label = { Text("Gateway HTTPS address") },
+        placeholder = { Text("https://your-server.your-tailnet.ts.net:11543") },
+        singleLine = true, modifier = Modifier.fillMaxWidth())
+    OutlinedTextField(fallbackIp, { fallbackIp = it }, label = { Text("Tailscale IP (optional)") },
+        supportingText = { Text("Your server’s 100.x address, used only if DNS fails. HTTPS certificate checks stay enabled.") },
+        singleLine = true, modifier = Modifier.fillMaxWidth())
+    Button(enabled = endpoint.isNotBlank(), onClick = {
+        runCatching { vm.endpoint(endpoint, fallbackIp); connected() }
+            .onFailure { vm.error = it.message ?: "Invalid gateway" }
+    }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Connect") }
+    if (vm.error.isNotBlank()) Text(vm.error, color = MaterialTheme.colorScheme.error)
+}
+
+@Composable
 fun SettingsScreen(vm: RelayModel, back: () -> Unit) {
-    var endpoint by remember { mutableStateOf(vm.api.base) }
     Page("Settings", back) {
+        ConnectionSettings(vm, back)
+        HorizontalDivider()
         Text("Appearance", style = MaterialTheme.typography.titleMedium)
         Text("Theme", color = MaterialTheme.colorScheme.onSurfaceVariant)
         listOf("system" to "System", "light" to "Light", "dark" to "Dark", "amoled" to "AMOLED black").forEach { (key, label) ->
@@ -499,33 +519,9 @@ fun SettingsScreen(vm: RelayModel, back: () -> Unit) {
             }
         }
         HorizontalDivider()
-        Text("Connection", style = MaterialTheme.typography.titleMedium)
-        Text(
-            "Connect Tailscale on this phone. Your tailnet identity authorizes access to Fred; no pairing key is needed.",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        OutlinedTextField(
-            endpoint,
-            { endpoint = it },
-            label = { Text("Gateway HTTPS address") },
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Button(
-            onClick = {
-                runCatching {
-                        vm.endpoint(endpoint)
-                        back()
-                    }
-                    .onFailure { vm.error = it.message ?: "Invalid gateway" }
-            }
-        ) {
-            Text("Connect")
-        }
-        if (vm.error.isNotBlank()) Text(vm.error, color = MaterialTheme.colorScheme.error)
-        HorizontalDivider()
         Text("Voice input", style = MaterialTheme.typography.titleMedium)
         Text(
-            "Records on this device, then sends audio to your gateway for Gary to transcribe and clean up. Results are inserted into your draft for review. Recordings are deleted after success or cancellation."
+            "Records on this device, then sends audio to your gateway for its configured speech service to transcribe and clean up. Results are inserted into your draft for review. Recordings are deleted after success or cancellation."
         )
         NotificationSettings()
         Text(
@@ -904,7 +900,7 @@ fun LaunchScreen(vm: RelayModel, showSessions: () -> Unit = {}, back: () -> Unit
         context.getSharedPreferences("relay", android.content.Context.MODE_PRIVATE)
     }
     val pendingLaunch = remember {
-        runCatching { JSONObject(launchPrefs.getString("launch.pending", "{}")!!) }
+        runCatching { JSONObject(launchPrefs.getString("launch.pending:${vm.api.base}", "{}")!!) }
             .getOrDefault(JSONObject())
     }
     var profiles by remember { mutableStateOf(listOf<JSONObject>()) }
@@ -948,7 +944,7 @@ fun LaunchScreen(vm: RelayModel, showSessions: () -> Unit = {}, back: () -> Unit
                         !it.data.str("nativeSessionId").startsWith("unbound:")
                 }
                 ?.let {
-                    launchPrefs.edit().remove("launch.pending").apply()
+                    launchPrefs.edit().remove("launch.pending:${vm.api.base}").apply()
                     vm.choose(it.id)
                     back()
                 }
@@ -966,7 +962,7 @@ fun LaunchScreen(vm: RelayModel, showSessions: () -> Unit = {}, back: () -> Unit
                 .onFailure {
                     if (it is ApiFailure && it.status == 404) {
                         error = "No launch receipt found. Check your session list before retrying."
-                        launchPrefs.edit().remove("launch.pending").apply()
+                        launchPrefs.edit().remove("launch.pending:${vm.api.base}").apply()
                         uncertain = false
                     }
                 }
@@ -985,7 +981,7 @@ fun LaunchScreen(vm: RelayModel, showSessions: () -> Unit = {}, back: () -> Unit
         }
     }
     Page("New session", back) {
-        Text("Start on Fred", style = MaterialTheme.typography.headlineSmall)
+        Text(profile?.str("hostId")?.takeIf { it.isNotBlank() }?.let { "Start on $it" } ?: "Start a session", style = MaterialTheme.typography.headlineSmall)
         Text(
             "Choose the folder and agent. Herdr owns the session, so it keeps working when you leave.",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1049,7 +1045,7 @@ fun LaunchScreen(vm: RelayModel, showSessions: () -> Unit = {}, back: () -> Unit
                 OutlinedTextField(
                     cwd,
                     { cwd = it },
-                    label = { Text("Working directory on Fred") },
+                    label = { Text("Working directory on ${profile.str("hostId")}") },
                     modifier = Modifier.fillMaxWidth(),
                 )
                 OutlinedButton(onClick = { browse(cwd.takeIf { it.startsWith('/') }) }) {
@@ -1115,7 +1111,7 @@ fun LaunchScreen(vm: RelayModel, showSessions: () -> Unit = {}, back: () -> Unit
                                 check(
                                     launchPrefs
                                         .edit()
-                                        .putString("launch.pending", launchRequest.toString())
+                                        .putString("launch.pending:${vm.api.base}", launchRequest.toString())
                                         .commit()
                                 ) {
                                     "Could not preserve launch recovery. No request was sent."
@@ -1143,7 +1139,7 @@ fun LaunchScreen(vm: RelayModel, showSessions: () -> Unit = {}, back: () -> Unit
         title = { Text("Checked your sessions?") },
         text = { Text("If this session already exists, open it from the session list. Returning to the form keeps your settings and prompt; starting it again creates another session.") },
         confirmButton = { TextButton(onClick = {
-            launchPrefs.edit().remove("launch.pending").commit()
+            launchPrefs.edit().remove("launch.pending:${vm.api.base}").commit()
             receipt = null
             uncertain = false
             requestId = UUID.randomUUID().toString()

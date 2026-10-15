@@ -96,11 +96,13 @@ class RelayNotificationService : Service() {
         if (intent?.action == "pause") prefs.edit().putBoolean("notifications", false).apply()
         if (!RelayNotifications.enabled(this) || !RelayNotifications.allowed(this)) { stopSelf(); return START_NOT_STICKY }
         val endpoint = prefs.getString("endpoint", RelayApi.DEFAULT_ENDPOINT)!!
-        if (worker?.isActive == true && base == endpoint) return START_STICKY
+        if (endpoint.isBlank()) { stopSelf(); return START_NOT_STICKY }
+        val fallbackIp = prefs.getString("tailnetIp", "")!!
+        if (worker?.isActive == true && base == endpoint && api?.tailnetIp == fallbackIp) return START_STICKY
         startForeground(4001, status("Connecting over Tailscale…"))
         worker?.cancel(); socket?.cancel(); api?.client?.dispatcher?.cancelAll()
         base = endpoint
-        val connection = RelayApi(endpoint)
+        val connection = RelayApi(endpoint, fallbackIp)
         api = connection
         worker = scope.launch {
             var retryMs = 1000L

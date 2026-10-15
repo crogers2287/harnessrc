@@ -8,8 +8,6 @@ from pathlib import Path
 import secrets
 import shutil
 import subprocess
-import ipaddress
-import re
 
 root = Path(__file__).resolve().parent.parent
 parser = argparse.ArgumentParser()
@@ -29,15 +27,6 @@ if not keystore.exists():
                     '-validity', '10000', '-dname', 'CN=Relay Private Android,OU=Self hosted'], check=True)
     keystore.chmod(0o600)
 env = dict(os.environ, RELAY_ANDROID_STORE_FILE=str(keystore), RELAY_ANDROID_STORE_PASSWORD=password.read_text().strip())
-# Provision only this server's verified Tailscale hostname/IP. CI/off-tailnet builds have no pin.
-try:
-    self_peer = json.loads(subprocess.check_output(['tailscale', 'status', '--json'], timeout=10))['Self']
-    host = self_peer['DNSName'].rstrip('.')
-    address = next(ip for ip in self_peer['TailscaleIPs'] if ipaddress.ip_address(ip) in ipaddress.ip_network('100.64.0.0/10'))
-    if re.fullmatch(r'[a-zA-Z0-9.-]+\.ts\.net', host):
-        env.update(RELAY_ANDROID_TAILNET_HOST=host, RELAY_ANDROID_TAILNET_IP=address)
-except (OSError, subprocess.SubprocessError, ValueError, KeyError, StopIteration):
-    pass
 # Bundle only the declarative artifact renderer; navigation/editor remain Kotlin/Compose.
 subprocess.run(['npm', 'run', 'build'], cwd=root, check=True)
 rich_assets = root / 'apps/android/app/src/main/assets/rich'

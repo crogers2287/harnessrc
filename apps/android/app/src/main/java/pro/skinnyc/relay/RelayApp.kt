@@ -87,6 +87,11 @@ fun RelayApp(
 
 @Composable
 private fun RelayAppContent(vm: RelayModel, shared: Intent?, nativeKeyboardVisible: Boolean, consumeShare: () -> Unit) {
+    if (!vm.configured) {
+        Page("Connect to Relay", {}) { ConnectionSettings(vm) {} }
+        return
+    }
+
     val drawer = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val conversationState = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
@@ -124,7 +129,7 @@ private fun RelayAppContent(vm: RelayModel, shared: Intent?, nativeKeyboardVisib
                             fontWeight = FontWeight.Bold,
                         )
                         Text(
-                            if (vm.connected) "Connected to Fred" else "Reconnecting…",
+                            if (vm.connected) "Connected to ${vm.gatewayName}" else "Reconnecting…",
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

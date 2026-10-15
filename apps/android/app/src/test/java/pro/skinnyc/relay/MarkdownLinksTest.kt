@@ -7,6 +7,8 @@ class MarkdownLinksTest {
     @Test
     fun resolvesDownloadsButRejectsExecutableAndLocalSchemes() {
         val base = "https://relay.example"
+        assertEquals("https://example.com/file.zip", resolveChatLink("", "https://example.com/file.zip"))
+        assertNull(resolveChatLink("", "/api/android/apk"))
         assertEquals(
             "https://relay.example/api/android/apk",
             resolveChatLink(base, "/api/android/apk"),

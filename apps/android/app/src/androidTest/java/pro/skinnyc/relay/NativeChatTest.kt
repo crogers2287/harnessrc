@@ -327,6 +327,46 @@ class NativeChatTest {
     }
 
     @Test
+    fun freshInstallRequiresOwnGatewayAndKeepsItAfterRestart() {
+        scenario.close()
+        ctx.getSharedPreferences("relay", 0).edit().remove("endpoint").remove("session").commit()
+        scenario = ActivityScenario.launch(MainActivity::class.java)
+        compose.onNodeWithText("Connect to Relay").assertExists()
+        compose.onNodeWithText("Gateway HTTPS address").assertExists()
+        compose.onNodeWithText("Connect").assertIsNotEnabled()
+        fun capture(name: String) {
+            val bitmap = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
+            File(ctx.getExternalFilesDir(null), name).outputStream().use {
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
+            }
+            bitmap.recycle()
+        }
+        capture("native-server-setup.png")
+        compose.onNodeWithText("Gateway HTTPS address").performClick().performTextInput("https://relay.example.test:11543")
+        compose.waitUntil(10000) {
+            var visible = false
+            scenario.onActivity {
+                visible = androidx.core.view.ViewCompat.getRootWindowInsets(it.window.decorView)
+                    ?.isVisible(androidx.core.view.WindowInsetsCompat.Type.ime()) == true
+            }
+            visible
+        }
+        compose.waitForIdle()
+        capture("native-server-setup-keyboard.png")
+        compose.onNodeWithText("Connect").performScrollTo().performClick()
+        compose.waitForIdle()
+        assertEquals("https://relay.example.test:11543", ctx.getSharedPreferences("relay", 0).getString("endpoint", ""))
+        scenario.close()
+        scenario = ActivityScenario.launch(MainActivity::class.java)
+        compose.onNodeWithText("Connect to Relay").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Open sessions").assertExists()
+        compose.onNodeWithContentDescription("Open sessions").performClick()
+        compose.onNodeWithContentDescription("Settings").performClick()
+        compose.onNodeWithText("Gateway HTTPS address").assertExists()
+        compose.onNodeWithText("https://relay.example.test:11543").assertExists()
+    }
+
+    @Test
     fun launcherResumeDoesNotImport() {
         scenario.onActivity {
             it.onNewIntent(Intent(it, MainActivity::class.java).setAction(Intent.ACTION_MAIN))
@@ -480,7 +520,7 @@ class NativeChatTest {
 
     @Test
     fun savedUncertainLaunchCanReturnToFormWithoutSendingAgain() {
-        ctx.getSharedPreferences("relay", 0).edit().putString("launch.pending",
+        ctx.getSharedPreferences("relay", 0).edit().putString("launch.pending:${server.url("/").toString().trimEnd('/')}",
             """{"requestId":"saved-launch","profileId":"test","cwd":"/home/test/project","prompt":"Keep this instruction","name":"Saved project"}""").commit()
         scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
         compose.onNodeWithText("New session").performClick()
@@ -491,7 +531,7 @@ class NativeChatTest {
         compose.onNodeWithText("First instruction").performScrollTo()
         compose.onNodeWithText("Keep this instruction").assertExists()
         assertFalse(requests.any { it.path == "/api/launch" && it.method == "POST" })
-        assertNull(ctx.getSharedPreferences("relay", 0).getString("launch.pending", null))
+        assertNull(ctx.getSharedPreferences("relay", 0).getString("launch.pending:${server.url("/").toString().trimEnd('/')}", null))
     }
 
     @Test
@@ -646,6 +686,9 @@ class NativeChatTest {
     fun nativeModelSelectionUsesCatalogAndNeverSendsChat() {
         compose.onNodeWithContentDescription("Session details").performClick()
         compose.waitUntil(10000) { requests.any { it.path?.endsWith("/models") == true } }
+        compose.waitUntil(10000) {
+            compose.onAllNodesWithText("Fred · Flash Next").fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithText("Fred · Flash Next").performScrollTo().performClick()
         compose.onNodeWithText("Fred · Astra").performClick()
         compose.onNodeWithText("Apply model").performClick()

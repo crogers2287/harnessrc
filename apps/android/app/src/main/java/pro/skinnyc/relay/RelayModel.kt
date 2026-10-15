@@ -48,7 +48,10 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
         accentTheme = value
         prefs.edit().putString("accentTheme", value).apply()
     }
-    val api = RelayApi(prefs.getString("endpoint", RelayApi.DEFAULT_ENDPOINT)!!)
+    val api = RelayApi(prefs.getString("endpoint", RelayApi.DEFAULT_ENDPOINT)!!, prefs.getString("tailnetIp", "")!!)
+    var configured by mutableStateOf(api.base.isNotBlank())
+        private set
+    val gatewayName get() = Uri.parse(api.base).host.orEmpty()
     var sessions by mutableStateOf(listOf<Session>())
         private set
 
@@ -140,7 +143,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
     private fun cachedConversation(id: String): File {
         val key =
             java.security.MessageDigest.getInstance("SHA-256")
-                .digest(id.toByteArray())
+                .digest((api.base + "\n" + id).toByteArray())
                 .joinToString("") { "%02x".format(it) }
         return File(cache, "$key.json")
     }
@@ -148,7 +151,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
     var notificationTarget by mutableStateOf<Pair<String, Boolean>?>(null)
 
     fun start() {
-        if (foreground) return
+        if (foreground || !configured) { if (!configured) loading = false; return }
         foreground = true
         RelayNotifications.visibleSession = selected
         markOpened(selected)
@@ -174,6 +177,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
                 object : WebSocketListener() {
                     override fun onOpen(ws: WebSocket, response: Response) {
                         viewModelScope.launch {
+                            if (socket !== ws) return@launch
                             connected = true
                             refreshSessions()
                             loadCurrent()
@@ -182,6 +186,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
 
                     override fun onMessage(ws: WebSocket, text: String) {
                         viewModelScope.launch {
+                            if (socket !== ws) return@launch
                             runCatching {
                                 val value = JSONObject(text)
                                 if (value.str("type") == "invalidate") {
@@ -277,7 +282,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
     private fun restoreDraft() {
         if (selected.isBlank()) return
         runCatching {
-            val saved = JSONObject(prefs.getString("draft:$selected", "{}")!!)
+            val saved = JSONObject(prefs.getString("draft:${api.base}:$selected", "{}")!!)
             draftRevision = saved.optLong("draftRevision", 0)
             draft = saved.str("text")
             voiceOriginal = saved.str("voiceOriginal")
@@ -296,7 +301,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
             prefs
                 .edit()
                 .putString(
-                    "draft:$selected",
+                    "draft:${api.base}:$selected",
                     json(
                             "text" to draft,
                             "draftRevision" to draftRevision,
@@ -466,9 +471,9 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
                     attachments = attachments + result
                     saveDraft()
                 } else { // Preserve the completed upload in the session it was started from.
-                    val saved = JSONObject(prefs.getString("draft:$id", "{}")!!)
+                    val saved = JSONObject(prefs.getString("draft:${api.base}:$id", "{}")!!)
                     saved.put("attachments", JSONArray(saved.rows("attachments") + result))
-                    prefs.edit().putString("draft:$id", saved.toString()).apply()
+                    prefs.edit().putString("draft:${api.base}:$id", saved.toString()).apply()
                 }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
@@ -558,7 +563,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
                     saveDraft()
                     loadCurrent()
                 } else {
-                    val saved = JSONObject(prefs.getString("draft:$id", "{}")!!)
+                    val saved = JSONObject(prefs.getString("draft:${api.base}:$id", "{}")!!)
                     val ids = payload.optJSONArray("attachments") ?: JSONArray()
                     saved.put(
                         "attachments",
@@ -576,7 +581,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
                                 .put("state", "accepted")
                                 .put("mode", mode),
                     )
-                    prefs.edit().putString("draft:$id", saved.toString()).apply()
+                    prefs.edit().putString("draft:${api.base}:$id", saved.toString()).apply()
                 }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
@@ -599,13 +604,13 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
                         else friendly(e)
                     saveDraft()
                 } else {
-                    val saved = JSONObject(prefs.getString("draft:$id", "{}")!!)
+                    val saved = JSONObject(prefs.getString("draft:${api.base}:$id", "{}")!!)
                     if (consumed && saved.str("text").isEmpty() && saved.optLong("draftRevision") == submittedRevision) {
                         saved.put("text", original).put("voiceOriginal", submittedVoice)
                         recovery.put("restoredRevision", submittedRevision)
                     }
                     saved.put("outgoing", if (e is ApiFailure && e.status in listOf(400, 401, 403, 413, 422, 429)) JSONObject.NULL else JSONObject(recovery.toString()).put("state", "uncertain"))
-                    prefs.edit().putString("draft:$id", saved.toString()).apply()
+                    prefs.edit().putString("draft:${api.base}:$id", saved.toString()).apply()
                 }
             } finally {
                 sending = false
@@ -695,6 +700,16 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
         }
     }
     init {
+        if (!prefs.getBoolean("serverScopedDrafts", false)) {
+            val editor = prefs.edit().putBoolean("serverScopedDrafts", true)
+            if (api.base.isNotBlank()) {
+                prefs.all.filterKeys { it.startsWith("draft:") }.forEach { (key, value) ->
+                    if (value is String) editor.putString("draft:${api.base}:${key.removePrefix("draft:")}", value)
+                }
+                prefs.getString("launch.pending", null)?.let { editor.putString("launch.pending:${api.base}", it) }
+            }
+            editor.apply()
+        }
         preparedDownload?.takeIf { it.stage == "saving" && it.uri.isNotBlank() }?.let { savePreparedDownload(android.net.Uri.parse(it.uri)) }
     }
 
@@ -729,28 +744,46 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun reload() {
+        if (!configured) return
         viewModelScope.launch { refreshSessions() }
     }
 
-    fun endpoint(value: String) {
-        val uri = Uri.parse(value.trim().trimEnd('/'))
-        require(
-            uri.scheme == "https" &&
-                !uri.host.isNullOrBlank() &&
-                uri.userInfo == null &&
-                uri.query == null &&
-                uri.fragment == null &&
-                (uri.path.isNullOrBlank() || uri.path == "/")
-        ) {
-            "Use an HTTPS gateway origin without credentials or a path."
-        }
+    fun endpoint(value: String, fallbackIp: String = "") {
+        val origin = gatewayOrigin(value)
+        val ip = fallbackIp.trim()
+        validateTailnetIp(ip)
+        saveDraft()
+        cancelVoice()
         stop()
-        api.base = value.trim().trimEnd('/')
-        prefs.edit().putString("endpoint", api.base).remove("notificationCursor").remove("notificationSeen").putLong("notificationSince", System.currentTimeMillis()).apply()
+        viewModelScope.coroutineContext.cancelChildren()
+        api.client.dispatcher.cancelAll()
+        val changed = origin != api.base
+        api.base = origin
+        api.tailnetIp = ip
+        configured = true
+        notificationTarget = null
+        voiceOriginal = ""
+        notice = ""
+        prefs.edit().putString("endpoint", origin).putString("tailnetIp", ip)
+            .remove("session").remove("notificationCursor").remove("notificationSeen")
+            .putLong("notificationSince", System.currentTimeMillis()).apply()
+        if (changed) {
+            // Keep saved drafts on disk, but never carry server-owned IDs into another gateway.
+            prefs.edit().remove("session-opened").apply()
+            lastOpenedAt = emptyMap()
+        }
         RelayNotifications.sync(getApplication())
         selected = ""
+        draft = ""
+        attachments = emptyList()
+        outgoing = null
+        plan = null
+        interactions = emptyList()
+        tasks = emptyList()
         events = emptyList()
         sessions = emptyList()
+        error = ""
+        loading = true
         start()
     }
 
