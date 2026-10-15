@@ -98,7 +98,33 @@ export class ProviderSwaps {
           (p) => p.hostId === s.hostId && p.harness === s.harness,
         )
       : [];
+    // Attribute only a receipt bound to this exact native owner. Never infer a
+    // provider from a model name, project directory, or another session.
+    const swapRow = this.runtime.store.db
+      .prepare(
+        "SELECT receipt FROM provider_swaps WHERE session_id=? AND json_extract(receipt,'$.terminalId')=? AND json_extract(receipt,'$.status')='started' ORDER BY created_at DESC LIMIT 1",
+      )
+      .get(id, s.terminalId);
+    const launchRow = !swapRow
+      ? this.runtime.store.db
+          .prepare(
+            "SELECT body FROM launches WHERE json_extract(receipt,'$.terminalId')=? AND json_extract(receipt,'$.nativeSessionId')=? AND json_extract(receipt,'$.status')='started' ORDER BY created_at DESC LIMIT 1",
+          )
+          .get(s.terminalId, s.nativeSessionId)
+      : undefined;
+    const profileId = swapRow
+      ? JSON.parse(String(swapRow.receipt)).profileId
+      : launchRow
+        ? JSON.parse(String(launchRow.body)).profileId
+        : undefined;
+    let currentProvider: string | undefined;
+    try {
+      if (profileId) currentProvider = this.launcher.profile(profileId).provider;
+    } catch {
+      /* Removed launch profile */
+    }
     return {
+      currentProvider,
       supported: supported && profiles.length > 0,
       reason: !supported
         ? 'Exact Herdr-owned resume is currently available for local Claude Code and Codex sessions. Other harnesses can use supported live model controls.'

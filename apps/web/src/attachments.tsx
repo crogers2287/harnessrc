@@ -1,3 +1,4 @@
+import { FileActions } from './NativeMedia.tsx';
 import { mediaKind } from '@harnessrc/protocol';
 import { attachmentUrl } from '@harnessrc/client-sdk';
 import { useEffect, useRef, useState } from 'react';
@@ -353,6 +354,7 @@ export function SentAttachment({
 }) {
   const [error, setError] = useState('');
   const [preview, setPreview] = useState('');
+  const [zoom, setZoom] = useState(1);
   const dialog = useRef<HTMLDialogElement>(null);
   const isImage = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.mime ?? '');
   useEffect(() => {
@@ -389,6 +391,7 @@ export function SentAttachment({
   };
   return (
     <div className="sent-file">
+      <FileActions name={file.name} load={() => downloadAttachment(sessionId, file.id)} />
       {mediaKind(file.name) === 'video' && (
         <video
           controls
@@ -436,7 +439,25 @@ export function SentAttachment({
               <X size={22} />
             </button>
           </header>
-          <img src={preview} alt={file.name} />
+          <label>
+            Zoom
+            <input
+              aria-label="Image zoom"
+              type="range"
+              min="1"
+              max="5"
+              step="0.25"
+              value={zoom}
+              onChange={(e) => setZoom(Number(e.target.value))}
+            />
+          </label>
+          <div className="preview-viewport">
+            <img
+              src={preview}
+              alt={file.name}
+              style={{ maxWidth: 'none', width: `${zoom * 100}%` }}
+            />
+          </div>
           <button type="button" className="primary" onClick={() => void download()}>
             Download image
           </button>

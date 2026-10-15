@@ -1,3 +1,4 @@
+import { applyPreferences } from './preferences.tsx';
 import { prepareMobileHistory } from './navigation.ts';
 import { trackViewport } from './viewport.ts';
 import './install.ts';
@@ -15,6 +16,7 @@ import { selectTransport } from '@harnessrc/client-sdk';
 const savedTheme = localStorage.getItem('relay-theme') ?? 'system';
 document.documentElement.dataset.theme = savedTheme;
 document.documentElement.dataset.accent = localStorage.getItem('relay-accent') ?? 'teal';
+applyPreferences();
 trackViewport();
 const client = new QueryClient({
   defaultOptions: { queries: { retry: false, refetchOnWindowFocus: true } },

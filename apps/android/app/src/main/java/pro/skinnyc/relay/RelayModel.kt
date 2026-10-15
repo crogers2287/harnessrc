@@ -21,8 +21,24 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
     var accentTheme by mutableStateOf(prefs.getString("accentTheme", "teal") ?: "teal")
         private set
 
+    var textScale by mutableStateOf(prefs.getFloat("textScale", 1f))
+        private set
+    var compactSpacing by mutableStateOf(prefs.getBoolean("compactSpacing", false))
+        private set
+    var activityDetail by mutableStateOf(prefs.getString("activityDetail", "grouped") ?: "grouped")
+        private set
+    var haptics by mutableStateOf(prefs.getBoolean("haptics", true))
+        private set
+    fun updateReading(scale: Float = textScale, compact: Boolean = compactSpacing, activity: String = activityDetail, tactile: Boolean = haptics) {
+        textScale = scale.coerceIn(1f, 1.3f)
+        compactSpacing = compact
+        activityDetail = if (activity in setOf("responses", "grouped", "everything")) activity else "grouped"
+        haptics = tactile
+        prefs.edit().putFloat("textScale", textScale).putBoolean("compactSpacing", compactSpacing).putString("activityDetail", activityDetail).putBoolean("haptics", haptics).apply()
+    }
+
     fun updateColorMode(value: String) {
-        if (value !in setOf("system", "light", "dark")) return
+        if (value !in setOf("system", "light", "dark", "amoled")) return
         colorMode = value
         prefs.edit().putString("colorMode", value).apply()
     }

@@ -528,7 +528,7 @@ test('Steer renders immediately, preserves the next draft, and keeps uncertain d
   await page.screenshot({ path: 'docs/screenshots/steer-sending-mobile.png' });
   await draft.fill('Next instruction stays here');
   release();
-  await expect(page.locator('.outgoing-message')).toContainText('Sent');
+  await expect(page.locator('.outgoing-message')).toContainText('Delivered');
   await expect(draft).toHaveText('Next instruction stays here');
   await page.unroute('**/api/sessions/*/messages');
   await page.route('**/api/sessions/*/messages', (route) => route.abort());
@@ -607,9 +607,9 @@ test('native question replies read like chat and repeated real touch taps reliab
     await expect(page.getByRole('dialog', { name: 'Sessions', exact: true })).not.toBeVisible();
   }
   await tap('Show session information');
-  await expect(page.getByRole('region', { name: 'Session information' })).toBeVisible();
-  await tap('Show session information');
-  await expect(page.getByRole('region', { name: 'Session information' })).not.toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Session command center' })).toBeVisible();
+  await tap('Back to sessions');
+  await expect(page.getByRole('heading', { name: 'Session command center' })).not.toBeVisible();
   await tap('Copy message');
   await expect(page.getByText('Copied', { exact: true })).toBeVisible();
   await page.getByLabel('Instruction behavior').selectOption('queue');
@@ -1582,12 +1582,16 @@ test('DSH steering acknowledgement stays distinct from an applied model update',
   await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
   await page.getByLabel('Instruction', { exact: true }).fill('Steering feedback fixture');
   await page.getByRole('button', { name: 'Steer active turn', exact: true }).click();
-  await expect(page.getByText('Sent to active turn', { exact: true })).toBeVisible();
+  await expect(
+    page.getByText('Delivered · applies at the next supported step', { exact: true }),
+  ).toBeVisible();
   await expect(
     page.getByText('Steering accepted. DSH will apply it at the next step.'),
   ).toBeVisible();
   await page.reload();
-  await expect(page.getByText('Sent to active turn', { exact: true })).toBeVisible();
+  await expect(
+    page.getByText('Delivered · applies at the next supported step', { exact: true }),
+  ).toBeVisible();
   expect(submissions).toBe(1);
 });
 
@@ -1703,13 +1707,17 @@ test('native image references render OpenUI previews with full-size view and dow
   ).toBe(true);
   await preview.click();
   await expect(page.getByRole('dialog', { name: 'Preview Portrait from Comfy' })).toBeVisible();
+  const zoom = page.getByRole('slider', { name: 'Image zoom' });
+  await zoom.focus();
+  await zoom.press('ArrowRight');
+  await expect(zoom).toHaveValue('1.25');
   await page.locator('.conversation-scroll').evaluate((el) => {
     el.scrollTop = 0;
   });
   await expect(preview).toHaveCount(0);
   await expect(page.getByRole('dialog', { name: 'Preview Portrait from Comfy' })).toBeVisible();
   const downloaded = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Download image', exact: true }).click();
+  await page.getByRole('button', { name: 'Download file', exact: true }).click();
   expect((await downloaded).suggestedFilename()).toBe('portrait.png');
   await page.getByRole('button', { name: 'Close image preview' }).click();
   await page.screenshot({ path: '/tmp/relay-native-media-mobile.png' });
@@ -1952,7 +1960,7 @@ test('confirmed receipt keeps one bubble until native echo without resend and pr
   const { sessions } = await page.evaluate(async () => (await fetch('/api/sessions')).json());
   const id = sessions[0].id;
   await page.evaluate((id) => {
-    sessionStorage.setItem(
+    localStorage.setItem(
       `relay-outgoing:${id}`,
       JSON.stringify([
         {
@@ -1979,9 +1987,12 @@ test('confirmed receipt keeps one bubble until native echo without resend and pr
   await page.goto('/?session=' + id);
   await expect(page.locator('.outgoing-message')).toContainText('Delivery not confirmed');
   confirmed = true;
-  await expect(page.locator('.outgoing-message').getByRole('status')).toHaveText('Sent', {
-    timeout: 12000,
-  });
+  await expect(page.locator('.outgoing-message').getByRole('status')).toHaveText(
+    'Delivered · waiting for agent response',
+    {
+      timeout: 12000,
+    },
+  );
   await expect(page.locator('.outgoing-message')).toHaveCount(1);
   nativeSeen = true;
   await expect(page.locator('.outgoing-message')).toHaveCount(0, { timeout: 12000 });
@@ -2671,4 +2682,139 @@ test('definite send rejection restores draft without an uncertain delivery bubbl
   await expect(
     page.getByText('The agent is not ready. Your draft was not sent.', { exact: true }).first(),
   ).toBeVisible();
+});
+
+test('QOL preferences persist with command center and accessible mobile layout', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await pair(page);
+  await page.getByRole('button', { name: 'Settings', exact: true }).first().click();
+  await page.getByLabel('Theme', { exact: true }).selectOption('amoled');
+  await page.getByLabel('Text size', { exact: true }).selectOption('large');
+  await page.getByLabel('Message spacing', { exact: true }).selectOption('compact');
+  await page.getByLabel('Activity detail', { exact: true }).selectOption('responses');
+  await page.getByLabel('Haptic feedback', { exact: true }).check();
+  await page.reload();
+  await expect(page.getByLabel('Text size', { exact: true })).toHaveValue('large');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'amoled');
+  await page.screenshot({ path: 'test-results/qol-settings-mobile.png' });
+  await page.getByRole('button', { name: 'Back to sessions' }).click();
+  await page.getByRole('button', { name: 'Show session information' }).click();
+  await expect(page.getByRole('heading', { name: 'Session command center' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Tasks & progress' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Sub-agent conversations' })).toBeVisible();
+  await page.screenshot({ path: 'test-results/qol-command-center-mobile.png' });
+  await page.setViewportSize({ width: 320, height: 700 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test('QOL safe retry retains exact payload and the newer draft', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await pair(page);
+  const { sessions } = await page.evaluate(async () => (await fetch('/api/sessions')).json());
+  const id = sessions[0].id;
+  const key = 'e8f297ba-8405-4ae2-9cbc-9daeb7c502a9';
+  await page.evaluate(
+    ({ id, key }) => {
+      localStorage.setItem(
+        `relay-outgoing:${id}`,
+        JSON.stringify([
+          {
+            key,
+            prompt: 'Original request',
+            attachments: [],
+            started: new Date().toISOString(),
+            state: 'uncertain',
+          },
+        ]),
+      );
+      sessionStorage.setItem(`relay-draft:${id}`, 'Newer draft stays');
+    },
+    { id, key },
+  );
+  await page.route('**/message-receipts/*', (r) =>
+    r.fulfill({ json: { confirmed: false, nativeSeen: false } }),
+  );
+  const requests: unknown[] = [];
+  await page.route('**/api/sessions/*/messages', (r) => {
+    requests.push(r.request().postDataJSON());
+    return r.fulfill({ json: { mode: 'send' } });
+  });
+  await page.goto(`/?session=${id}`);
+  await page.getByRole('button', { name: 'Retry safely', exact: true }).click();
+  await expect(page.locator('.outgoing-message')).toContainText('Delivered');
+  expect(requests).toEqual([{ idempotencyKey: key, prompt: 'Original request', attachments: [] }]);
+  await expect(page.getByLabel('Instruction', { exact: true })).toHaveText('Newer draft stays');
+});
+
+test('QOL answer tray expires locally and never hides behind activity filters', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await pair(page);
+  const expiresAt = new Date(Date.now() + 12000).toISOString();
+  await page.route(/\/api\/sessions\/[^/?]+$/, async (r) => {
+    const data = await (await r.fetch()).json();
+    data.interactions = [
+      {
+        id: 'qol-question',
+        choices: [],
+        sessionId: data.session.id,
+        type: 'free-text',
+        status: 'pending',
+        title: 'Choose the next step',
+        prompt: 'What next?',
+        metadata: {},
+        expiresAt: expiresAt,
+      },
+    ];
+    await r.fulfill({ json: data });
+  });
+  await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
+  await page.reload();
+  await page.getByRole('button', { name: /Needs your answer · 1/ }).click();
+  const dialog = page.getByRole('dialog', { name: 'Needs your answer' });
+  await expect(dialog.getByRole('heading', { name: 'What next?' })).toBeVisible();
+  await page.screenshot({ path: 'test-results/qol-answer-tray-mobile.png' });
+  await expect(dialog.getByText('No unanswered requests. You’re all caught up.')).toBeVisible({
+    timeout: 15000,
+  });
+});
+
+test('QOL text artifact preview and share preserve the exact file bytes', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await pair(page);
+  await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
+  const { sessions } = await page.evaluate(async () => (await fetch('/api/sessions')).json());
+  const session = sessions.find((s: any) => s.project === 'Atlas API');
+  const content = '<script>window.shouldNeverExecute = true</script>\nProject notes.';
+  const query = new URLSearchParams({
+    requestId: crypto.randomUUID(),
+    generation: session.generation,
+    name: 'qol-notes.html',
+    mime: 'text/html',
+    title: 'QOL document',
+  });
+  const response = await page.request.post(`/api/sessions/${session.id}/artifacts?${query}`, {
+    headers: { 'content-type': 'application/octet-stream', 'x-rc-request': '1' },
+    data: content,
+  });
+  expect(response.ok()).toBeTruthy();
+  const card = page
+    .getByRole('article', { name: 'Generated artifact' })
+    .filter({ hasText: 'QOL document' });
+  await card.getByRole('button', { name: 'Preview file', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Preview qol-notes.html' });
+  await expect(dialog.locator('pre')).toHaveText(content);
+  expect(await page.evaluate(() => (window as any).shouldNeverExecute)).toBeUndefined();
+  await page.evaluate(() =>
+    Object.defineProperty(navigator, 'canShare', { configurable: true, value: () => false }),
+  );
+  const download = page.waitForEvent('download');
+  await dialog.getByRole('button', { name: 'Share file', exact: true }).click();
+  const file = await download;
+  expect(file.suggestedFilename()).toBe('qol-notes.html');
+  expect(await readFile((await file.path())!, 'utf8')).toBe(content);
+  await page.screenshot({ path: 'test-results/qol-document-preview.png' });
 });

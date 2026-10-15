@@ -202,3 +202,15 @@ Web and Android recognize choice-batch metadata on Claude's exact hook interacti
 Both clients keep drafts editable when the gateway positively rejects a message before native dispatch (including HTTP 422 for idle-to-busy races). This differs from transport uncertainty, which retains the original request identity and must never automatically resend. Web restores an empty composer and removes the rejected optimistic bubble; Android preserves its durable draft. The gateway marks dispatch attempted only after queue and attachment preflight pass.
 
 Android 0.1.20 adds **Keep draft / clear notice** for an uncertain receipt. Its confirmation explains that the agent may already have received the message. This only dismisses local delivery state, preserves the draft, and sends nothing. Web already provides separate **Restore draft** and **Dismiss** actions. Physical-phone confirmation and draft recovery remain unverified; unit/lint/release builds do not establish device behavior.
+
+## QOL command center and reading controls — 2026-10-14
+
+Both clients now expose a session command center with native model/permission/mode controls, connection state, current plan step, task progress, sub-agent navigation, pending questions, provider restart and supported turn interruption. Provider attribution is shown only when a successful launch/restart receipt matches the current native owner; unknown providers are explicitly reported as unknown. Existing unsupported harness controls remain unavailable.
+
+Both clients offer persistent accent/theme selection including AMOLED, text sizing, compact/comfortable spacing, optional haptics and Responses/Grouped/Everything activity views. Android combines the chosen size with system font scaling; web uses root font sizing and normal browser zoom. Browser vibration depends on platform support. Question trays remain outside the filtered activity list and expired requests stop being actionable locally.
+
+Both retain authenticated inline media and image zoom, and add text/code document previews (256 KB preview limit) and sharing. HTML source is displayed as text, never executed. Binary documents such as Office files remain downloadable/shareable rather than claiming a universal document renderer. Web uses the system file share sheet where supported and falls back to download; Android shares a temporary FileProvider URI with a read grant and cleans old shared files after seven days.
+
+Web pending sends are now durable across browser restarts and use the original request key/payload for manual safe retry, preserving a newer draft. Android retains its existing durable outbox. Transport delivery is distinct from a subsequent observed agent response. Native transcript echoes reconcile optimistic bubbles; no retries run automatically.
+
+Validation and release evidence are tracked in QOL_IMPLEMENTATION.md. Browser fixture tests do not establish physical Android clipboard, microphone, share-sheet or keyboard behavior.

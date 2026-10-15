@@ -12,11 +12,46 @@ import {
 } from '@harnessrc/client-sdk';
 
 type Preview = { blob: Blob; title: string; name: string };
+export async function shareFile(blob: Blob, name: string) {
+  const file = new File([blob], name, { type: blob.type || 'application/octet-stream' });
+  if (navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file] });
+  else {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = name;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+}
+const textFile = (name: string) =>
+  /\.(txt|md|json|csv|log|ya?ml|xml|html?|css|[cm]?jsx?|tsx?|py|go|rs|sh|kt|java|sql|toml)$/i.test(
+    name,
+  );
 const PreviewContext = createContext<(preview: Preview) => void>(() => {});
 /** The viewer outlives virtualized message rows and owns its own object URL. */
 export function MediaPreviewProvider({ children }: { children: ReactNode }) {
   const [selected, setSelected] = useState<Preview & { url: string }>();
   const dialog = useRef<HTMLDialogElement>(null);
+  const [zoom, setZoom] = useState(1);
+  const [text, setText] = useState('');
+  const [shareError, setShareError] = useState('');
+  useEffect(() => {
+    setZoom(1);
+    setText('');
+    setShareError('');
+    let cancelled = false;
+    if (selected && textFile(selected.name))
+      void selected.blob
+        .slice(0, 262144)
+        .text()
+        .then((t) => {
+          if (!cancelled) setText(t);
+        });
+    return () => {
+      cancelled = true;
+    };
+  }, [selected]);
   useEffect(() => {
     if (!selected) return;
     dialog.current?.showModal();
@@ -45,7 +80,50 @@ export function MediaPreviewProvider({ children }: { children: ReactNode }) {
               <X size={22} />
             </button>
           </header>
-          <img src={selected.url} alt={selected.title} />
+          {mediaKind(selected.name) === 'image' ? (
+            <>
+              <label>
+                Zoom{' '}
+                <input
+                  aria-label="Image zoom"
+                  type="range"
+                  min="1"
+                  max="5"
+                  step="0.25"
+                  value={zoom}
+                  onChange={(e) => setZoom(Number(e.target.value))}
+                />
+              </label>
+              <div className="preview-viewport">
+                <img
+                  style={{ maxWidth: 'none', width: `${zoom * 100}%` }}
+                  src={selected.url}
+                  alt={selected.title}
+                />
+              </div>
+            </>
+          ) : textFile(selected.name) ? (
+            <>
+              <pre className="file-text-preview">{text}</pre>
+              {selected.blob.size > 262144 && (
+                <p>Preview limited to 256 KB. Download for the complete file.</p>
+              )}
+            </>
+          ) : (
+            <p>Download this document to open it in your preferred app.</p>
+          )}
+          <Button
+            variant="secondary"
+            onClick={() =>
+              void shareFile(selected.blob, selected.name).catch((e) => {
+                if (e.name !== 'AbortError')
+                  setShareError('Sharing failed. Download the file to share it.');
+              })
+            }
+          >
+            Share file
+          </Button>
+          {shareError && <p role="alert">{shareError}</p>}
           <Button
             variant="primary"
             onClick={() => {
@@ -55,7 +133,7 @@ export function MediaPreviewProvider({ children }: { children: ReactNode }) {
               link.click();
             }}
           >
-            Download image
+            Download file
           </Button>
         </dialog>
       )}
@@ -66,6 +144,7 @@ export function MediaPreviewProvider({ children }: { children: ReactNode }) {
 export function NativeMedia({ event, index }: { event: Event; index: number }) {
   const file = nativeFiles(event)[index];
   const [url, setUrl] = useState('');
+  const [actionError, setActionError] = useState('');
   const showPreview = useContext(PreviewContext);
   const kind = mediaKind(file?.path ?? '');
   const image = kind === 'image';
@@ -85,6 +164,20 @@ export function NativeMedia({ event, index }: { event: Event; index: number }) {
   if (!file) return null;
   const name = file.path.split('/').pop() || 'Generated file';
   const title = file.description || name;
+  const preview = async () => {
+    const result = query.data ?? (await query.refetch()).data;
+    if (result) showPreview({ blob: result, title, name });
+  };
+  const share = async () => {
+    const result = query.data ?? (await query.refetch()).data;
+    if (result)
+      try {
+        await shareFile(result, name);
+      } catch (e) {
+        if (!(e instanceof DOMException && e.name === 'AbortError'))
+          setActionError('Sharing failed. Download the file to share it.');
+      }
+  };
   const download = async () => {
     const result = query.data ? query.data : (await query.refetch()).data;
     if (!result) return;
@@ -133,6 +226,15 @@ export function NativeMedia({ event, index }: { event: Event; index: number }) {
         <strong>{title}</strong>
         <span>{name}</span>
       </div>
+      {textFile(name) && (
+        <Button variant="secondary" onClick={() => void preview()} disabled={query.isFetching}>
+          Preview file
+        </Button>
+      )}
+      <Button variant="secondary" onClick={() => void share()} disabled={query.isFetching}>
+        Share file
+      </Button>
+      {actionError && <p role="alert">{actionError}</p>}
       {query.isError ? (
         <div role="alert">
           <p>{query.error.message}</p>
@@ -232,5 +334,39 @@ export function GatewayFileLink({ path, children }: { path: string; children: Re
       </a>
       {error && <span role="alert">{error}</span>}
     </>
+  );
+}
+
+export function FileActions({ name, load }: { name: string; load: () => Promise<Blob> }) {
+  const show = useContext(PreviewContext);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const act = async (share: boolean) => {
+    if (busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      const blob = await load();
+      if (share) await shareFile(blob, name);
+      else show({ blob, name, title: name });
+    } catch (e) {
+      if (!(e instanceof DOMException && e.name === 'AbortError'))
+        setError('Could not open the file. Try again.');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="file-actions">
+      {textFile(name) && (
+        <button disabled={busy} onClick={() => void act(false)}>
+          Preview file
+        </button>
+      )}
+      <button disabled={busy} onClick={() => void act(true)}>
+        Share file
+      </button>
+      {error && <p role="alert">{error}</p>}
+    </div>
   );
 }

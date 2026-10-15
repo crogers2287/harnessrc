@@ -78,6 +78,7 @@ fun MediaCard(vm: RelayModel, path: String, name: String, description: String, i
                     },
                 onError = { failed = true },
             )
+        ArtifactActions(vm, path, name)
         Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(
@@ -138,9 +139,11 @@ fun MediaCard(vm: RelayModel, path: String, name: String, description: String, i
 @Composable
 fun QuestionCard(vm: RelayModel, request: JSONObject) {
     val id = request.str("id")
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(id) { while (true) { delay(1000); now = System.currentTimeMillis() } }
     val active =
         request.str("status") == "pending" &&
-            runCatching { Instant.parse(request.str("expiresAt")).isAfter(Instant.now()) }
+            runCatching { Instant.parse(request.str("expiresAt")).toEpochMilli() > now }
                 .getOrDefault(false) &&
             (vm.session?.can("answerQuestion") == true || vm.session?.can("approveAction") == true)
     val metadata = request.obj("metadata")
@@ -452,7 +455,7 @@ fun SettingsScreen(vm: RelayModel, back: () -> Unit) {
     Page("Settings", back) {
         Text("Appearance", style = MaterialTheme.typography.titleMedium)
         Text("Theme", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        listOf("system" to "System", "light" to "Light", "dark" to "Dark").forEach { (key, label) ->
+        listOf("system" to "System", "light" to "Light", "dark" to "Dark", "amoled" to "AMOLED black").forEach { (key, label) ->
             OutlinedButton(
                 onClick = { vm.updateColorMode(key) },
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
@@ -462,6 +465,19 @@ fun SettingsScreen(vm: RelayModel, back: () -> Unit) {
                 if (vm.colorMode == key) Icon(Icons.Outlined.Check, "Selected")
             }
         }
+        Text("Reading & interaction", style = MaterialTheme.typography.titleMedium)
+        ChoiceField("Text size", listOf(json("id" to "1.0", "name" to "Standard"), json("id" to "1.15", "name" to "Large"), json("id" to "1.3", "name" to "Larger")), vm.textScale.toString()) { vm.updateReading(scale = it.toFloat()) }
+        ChoiceField("Activity detail", listOf(json("id" to "responses", "name" to "Responses only"), json("id" to "grouped", "name" to "Grouped tools"), json("id" to "everything", "name" to "Everything")), vm.activityDetail) { vm.updateReading(activity = it) }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("Compact message spacing", Modifier.weight(1f))
+            Switch(checked = vm.compactSpacing, onCheckedChange = { vm.updateReading(compact = it) })
+        }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("Haptic feedback", Modifier.weight(1f))
+            Switch(checked = vm.haptics, onCheckedChange = { vm.updateReading(tactile = it) })
+        }
+        Text("Conversation preview", style = MaterialTheme.typography.labelLarge)
+        Text("Your agent’s replies use this text size and spacing.", style = MaterialTheme.typography.bodyLarge)
         Text("Color theme", color = MaterialTheme.colorScheme.onSurfaceVariant)
         listOf("teal" to "Relay teal", "blue" to "Ocean blue", "violet" to "Soft violet", "amber" to "Warm amber").forEach { (key, label) ->
             val swatch = when (key) {
@@ -521,8 +537,9 @@ fun SettingsScreen(vm: RelayModel, back: () -> Unit) {
 }
 
 @Composable
-fun DetailsScreen(vm: RelayModel, back: () -> Unit) {
+fun DetailsScreen(vm: RelayModel, openTasks: () -> Unit = {}, openSubagents: () -> Unit = {}, openQuestions: () -> Unit = {}, back: () -> Unit) {
     val s = vm.session
+    var provider by remember(s?.id) { mutableStateOf("") }
     var models by remember(s?.id) { mutableStateOf<JSONObject?>(null) }
     var permissions by remember(s?.id) { mutableStateOf<JSONObject?>(null) }
     var agentMode by remember(s?.id) { mutableStateOf<JSONObject?>(null) }
@@ -533,11 +550,12 @@ fun DetailsScreen(vm: RelayModel, back: () -> Unit) {
     var actionSheet by remember { mutableStateOf(false) }
     LaunchedEffect(s?.id, settingsReload, s?.can("changeModel")) {
         if (s != null) {
-            val routes = if (s.can("changeModel")) listOf("models", "permissions", "mode") else listOf("permissions", "mode")
+            val routes = if (s.can("changeModel")) listOf("models", "permissions", "mode", "provider-swap") else listOf("permissions", "mode", "provider-swap")
             routes.forEach { kind ->
                 runCatching {
                     val result = vm.api.api("/api/sessions/${s.id}/$kind")
                     when (kind) {
+                        "provider-swap" -> provider = result.str("currentProvider")
                         "models" -> models = result
                         "permissions" -> permissions = result
                         "mode" -> agentMode = result
@@ -549,10 +567,17 @@ fun DetailsScreen(vm: RelayModel, back: () -> Unit) {
             }
         }
     }
-    Page("Session settings", back) {
+    Page("Session command center", back) {
         if (s == null) Text("Choose a session first.")
         else {
             Text(s.title, style = MaterialTheme.typography.headlineSmall)
+            Text(if (vm.connected && s.data.optBoolean("connected")) "Connected" else "Reconnecting", color = MaterialTheme.colorScheme.primary)
+            Text(vm.plan?.rows("steps")?.firstOrNull { it.str("status") == "in_progress" }?.str("text") ?: status(s.status))
+            OutlinedButton(onClick = openTasks, modifier = Modifier.fillMaxWidth()) { Text("Tasks & progress") }
+            OutlinedButton(onClick = openSubagents, modifier = Modifier.fillMaxWidth()) { Text("Sub-agent conversations") }
+            AnswerTray(vm, openQuestions)
+            if (s.status in listOf("idle", "done") && s.can("queueTask")) OutlinedButton(onClick = { if (vm.draft.isBlank()) vm.edit("Continue"); back() }, modifier = Modifier.fillMaxWidth()) { Text("Continue in chat") }
+            OutlinedButton(onClick = { actionSheet = true }, modifier = Modifier.fillMaxWidth()) { Text("Change provider / stop / resume harness") }
             TextButton(onClick = { settingsReload++; loadError = "" }) { Text("Refresh permissions and mode") }
             if (permissions == null && loadError.isBlank()) Text("Loading session permissions…")
             models?.let { catalog ->
@@ -625,6 +650,7 @@ fun DetailsScreen(vm: RelayModel, back: () -> Unit) {
                     "Agent" to s.agent,
                     "Profile" to s.profile,
                     "Model" to s.model,
+                    "Provider" to provider.ifBlank { models?.optJSONObject("current")?.str("provider") ?: "Not reported by this harness" },
                     "Host" to s.data.str("hostId"),
                     "Directory" to s.cwd,
                     "State" to status(s.status),
@@ -759,6 +785,7 @@ fun AgentTasksScreen(vm: RelayModel, openQueue: () -> Unit, openSubagents: () ->
         } else {
             Text("${steps.count { it.str("status") == "completed" }} of ${steps.size} completed",
                 style = MaterialTheme.typography.titleMedium)
+            LinearProgressIndicator(progress = steps.count { it.str("status") == "completed" }.toFloat() / steps.size.coerceAtLeast(1), modifier = Modifier.fillMaxWidth())
             if (plan.str("text").isNotBlank()) Text(plan.str("text"))
             steps.forEach { step ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {

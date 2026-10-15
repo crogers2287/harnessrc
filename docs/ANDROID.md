@@ -165,3 +165,9 @@ DSH file links save through the document picker; MP4/video and audio have native
 Version 0.1.16 adds **Agent tasks → Sub-agent conversations** for linked Claude and Codex native histories. These child chats are view-only: there is no Send/Steer composer. DSH's native `todo_write` checklist now appears under Agent tasks through the shared gateway fix.
 
 0.1.20 release validation: 21 JVM tests, lintDebug, instrumentation APK compilation and the signed release build pass. Published APK SHA-256: `b89be506f09bb214ba9e8ee03f6021309662e29fa9c665b62955a873b34d1cf8`; `apksigner verify` passes and the authenticated HTTPS download matches that checksum. The gateway pre-dispatch regression is covered in the 159-test shared suite; browser checks also cover rejected-draft restoration and retained uncertainty after transport loss.
+
+### 0.1.21 QOL update
+
+Adds the session command center, persistent pending-question tray, task progress, AMOLED and reading/activity/haptic preferences, text/code artifact previews and Android file sharing. Returning from settings retains the conversation's saved scroll position. Shared artifacts use authenticated downloads and temporary read-granted FileProvider URIs. PDF/Office files remain downloadable/shareable; text/code previews are limited to 256 KB.
+
+Unit tests, lint, debug and instrumentation APK compilation are required for this release. Physical-device checks remain necessary for share targets, system font scaling, keyboard/insets, vibration, and restoration after Android process eviction; no desktop browser result substitutes for those checks.

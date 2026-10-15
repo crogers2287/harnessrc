@@ -1,3 +1,5 @@
+import { ProviderSwap } from './ProviderSwap.tsx';
+import { ReadingPreferences, usePreferences, feedback } from './preferences.tsx';
 import { Subagents } from './Subagents.tsx';
 import { RichActionContext } from './rich-context.ts';
 import { lazy, Suspense } from 'react';
@@ -679,7 +681,12 @@ function Conversation({
     setDraft((current) => (current ? `${current.trimEnd()}\n${text}` : text)),
   );
   const [behavior, setBehavior] = useState('auto');
-  const [contextOpen, setContextOpen] = useState(false);
+  const [questionsOpen, setQuestionsOpen] = useState(false);
+  const [clock, setClock] = useState(Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setClock(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
   const mode =
     behavior === 'queue'
       ? 'queue'
@@ -729,7 +736,11 @@ function Conversation({
     const all = new Map([...history, ...(events.data?.events ?? [])].map((e) => [e.id, e]));
     return [...all.values()].sort((a, b) => a.sequence - b.sequence);
   }, [history, events.data]);
-  const visible = useMemo(() => conversationItems(merged), [merged]);
+  const preferences = usePreferences();
+  const visible = useMemo(
+    () => conversationItems(merged, preferences.activity),
+    [merged, preferences.activity],
+  );
   const virtual = useVirtualizer({
     count: visible.length,
     getScrollElement: () => scroll.current,
@@ -801,6 +812,7 @@ function Conversation({
       }),
     onSuccess: (_result, submitted) => {
       setReceiptId(_result?.task?.id);
+      feedback();
       voice.clearResult(submitted.voiceToken);
       if (submitted.mode === 'queue')
         setDraft((current) => (current === submitted.prompt ? '' : current));
@@ -873,13 +885,19 @@ function Conversation({
     if (mode !== 'queue') {
       setReceiptId(undefined);
       setNotice('');
-      outgoing.begin(
+      const saved = outgoing.begin(
         submission.current.key,
         prompt,
         attachments.files
           .filter((f) => f.id)
           .map((f) => ({ id: f.id!, name: f.name, mime: f.mime })),
       );
+      if (!saved) {
+        setNotice(
+          'Could not save delivery recovery. Nothing was sent. Free browser storage and try again.',
+        );
+        return;
+      }
       setDraft('');
       composer.current?.focus({ preventScroll: true });
       if (composer.current) composer.current.style.height = 'auto';
@@ -891,7 +909,12 @@ function Conversation({
     }
     send.mutate(submission.current);
   };
-  const pending = detail.data?.interactions.filter((i) => i.status === 'pending') ?? [];
+  const pending =
+    detail.data?.interactions.filter(
+      (i) =>
+        ['pending', 'responding', 'uncertain'].includes(i.status) &&
+        Date.parse(i.expiresAt) > clock,
+    ) ?? [];
   const receipt = detail.data?.tasks.find((t) => t.id === receiptId);
   const receiptStatus = receipt
     ? {
@@ -948,6 +971,11 @@ function Conversation({
                 {detail.data.plan.steps.filter((s) => s.status === 'completed').length} of{' '}
                 {detail.data.plan.steps.length} completed
               </h2>
+              <progress
+                aria-label="Task progress"
+                value={detail.data.plan.steps.filter((s) => s.status === 'completed').length}
+                max={Math.max(1, detail.data.plan.steps.length)}
+              />
               {detail.data.plan.text && <p>{detail.data.plan.text}</p>}
               <ol>
                 {detail.data.plan.steps.map((step, index) => (
@@ -980,8 +1008,17 @@ function Conversation({
   if (route.view === 'details')
     return (
       <>
-        <PageHeader title="Session details" back={() => navigate({ session: session.id })} />
-        <SessionDetails session={session} />
+        <PageHeader title="Session command center" back={() => navigate({ session: session.id })} />
+        <SessionDetails
+          session={session}
+          detail={detail.data}
+          connection={connection}
+          navigate={navigate}
+          onContinue={() => {
+            setDraft((current) => current || 'Continue');
+            navigate({ session: session.id });
+          }}
+        />
       </>
     );
   return (
@@ -994,9 +1031,7 @@ function Conversation({
           <button
             className="conversation-title-button"
             aria-label="Show session information"
-            aria-expanded={contextOpen}
-            aria-controls="conversation-context"
-            onClick={() => setContextOpen(!contextOpen)}
+            onClick={() => navigate({ session: session.id, view: 'details' })}
           >
             <h2 title={sessionLabel(session)}>{sessionLabel(session)}</h2>
             <span className="header-model">
@@ -1048,35 +1083,6 @@ function Conversation({
         <Status status={session.status} />
         <span title={session.cwd}>{session.cwd || 'Directory not reported'}</span>
       </div>
-      {contextOpen && (
-        <section
-          id="conversation-context"
-          className="chat-context-panel"
-          aria-label="Session information"
-        >
-          <dl>
-            <dt>Agent</dt>
-            <dd>{agentLabel(session.harness)}</dd>
-            {session.agentPreset && (
-              <>
-                <dt>Agent profile</dt>
-                <dd>{session.agentPreset}</dd>
-              </>
-            )}
-            <dt>Model</dt>
-            <dd>{session.model || 'Model unknown'}</dd>
-            <dt>Host</dt>
-            <dd>{session.hostId}</dd>
-            <dt>Directory</dt>
-            <dd>{session.cwd || 'Not reported'}</dd>
-          </dl>
-          {session.capabilities.changeModel && (
-            <button onClick={() => navigate({ session: session.id, view: 'details' })}>
-              Change model
-            </button>
-          )}
-        </section>
-      )}
       {connection !== 'connected' && (
         <div className="connection-banner" role="status">
           <WifiOff size={16} aria-hidden="true" />
@@ -1165,7 +1171,20 @@ function Conversation({
               <RichActionContext.Provider
                 value={(text) => setDraft((current) => (current ? `${current}\n${text}` : text))}
               >
-                <EventCard event={visible[row.index]} />
+                <EventCard
+                  event={visible[row.index]}
+                  deliveryLabel={
+                    visible[row.index].kind === 'user.message'
+                      ? merged.some(
+                          (e) =>
+                            e.sequence > visible[row.index].sequence &&
+                            ['assistant.message', 'assistant.delta'].includes(e.kind),
+                        )
+                        ? 'Delivered · Agent responded'
+                        : 'Delivered'
+                      : undefined
+                  }
+                />
               </RichActionContext.Provider>
             </div>
           ))}
@@ -1175,6 +1194,7 @@ function Conversation({
           items={outgoing.items}
           restore={(text) => setDraft((current) => (current ? `${current}\n${text}` : text))}
           dismiss={outgoing.dismiss}
+          retry={outgoing.retry}
         />
         {session.capabilities.readConversation &&
           session.status === 'working' &&
@@ -1233,22 +1253,34 @@ function Conversation({
           </button>
         )}
         {pending.length > 0 && (
-          <button
-            type="button"
-            className="composer-hint attention-text pending-jump"
-            onClick={() => {
-              document.getElementById(`interaction-${pending[0].id}`)?.scrollIntoView({
-                block: 'start',
-                behavior: matchMedia('(prefers-reduced-motion: reduce)').matches
-                  ? 'instant'
-                  : 'smooth',
-              });
-            }}
-          >
-            <CircleHelp size={16} aria-hidden="true" />
-            {pending.length} pending request{pending.length > 1 ? 's' : ''}. View and reply
-            <ChevronRight size={16} aria-hidden="true" />
+          <button type="button" className="answer-tray" onClick={() => setQuestionsOpen(true)}>
+            <CircleHelp size={22} aria-hidden="true" />
+            <span>
+              <strong>Needs your answer · {pending.length}</strong>
+              <small>Questions and approvals</small>
+            </span>
+            <ChevronRight size={20} />
           </button>
+        )}
+        {questionsOpen && (
+          <Dialog title="Needs your answer" close={() => setQuestionsOpen(false)}>
+            {pending.length ? (
+              pending.map((i) => (
+                <InteractionCard
+                  key={i.id}
+                  idPrefix="tray-"
+                  interaction={i}
+                  canRespond={
+                    i.type.endsWith('approval')
+                      ? session.capabilities.approveAction || session.capabilities.rejectAction
+                      : session.capabilities.answerQuestion
+                  }
+                />
+              ))
+            ) : (
+              <p>No unanswered requests. You’re all caught up.</p>
+            )}
+          </Dialog>
         )}
         {session.capabilities.queueTask ? (
           <form
@@ -1399,7 +1431,7 @@ function WorkingIndicator({ harness, events }: { harness: string; events: Event[
     </div>
   );
 }
-function conversationItems(events: Event[]): Event[] {
+function conversationItems(events: Event[], activity = 'grouped'): Event[] {
   const replaced = new Set(
     events.flatMap((e) =>
       Array.isArray(e.data.replacesEventSourceIds) ? e.data.replacesEventSourceIds : [],
@@ -1439,6 +1471,9 @@ function conversationItems(events: Event[]): Event[] {
     )
       output.push(e);
   }
+  if (activity === 'responses')
+    return output.filter((e) => !e.kind.startsWith('tool.') && e.kind !== 'reasoning.summary');
+  if (activity === 'everything') return output;
   const grouped: Event[] = [];
   for (const event of output) {
     const previous = grouped[grouped.length - 1];
@@ -1449,7 +1484,7 @@ function conversationItems(events: Event[]): Event[] {
   }
   return grouped;
 }
-function EventCard({ event }: { event: Event }) {
+function EventCard({ event, deliveryLabel }: { event: Event; deliveryLabel?: string }) {
   const data = event.data;
   const nativeText = String(data.text ?? '');
   const presentation =
@@ -1567,6 +1602,7 @@ function EventCard({ event }: { event: Event }) {
             {copied ? 'Copied' : 'Copy'}
           </button>
           {copyError && <span role="status">{copyError}</span>}
+          {deliveryLabel && <span>{deliveryLabel}</span>}
           <time dateTime={event.timestamp}>
             {new Date(event.timestamp).toLocaleTimeString([], {
               hour: 'numeric',
@@ -1634,9 +1670,11 @@ function EventCard({ event }: { event: Event }) {
 function InteractionCard({
   interaction: i,
   canRespond,
+  idPrefix = '',
 }: {
   interaction: Interaction;
   canRespond: boolean;
+  idPrefix?: string;
 }) {
   const query = useQueryClient();
   const [answer, setAnswer] = useState('');
@@ -1670,16 +1708,16 @@ function InteractionCard({
   };
   return (
     <section
-      id={`interaction-${i.id}`}
+      id={`${idPrefix}interaction-${i.id}`}
       className={`interaction-card ${!active ? 'inactive' : ''}`}
-      aria-labelledby={`question-${i.id}`}
+      aria-labelledby={`${idPrefix}question-${i.id}`}
     >
       <div className="interaction-label">
         <ShieldCheck size={18} aria-hidden="true" />
         {approval ? 'Permission request' : 'Your input is needed'}
         <span>{active ? 'Pending' : i.status}</span>
       </div>
-      <h3 id={`question-${i.id}`}>{i.prompt}</h3>
+      <h3 id={`${idPrefix}question-${i.id}`}>{i.prompt}</h3>
       {!!(i.metadata.input || i.metadata.command) && (
         <pre className="approval-preview">
           {typeof i.metadata.command === 'string'
@@ -1717,7 +1755,7 @@ function InteractionCard({
                   <label className="choice" key={o.label}>
                     <input
                       type="radio"
-                      name={`${i.id}-${q.id}`}
+                      name={`${idPrefix}${i.id}-${q.id}`}
                       value={o.label}
                       checked={answers[q.id] === o.label}
                       disabled={!active}
@@ -1747,7 +1785,7 @@ function InteractionCard({
                 <label className="choice" key={c.id}>
                   <input
                     type={i.type === 'multiple-choice' ? 'checkbox' : 'radio'}
-                    name={i.id}
+                    name={`${idPrefix}${i.id}`}
                     checked={
                       i.type === 'multiple-choice' ? multiple.includes(c.id) : answer === c.id
                     }
@@ -1948,7 +1986,7 @@ function Dialog({
     ref.current?.showModal();
   }, []);
   return (
-    <dialog ref={ref} onCancel={close} className="dialog">
+    <dialog ref={ref} aria-label={title} onCancel={close} className="dialog">
       <header>
         <h2>{title}</h2>
         <IconButton label="Close dialog" onClick={close}>
@@ -1959,7 +1997,29 @@ function Dialog({
     </dialog>
   );
 }
-function SessionDetails({ session: s }: { session: SessionView }) {
+function SessionDetails({
+  session: s,
+  detail,
+  connection,
+  navigate,
+  onContinue,
+}: {
+  session: SessionView;
+  detail?: Detail;
+  connection: string;
+  navigate: (route: Route) => void;
+  onContinue: () => void;
+}) {
+  const provider = useQuery<{ currentProvider?: string }>({
+    queryKey: ['provider-swap', s.id],
+    queryFn: () => api(`/api/sessions/${s.id}/provider-swap`),
+  });
+  const [swap, setSwap] = useState(false);
+  const currentTask = detail?.plan?.steps.find((step) => step.status === 'in_progress');
+  const pendingCount =
+    detail?.interactions.filter(
+      (i) => i.status === 'pending' && Date.parse(i.expiresAt) > Date.now(),
+    ).length ?? 0;
   const mutation = useMutation({
     mutationFn: () =>
       api(`/api/sessions/${s.id}/interrupt`, {
@@ -1970,7 +2030,50 @@ function SessionDetails({ session: s }: { session: SessionView }) {
   const [confirm, setConfirm] = useState(false);
   return (
     <div className="page-content">
-      <h3>{s.project}</h3>
+      <h3>{sessionLabel(s)}</h3>
+      <section className="command-summary" aria-label="Session overview">
+        <p>
+          <strong>
+            {connection === 'connected' && s.connected ? 'Connected' : 'Reconnecting'}
+          </strong>{' '}
+          · {agentLabel(s.harness)}
+        </p>
+        <p>
+          {currentTask?.text ||
+            (s.status === 'working' ? 'Agent is working' : 'Ready for your next instruction')}
+        </p>
+        <div className="command-actions">
+          <button onClick={() => navigate({ session: s.id, view: 'queue' })}>
+            Tasks & progress
+          </button>
+          <button onClick={() => navigate({ session: s.id, view: 'subagents' })}>
+            Sub-agent conversations
+          </button>
+          {pendingCount > 0 && (
+            <button
+              onClick={() =>
+                navigate({
+                  session: s.id,
+                  interaction: detail?.interactions.find((i) => i.status === 'pending')?.id,
+                })
+              }
+            >
+              {pendingCount} needs your answer
+            </button>
+          )}
+          {s.canManage && (
+            <button onClick={() => setSwap(true)}>Change provider / resume harness</button>
+          )}
+          {['idle', 'done'].includes(s.status) && s.capabilities.queueTask && (
+            <button onClick={onContinue}>Continue in chat</button>
+          )}
+        </div>
+      </section>
+      {swap && (
+        <Dialog title="Change provider / resume harness" close={() => setSwap(false)}>
+          <ProviderSwap session={s} close={() => setSwap(false)} />
+        </Dialog>
+      )}
       {isSaved(s) ? (
         <span className="saved-session-label">Saved session</span>
       ) : (
@@ -1984,6 +2087,7 @@ function SessionDetails({ session: s }: { session: SessionView }) {
           ['Agent', s.harness],
           ...(s.agentPreset ? [['Agent profile', s.agentPreset]] : []),
           ['Model', s.model || 'Model unknown'],
+          ['Provider', provider.data?.currentProvider || 'Not reported by this harness'],
           ['Host', s.hostId],
           ['Workspace', s.workspaceId],
           ['Working directory', s.cwd],
@@ -2162,6 +2266,7 @@ function SettingsView({ admin, back }: { admin: boolean; back: () => void }) {
               <option value="system">System</option>
               <option value="light">Light</option>
               <option value="dark">Dark</option>
+              <option value="amoled">AMOLED black</option>
             </select>
           </label>
           <fieldset className="accent-picker">
@@ -2188,6 +2293,7 @@ function SettingsView({ admin, back }: { admin: boolean; back: () => void }) {
             </div>
           </fieldset>
         </section>
+        <ReadingPreferences />
         <InstallApp />
         <section>
           <h3>Notifications</h3>

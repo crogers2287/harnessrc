@@ -232,7 +232,9 @@ export async function createGateway(
                 k.startsWith('read') || k === 'streamConversation' ? v : false,
               ]),
             ),
-        pendingCount: store.interactions(s.id).filter((i) => i.status === 'pending').length,
+        pendingCount: store
+          .interactions(s.id)
+          .filter((i) => i.status === 'pending' && Date.parse(i.expiresAt) > Date.now()).length,
         queuedCount: store.tasks(s.id).filter((t) => t.status === 'pending').length,
       }));
   app.get('/api/connection', async () => ({ tailnetEndpoint: config.tailnet?.endpoint ?? null }));

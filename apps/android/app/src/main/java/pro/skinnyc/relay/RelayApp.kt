@@ -54,7 +54,8 @@ import org.json.JSONObject
 
 @Composable
 fun ActionIcon(icon: ImageVector, label: String, enabled: Boolean = true, onClick: () -> Unit) {
-    IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(48.dp)) {
+    val haptics = LocalHapticFeedback.current
+    IconButton(onClick = { haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); onClick() }, enabled = enabled, modifier = Modifier.size(48.dp)) {
         Icon(icon, label, modifier = Modifier.size(23.dp))
     }
 }
@@ -66,13 +67,25 @@ fun RelayApp(
     nativeKeyboardVisible: Boolean,
     consumeShare: () -> Unit,
 ) {
-    DownloadController(vm) { RelayAppContent(vm, shared, nativeKeyboardVisible, consumeShare) }
+    val density = LocalDensity.current
+    val nativeHaptics = LocalHapticFeedback.current
+    val feedback = remember(vm.haptics, nativeHaptics) {
+        object : androidx.compose.ui.hapticfeedback.HapticFeedback {
+            override fun performHapticFeedback(hapticFeedbackType: androidx.compose.ui.hapticfeedback.HapticFeedbackType) {
+                if (vm.haptics) nativeHaptics.performHapticFeedback(hapticFeedbackType)
+            }
+        }
+    }
+    CompositionLocalProvider(LocalDensity provides Density(density.density, density.fontScale * vm.textScale), LocalHapticFeedback provides feedback) {
+        DownloadController(vm) { RelayAppContent(vm, shared, nativeKeyboardVisible, consumeShare) }
+    }
 }
 
 @Composable
 private fun RelayAppContent(vm: RelayModel, shared: Intent?, nativeKeyboardVisible: Boolean, consumeShare: () -> Unit) {
     val drawer = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+    val conversationState = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
     var screen by rememberSaveable { mutableStateOf("") }
     var rowActions by remember { mutableStateOf<Session?>(null) }
     var confirmShare by remember(shared) { mutableStateOf(shared != null) }
@@ -252,7 +265,8 @@ private fun RelayAppContent(vm: RelayModel, shared: Intent?, nativeKeyboardVisib
             when (screen) {
                 "settings" -> SettingsScreen(vm) { screen = "" }
                 "new" -> LaunchScreen(vm, showSessions = { screen = ""; scope.launch { drawer.open() } }) { screen = "" }
-                "details" -> DetailsScreen(vm) { screen = "" }
+                "details" -> DetailsScreen(vm, openTasks = { screen = "tasks" }, openSubagents = { screen = "subagents" }, openQuestions = { screen = "questions" }) { screen = "" }
+                "questions" -> QuestionsScreen(vm) { screen = "" }
                 "subagents" -> SubagentsScreen(vm) { screen = "tasks" }
                 "tasks" -> AgentTasksScreen(vm, openQueue = { screen = "queue" }, openSubagents = { screen = "subagents" }) { screen = "" }
                 "queue" -> QueueScreen(vm) { screen = "" }
@@ -334,10 +348,13 @@ private fun RelayAppContent(vm: RelayModel, shared: Intent?, nativeKeyboardVisib
                                     }
                                 }
                             }
-                        else Chat(vm, Modifier.weight(1f))
+                        else conversationState.SaveableStateProvider(vm.selected) { Chat(vm, Modifier.weight(1f)) }
                         if (vm.error.isNotBlank())
                             ErrorNotice(vm.error, onDismiss = { vm.error = "" })
-                        if (vm.session != null) Composer(vm)
+                        if (vm.session != null) {
+                            AnswerTray(vm) { screen = "questions" }
+                            Composer(vm)
+                        }
                     }
             }
         }
@@ -424,7 +441,13 @@ fun ErrorNotice(text: String, onDismiss: () -> Unit) {
 @Composable
 fun Chat(vm: RelayModel, modifier: Modifier) {
     val rows = remember(vm.events) { conversationRows(vm.events) }
-    val groups = remember(rows) { groupConversationActivity(rows) }
+    val groups = remember(rows, vm.activityDetail) {
+        when (vm.activityDetail) {
+            "responses" -> rows.filterNot { isGroupedActivity(it) }.map { listOf(it) }
+            "everything" -> rows.map { listOf(it) }
+            else -> groupConversationActivity(rows)
+        }
+    }
     val list = rememberLazyListState()
     val scope = rememberCoroutineScope()
     var follow by rememberSaveable(vm.selected) { mutableStateOf(true) }
@@ -471,12 +494,12 @@ fun Chat(vm: RelayModel, modifier: Modifier) {
             state = list,
             modifier = Modifier.fillMaxSize().nestedScroll(readerScroll).testTag("conversation"),
             contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp),
+            verticalArrangement = Arrangement.spacedBy(if (vm.compactSpacing) 8.dp else 20.dp),
         ) {
             if (vm.hasOlder)
                 item("older") { TextButton(onClick = vm::older) { Text("Load earlier messages") } }
             items(groups, key = { it.first().id }) { group ->
-                if (isGroupedActivity(group.first())) ActivityGroup(vm, group)
+                if (vm.activityDetail == "grouped" && isGroupedActivity(group.first())) ActivityGroup(vm, group)
                 else Message(vm, group.first())
             }
             items(
@@ -512,7 +535,7 @@ fun Chat(vm: RelayModel, modifier: Modifier) {
                             when (pending.str("state")) {
                                 "sending" -> "Sending…"
                                 "uncertain" -> "Delivery not confirmed"
-                                else -> "Accepted · awaiting native conversation"
+                                else -> "Delivered · waiting for agent response"
                             },
                             Modifier.weight(1f).padding(start = 8.dp),
                             style = MaterialTheme.typography.labelMedium,
@@ -731,7 +754,8 @@ fun Message(vm: RelayModel, event: ChatEvent) {
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                MessageTime(event, if (user) "Sent" else "Received")
+                MessageTime(event, if (user) "Delivered" else "Received")
+                if (user && vm.events.any { it.sequence > event.sequence && it.kind in listOf("assistant.message", "assistant.delta") }) Text("Agent responded", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             ActionIcon(Icons.Outlined.ContentCopy, "Copy message") {
                 (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
@@ -811,6 +835,7 @@ fun MarkdownText(text: String, baseUrl: String = RelayApi.DEFAULT_ENDPOINT, onNa
                 .build()
         }
     val color = MaterialTheme.colorScheme.onSurface.toArgb()
+    val scaledTextPx = with(LocalDensity.current) { 17.sp.toPx() }
     AndroidView(
         factory = {
             SelectableMarkdownView(it).apply {
@@ -822,6 +847,7 @@ fun MarkdownText(text: String, baseUrl: String = RelayApi.DEFAULT_ENDPOINT, onNa
         modifier = Modifier.fillMaxWidth(),
         update = { view ->
             view.setTextColor(color)
+            view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, scaledTextPx)
             if (view.tag != text) {
                 renderer.setMarkdown(view, text)
                 view.tag = text

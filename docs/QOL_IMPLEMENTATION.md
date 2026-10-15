@@ -1,0 +1,23 @@
+# Relay quality-of-life delivery
+
+Requested 2026-10-14. Completion requires implementation and verification on web and Android.
+
+- [x] Session command center: model/provider/permissions, current task, questions, connection; model/provider changes, stop, resume.
+- [x] Delivery: Sending / Delivered / Agent responding, exact-key safe retry, retained recoverable draft.
+- [x] Tasks and read-only sub-agent navigation, live progress.
+- [x] Artifacts: inline audio/video, image zoom, text/code/document preview, download/share.
+- [x] Questions: persistent answer tray, session badges, expired requests non-actionable.
+- [x] Preferences: accents, AMOLED, text size, spacing, haptics, activity detail; preserve reading position.
+- [x] Web regression suite, native unit/lint/release build, screenshot review, documented device limits.
+
+Design: existing system typography and semantic teal/blue/violet/amber accents. Variance 3, motion 2, density 4; 48px/dp controls. Command center leads with state and next action. Settings use labeled controls with immediate preview. Existing scroll-follow ownership remains authoritative. Local React guidance search had no verified match; existing project patterns and mobile skill defaults govern state persistence.
+
+## Verification
+
+- Backend: 163 tests passed; TypeScript, ESLint and production build passed. Additional provider-ownership assertions passed all six provider restart tests.
+- Browser: 55 distinct scenarios passed across the full suite and targeted reruns. Covered delivery recovery, questions/expiry, tasks/sub-agents, native model/provider controls, media playback/download, file preview/share, preferences, reading position and mobile navigation. One initial test hit a temporary 404 while the Android packaging build regenerated shared web assets; its isolated rerun passed. Another expected the old image-specific download label; it was updated to the unified file-viewer label and passed, including zoom and virtualized-row removal.
+- Android: unit tests, lint, debug APK and instrumentation APK compilation passed; signed 0.1.21 release built. Instrumentation was not executed on a device in this run. Physical-phone keyboard, share sheet, haptics and font-scale checks remain device-validation limits, not claims inferred from browser tests.
+- Reviewed phone screenshots for settings, command center and pending-question tray. Dialogs centered after visual review. Safe text preview keeps HTML inert and preserves downloaded/shared bytes.
+- Existing native clipboard, dictation, Back and scroll-follow implementations remain in place. These additions do not introduce automatic chat submissions, automatic retries or a second harness owner.
+
+Artifact document previews cover text/code formats; Office/PDF files remain downloadable and shareable. Provider/permission/mode actions continue to depend on the harness's actual capabilities.

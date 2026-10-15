@@ -21,7 +21,13 @@ export function useOutgoing(sessionId: string, events: Event[]) {
             state: z.enum(['sending', 'confirmed', 'uncertain']),
           }),
         )
-        .parse(JSON.parse(sessionStorage.getItem(`relay-outgoing:${sessionId}`) ?? '[]'))
+        .parse(
+          JSON.parse(
+            localStorage.getItem(`relay-outgoing:${sessionId}`) ??
+              sessionStorage.getItem(`relay-outgoing:${sessionId}`) ??
+              '[]',
+          ),
+        )
         .map((x: Outgoing) => ({ ...x, state: x.state === 'sending' ? 'uncertain' : x.state }));
     } catch {
       return [];
@@ -67,7 +73,8 @@ export function useOutgoing(sessionId: string, events: Event[]) {
   }, [items, sessionId]);
   useEffect(() => {
     try {
-      sessionStorage.setItem(`relay-outgoing:${sessionId}`, JSON.stringify(items));
+      localStorage.setItem(`relay-outgoing:${sessionId}`, JSON.stringify(items));
+      sessionStorage.removeItem(`relay-outgoing:${sessionId}`);
     } catch {
       /* optional browser storage */
     }
@@ -80,11 +87,19 @@ export function useOutgoing(sessionId: string, events: Event[]) {
   }, [events, items]);
   return {
     items: items.filter((item) => !hasNativeEcho(item, events)),
-    begin: (key: string, prompt: string, attachments: Outgoing['attachments'] = []) =>
-      setItems((old) => [
-        ...old.filter((x) => x.key !== key),
+    begin: (key: string, prompt: string, attachments: Outgoing['attachments'] = []) => {
+      const next: Outgoing[] = [
+        ...items.filter((x) => x.key !== key),
         { key, prompt, attachments, started: new Date().toISOString(), state: 'sending' },
-      ]),
+      ];
+      try {
+        localStorage.setItem(`relay-outgoing:${sessionId}`, JSON.stringify(next));
+      } catch {
+        return false;
+      }
+      setItems(next);
+      return true;
+    },
     finish: (
       key: string,
       state: Outgoing['state'],
@@ -94,6 +109,26 @@ export function useOutgoing(sessionId: string, events: Event[]) {
       setItems((old) =>
         old.map((x) => (x.key === key ? { ...x, state, nativeRequestId, delivery } : x)),
       ),
+    retry: async (item: Outgoing) => {
+      setItems((old) => old.map((x) => (x.key === item.key ? { ...x, state: 'sending' } : x)));
+      try {
+        const result = await api(`/api/sessions/${sessionId}/messages`, {
+          method: 'POST',
+          body: JSON.stringify({
+            idempotencyKey: item.key,
+            prompt: item.prompt,
+            attachments: (item.attachments ?? []).map((f) => f.id),
+          }),
+        });
+        setItems((old) =>
+          old.map((x) =>
+            x.key === item.key ? { ...x, state: 'confirmed', nativeRequestId: result.task?.id } : x,
+          ),
+        );
+      } catch {
+        setItems((old) => old.map((x) => (x.key === item.key ? { ...x, state: 'uncertain' } : x)));
+      }
+    },
     dismiss: (key: string) => setItems((old) => old.filter((x) => x.key !== key)),
   };
 }
@@ -102,11 +137,13 @@ export function OutgoingMessages({
   sessionId,
   restore,
   dismiss,
+  retry,
 }: {
   items: Outgoing[];
   sessionId: string;
   restore: (text: string) => void;
   dismiss: (key: string) => void;
+  retry: (item: Outgoing) => Promise<void>;
 }) {
   return (
     <>
@@ -128,11 +165,14 @@ export function OutgoingMessages({
               ? 'Sending…'
               : item.state === 'confirmed'
                 ? item.delivery === 'next-step'
-                  ? 'Sent to active turn'
-                  : 'Sent'
+                  ? 'Delivered · applies at the next supported step'
+                  : 'Delivered · waiting for agent response'
                 : 'Delivery not confirmed. Check the conversation before sending again.'}
             {item.state === 'uncertain' && (
               <>
+                <button type="button" onClick={() => void retry(item)}>
+                  Retry safely
+                </button>
                 <button type="button" onClick={() => restore(item.prompt)}>
                   Restore draft
                 </button>

@@ -40,7 +40,7 @@ private val Dark =
 fun RelayTheme(mode: String = "system", accent: String = "teal", content: @Composable () -> Unit) {
     val dark = when (mode) {
         "light" -> false
-        "dark" -> true
+        "dark", "amoled" -> true
         else -> isSystemInDarkTheme()
     }
     val primary = when (accent) {
@@ -57,6 +57,8 @@ fun RelayTheme(mode: String = "system", accent: String = "teal", content: @Compo
     }
     val base = if (dark) Dark else Light
     val scheme = base.copy(
+        background = if (mode == "amoled") Color.Black else base.background,
+        surface = if (mode == "amoled") Color.Black else base.surface,
         primary = primary,
         onPrimary = onPrimary,
         primaryContainer = if (dark) primary.copy(alpha = 0.22f) else primary.copy(alpha = 0.12f),

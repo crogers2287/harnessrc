@@ -119,7 +119,9 @@ async function setup() {
 test('provider swap closes the verified old owner before exact resume, preserves CWD, pauses queue and deduplicates', async () => {
   const f = await setup();
   try {
+    assert.equal((await f.swaps.catalog(f.session.id)).currentProvider, undefined);
     const receipt = await f.swaps.restart(f.session.id, f.input, 'device');
+    assert.equal((await f.swaps.catalog(f.session.id)).currentProvider, 'CFRproxy');
     assert.equal(receipt.status, 'started');
     assert.ok(
       f.calls.findIndex((c) => c.method === 'pane.close') <
@@ -146,6 +148,11 @@ test('provider swap closes the verified old owner before exact resume, preserves
       f.swaps.restart(f.session.id, { ...f.input, model: 'another' }, 'device'),
       /different settings/,
     );
+    f.gateway.store.saveSession({
+      ...f.gateway.store.session(f.session.id),
+      terminalId: 'unrelated-owner',
+    });
+    assert.equal((await f.swaps.catalog(f.session.id)).currentProvider, undefined);
   } finally {
     await f.close();
   }
