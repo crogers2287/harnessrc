@@ -1,4 +1,4 @@
-import { startHarness } from './start-harness.ts';
+import { startHarness, harnessReady } from './start-harness.ts';
 import { z } from 'zod';
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { Runtime } from './runtime.ts';
@@ -67,7 +67,7 @@ export class ProviderSwaps {
       agent.name !== name ||
       agent.agent !== s.harness ||
       agent.agent_session?.value !== s.nativeSessionId ||
-      !agent.interactive_ready
+      !(await harnessReady(client, agent))
     )
       return receipt;
     await this.runtime.refresh(s.hostId);
@@ -354,7 +354,7 @@ export class ProviderSwaps {
         if (
           agent.agent_session?.value === s.nativeSessionId &&
           agent.agent === s.harness &&
-          agent.interactive_ready
+          (await harnessReady(client, agent))
         )
           break;
         if (n >= 100) throw new Error('Exact resumed conversation was not confirmed');

@@ -1,4 +1,4 @@
-import { startHarness } from './start-harness.ts';
+import { startHarness, harnessReady } from './start-harness.ts';
 import { launchPermissionSchema } from './launch-permissions.ts';
 import { acceptClaudeResumeTrust } from './claude-resume-trust.ts';
 import type { DshHost } from './dsh-host.ts';
@@ -478,7 +478,7 @@ export class Launcher {
             target,
             resolved,
           );
-        if (agent.agent === p.harness && agent.interactive_ready) {
+        if (agent.agent === p.harness && (await harnessReady(client, agent))) {
           if (acceptedTrust && !agent.agent_session) {
             if (attempt >= 100) throw new Error('Claude startup identity not confirmed');
           } else if (

@@ -38,3 +38,28 @@ export async function startHarness(client: HerdrClient, provider: string, start:
   }
   throw new Error('CFRproxy launch was not confirmed; check the session before retrying');
 }
+
+// Herdr's narrow-pane OSC detection can omit interactive_ready even when
+// Claude has rendered its empty input prompt. Require both native identity
+// and idle state, then check the actual bottom-of-screen prompt.
+export async function harnessReady(client: HerdrClient, agent: any) {
+  if (agent.interactive_ready !== undefined) return agent.interactive_ready === true;
+  if (
+    agent.agent !== 'claude' ||
+    !agent.agent_session?.value ||
+    !['idle', 'done'].includes(agent.agent_status)
+  )
+    return false;
+  const { read } = await client.request('pane.read', {
+    pane_id: agent.pane_id,
+    source: 'visible',
+    lines: 12,
+  });
+  if (!/^\s*❯\s*$/m.test(read?.text ?? '')) return false;
+  const { agent: fresh } = await client.request('agent.get', { target: agent.pane_id });
+  return (
+    fresh.terminal_id === agent.terminal_id &&
+    fresh.agent_session?.value === agent.agent_session.value &&
+    ['idle', 'done'].includes(fresh.agent_status)
+  );
+}

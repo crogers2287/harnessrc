@@ -58,3 +58,26 @@ test('CFR launch rejects a busy pane before any command is sent', async () => {
     /initializing/,
   );
 });
+
+test('narrow Claude panes require an empty prompt and stable native identity', async () => {
+  const { harnessReady } = await import('../../../apps/gateway/src/start-harness.ts');
+  const agent = {
+    agent: 'claude',
+    agent_session: { value: 'uuid' },
+    agent_status: 'idle',
+    terminal_id: 't',
+    pane_id: 'p',
+  };
+  let screen = '────\n❯\n────';
+  let fresh = agent;
+  const c = {
+    request: async (method: string) =>
+      method === 'pane.read' ? { read: { text: screen } } : { agent: fresh },
+  };
+  assert.equal(await harnessReady(c as any, agent), true);
+  screen = '❯ No, exit\nYes, trust this folder';
+  assert.equal(await harnessReady(c as any, agent), false);
+  screen = '❯';
+  fresh = { ...agent, terminal_id: 'different' };
+  assert.equal(await harnessReady(c as any, agent), false);
+});
