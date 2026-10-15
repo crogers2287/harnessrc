@@ -49,7 +49,7 @@ Live validation (2026-10-14): Tidyhive's original native conversation resumed th
 CFRproxy profiles launch and resume through `cfrproxy <harness> ...` inside the
 new Herdr pane. Herdr's canonical-only `agent.start` cannot express a wrapper,
 so Relay checks that the new pane still owns its idle shell, submits one quoted
-`exec cfrproxy ...` command, waits for harness detection, and assigns the managed
+`cfrproxy ...` (keeping Herdr’s shell parent alive) command, waits for harness detection, and assigns the managed
 agent name. A lost command acknowledgement is uncertain and is never replayed.
 Harness-default profiles continue to use `agent.start`. The same start helper is
 used for initial sessions and provider swaps in both web and Android.

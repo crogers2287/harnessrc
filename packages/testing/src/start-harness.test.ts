@@ -28,7 +28,7 @@ test('CFR launch quotes all arguments and waits for harness detection before nam
   });
   assert.equal(
     calls[1].params.text,
-    "exec 'cfrproxy' 'claude' '--resume' 'uuid' '--settings' 'a'\\''b $(touch /tmp/never)'",
+    "'cfrproxy' 'claude' '--resume' 'uuid' '--settings' 'a'\\''b $(touch /tmp/never)'",
   );
   assert.deepEqual(calls[1].params.keys, ['enter']);
   assert.equal(calls[3].method, 'agent.rename');

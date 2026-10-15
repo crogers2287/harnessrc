@@ -20,7 +20,7 @@ export async function startHarness(client: HerdrClient, provider: string, start:
   // One submission only. A timeout after this point is ambiguous, never retried.
   await client.request('pane.send_input', {
     pane_id: start.pane_id,
-    text: `exec ${command}`,
+    text: command,
     keys: ['enter'],
   });
   const deadline = Date.now() + start.timeout_ms;

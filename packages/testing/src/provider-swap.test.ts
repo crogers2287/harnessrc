@@ -59,7 +59,7 @@ async function setup() {
       };
     if (method === 'pane.send_input') {
       assert.throws(() => process.kill(child.pid!, 0));
-      assert.ok(params.text.startsWith("exec 'cfrproxy' 'claude'"));
+      assert.ok(params.text.startsWith("'cfrproxy' 'claude'"));
       return {};
     }
     if (method === 'agent.rename') {
