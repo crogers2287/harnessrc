@@ -87,6 +87,15 @@ private fun RelayAppContent(vm: RelayModel, shared: Intent?, nativeKeyboardVisib
     val scope = rememberCoroutineScope()
     val conversationState = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
     var screen by rememberSaveable { mutableStateOf("") }
+    LaunchedEffect(vm.notificationTarget, vm.sessions) {
+        vm.notificationTarget?.let { (id, question) ->
+            if (vm.sessions.any { it.id == id }) {
+                vm.choose(id)
+                screen = if (question) "questions" else ""
+                vm.notificationTarget = null
+            }
+        }
+    }
     var rowActions by remember { mutableStateOf<Session?>(null) }
     var confirmShare by remember(shared) { mutableStateOf(shared != null) }
     val context = LocalContext.current

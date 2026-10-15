@@ -1,3 +1,4 @@
+import { notificationFeed } from './notifications.ts';
 import { sendMedia } from './media-response.ts';
 import { nativeFiles } from '@harnessrc/protocol';
 import { publishArtifact } from './artifacts.ts';
@@ -762,7 +763,17 @@ export async function createGateway(
       entries: store.db.prepare('SELECT * FROM audit ORDER BY sequence DESC LIMIT 100').all(),
     };
   });
+  app.get('/api/notifications', async (req) => {
+    const query = z
+      .object({
+        after: z.coerce.number().int().nonnegative().optional(),
+        since: z.coerce.number().nonnegative().default(0),
+      })
+      .parse(req.query);
+    return notificationFeed(store, auth, req.device, query.after, query.since);
+  });
   app.get('/ws', { websocket: true }, (socket, req) => {
+    const notificationsOnly = (req.query as { notifications?: string }).notifications === '1';
     const token = req.cookies.rc_access;
     let timer: NodeJS.Timeout | undefined;
     const push = () => {
@@ -771,25 +782,38 @@ export async function createGateway(
           ? auth.tailnetDevice(req.tailnetNode)
           : auth.authenticate(token);
         if (socket.readyState === 1)
-          socket.send(JSON.stringify({ type: 'invalidate', sessions: sessionViews(device) }));
+          socket.send(
+            JSON.stringify(
+              notificationsOnly
+                ? { type: 'notifications' }
+                : { type: 'invalidate', sessions: sessionViews(device) },
+            ),
+          );
       } catch {
         socket.close(4001, 'Authentication expired');
       }
     };
     const changed = () => {
       if (timer) return;
-      timer = setTimeout(() => {
-        timer = undefined;
-        push();
-      }, 100);
+      timer = setTimeout(
+        () => {
+          timer = undefined;
+          push();
+        },
+        notificationsOnly ? 1000 : 100,
+      );
     };
-    const authCheck = setInterval(push, 10000);
+    const authCheck = setInterval(push, notificationsOnly ? 30000 : 10000);
     const event = (value: { sessionId: string }) => {
       try {
         const device = req.tailnetNode
           ? auth.tailnetDevice(req.tailnetNode)
           : auth.authenticate(token);
         if (!auth.allowed(device, value.sessionId)) return;
+        if (notificationsOnly) {
+          changed();
+          return;
+        }
         if (socket.bufferedAmount > 4 * 1024 * 1024) {
           socket.close(1013, 'Reconnect for durable replay');
           return;

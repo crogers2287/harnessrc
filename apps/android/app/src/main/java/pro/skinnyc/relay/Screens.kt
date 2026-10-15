@@ -527,10 +527,7 @@ fun SettingsScreen(vm: RelayModel, back: () -> Unit) {
         Text(
             "Records on this device, then sends audio to your gateway for Gary to transcribe and clean up. Results are inserted into your draft for review. Recordings are deleted after success or cancellation."
         )
-        Text("Notifications", style = MaterialTheme.typography.titleMedium)
-        Text(
-            "Background push notifications are not enabled in this Android build. Your agents continue working when the app is closed."
-        )
+        NotificationSettings()
         Text(
             "Relay Android ${BuildConfig.VERSION_NAME}",
             style = MaterialTheme.typography.labelMedium,

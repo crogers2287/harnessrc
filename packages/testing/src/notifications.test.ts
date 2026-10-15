@@ -22,8 +22,12 @@ test('notifications ignore status churn and replay, group real events per sessio
   } as Event;
   assert.equal(notificationFor(event, session, 3000), undefined);
   assert.equal(notificationFor(event, { ...session, archived: true }, 1000), undefined);
-  for (const kind of ['agent.status', 'connection.state', 'assistant.message', 'turn.completed'])
+  for (const kind of ['agent.status', 'connection.state', 'assistant.message'])
     assert.equal(notificationFor({ ...event, kind } as Event, session, 1000), undefined);
+  assert.equal(
+    notificationFor({ ...event, kind: 'turn.completed' }, session, 1000)?.label,
+    'Turn complete',
+  );
   const question = notificationFor(event, session, 1000)!;
   assert.equal(question.label, 'Your agent needs input');
   assert.equal(question.options.data.path, '/?session=session-one&interaction=question-one');

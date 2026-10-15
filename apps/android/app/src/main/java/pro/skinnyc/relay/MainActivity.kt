@@ -34,6 +34,7 @@ class MainActivity : ComponentActivity() {
                 ?.takeIf {
                     it.action == Intent.ACTION_SEND || it.action == Intent.ACTION_SEND_MULTIPLE
                 }
+        openNotification(intent)
         setContent {
             RelayTheme(model.colorMode, model.accentTheme) {
                 RelayApp(model, shared, keyboardVisible) {
@@ -46,10 +47,24 @@ class MainActivity : ComponentActivity() {
 
     public override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        openNotification(intent)
         if (intent.action == Intent.ACTION_SEND || intent.action == Intent.ACTION_SEND_MULTIPLE) {
             setIntent(intent)
             shared = intent
         }
+    }
+
+    private fun openNotification(intent: Intent?) {
+        if (intent?.action != RelayNotifications.OPEN) return
+        val session = intent.getStringExtra("session").orEmpty()
+        if (session.isNotBlank()) {
+            model.notificationTarget = session to intent.getBooleanExtra("question", false)
+            val manager = getSystemService(android.app.NotificationManager::class.java)
+            for (kind in listOf("question", "completion", "failure")) manager.cancel("relay:$session:$kind", 1)
+        }
+        // Consume the target without replacing the Activity's original launch identity.
+        intent.removeExtra("session")
+        intent.removeExtra("question")
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -60,6 +75,7 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         model.start()
+        RelayNotifications.sync(this)
     }
 
     override fun onStop() {

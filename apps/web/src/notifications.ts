@@ -6,8 +6,8 @@ export function notificationFor(event: Event, session: SessionView, openedAt: nu
   const label =
     event.kind === 'question' || event.kind === 'approval.request'
       ? 'Your agent needs input'
-      : event.kind === 'task.completed'
-        ? 'Task complete'
+      : event.kind === 'task.completed' || event.kind === 'turn.completed'
+        ? 'Turn complete'
         : event.kind === 'turn.failed'
           ? 'Agent needs attention'
           : undefined;

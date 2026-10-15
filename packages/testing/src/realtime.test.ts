@@ -56,3 +56,37 @@ test('incremental WebSocket conversation events enforce session grants and devic
     await f.close();
   }
 });
+
+test('notification-only sockets send wakeups without conversation payloads and stop on revocation', async () => {
+  const f = await fixture({ startRuntime: false });
+  let socket: WebSocket | undefined;
+  try {
+    const { auth, app, store } = f.gateway;
+    const admin = auth.authenticate(f.headers.cookie.split('=')[1]);
+    const tokens = auth.pair(auth.pairCode(admin), 'Notification reader');
+    const reader = auth.authenticate(tokens.access);
+    auth.grant(admin, reader.id, f.session.id, false);
+    const address = await app.listen({ host: '127.0.0.1', port: 0 });
+    socket = new WebSocket(address.replace('http', 'ws') + '/ws?notifications=1', {
+      headers: { cookie: `rc_access=${tokens.access}`, origin: f.config.origin },
+    });
+    const frames: any[] = [];
+    socket.on('message', (value) => frames.push(JSON.parse(String(value))));
+    await eventually(() => frames.length > 0);
+    store.event(f.session, {
+      sourceId: 'push-private-body',
+      kind: 'turn.completed',
+      timestamp: new Date().toISOString(),
+      data: { text: 'Private conversation' },
+    });
+    await eventually(() => frames.length > 1);
+    assert.ok(frames.every((frame) => JSON.stringify(frame) === '{"type":"notifications"}'));
+    const closed = new Promise((resolve) => socket!.once('close', resolve));
+    auth.revoke(admin, reader.id);
+    store.emit('change');
+    await closed;
+  } finally {
+    socket?.terminate();
+    await f.close();
+  }
+});

@@ -32,6 +32,9 @@ import org.junit.runner.RunWith
 class NativeChatTest {
     @get:Rule val compose = createEmptyComposeRule()
     @get:Rule val microphone = GrantPermissionRule.grant(android.Manifest.permission.RECORD_AUDIO)
+    @get:Rule val notificationsPermission = GrantPermissionRule.grant(android.Manifest.permission.POST_NOTIFICATIONS)
+    @Volatile private var notificationSocket: okhttp3.WebSocket? = null
+    @Volatile private var notificationAvailable = false
     private lateinit var server: MockWebServer
     private lateinit var scenario: ActivityScenario<MainActivity>
     private val requests = CopyOnWriteArrayList<RecordedRequest>()
@@ -60,6 +63,14 @@ class NativeChatTest {
                 override fun dispatch(request: RecordedRequest): MockResponse {
                     requests.add(request)
                     val path = request.path ?: ""
+                    if (path == "/ws?notifications=1") return MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
+                        override fun onOpen(webSocket: okhttp3.WebSocket, response: okhttp3.Response) { notificationSocket = webSocket }
+                        override fun onClosing(webSocket: okhttp3.WebSocket, code: Int, reason: String) { webSocket.close(code, reason) }
+                    })
+                    if (path.startsWith("/api/notifications")) return MockResponse().setHeader("Content-Type", "application/json").setBody(
+                        if (notificationAvailable) """{"cursor":2,"more":false,"items":[{"id":"notify-q","sessionId":"test-session","kind":"question","title":"Your agent needs input","body":"Mobile clipboard check"},{"id":"notify-done","sessionId":"test-session","kind":"completion","title":"Turn complete","body":"Mobile clipboard check"}]}"""
+                        else """{"cursor":0,"more":false,"items":[]}"""
+                    )
                     if (path == "/ws")
                         return MockResponse()
                             .withWebSocketUpgrade(
@@ -131,8 +142,52 @@ class NativeChatTest {
 
     @After
     fun teardown() {
+        RelayNotifications.toggle(ctx, false)
         scenario.close()
         server.shutdown()
+    }
+
+    @Test
+    fun backgroundNotificationsReplayOnceAndOpenQuestionTray() {
+        val manager = ctx.getSystemService(android.app.NotificationManager::class.java)
+        scenario.onActivity { RelayNotifications.toggle(it, true) }
+        compose.waitUntil(15000) { notificationSocket != null }
+        scenario.moveToState(androidx.lifecycle.Lifecycle.State.CREATED)
+        notificationAvailable = true
+        notificationSocket!!.send("{\"type\":\"notifications\"}")
+        compose.waitUntil(15000) { manager.activeNotifications.count { it.tag?.startsWith("relay:test-session:") == true } == 2 }
+        val alert = manager.activeNotifications.first { it.tag == "relay:test-session:question" }
+        val posted = alert.postTime
+        val before = requests.count { it.path?.startsWith("/api/notifications") == true }
+        notificationSocket!!.send("{\"type\":\"notifications\"}")
+        compose.waitUntil(10000) { requests.count { it.path?.startsWith("/api/notifications") == true } > before }
+        assertEquals(posted, manager.activeNotifications.first { it.tag == alert.tag }.postTime)
+        scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
+        scenario.onActivity { alert.notification.contentIntent.send() }
+        compose.waitUntil(10000) { compose.onAllNodesWithText("Needs your answer", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        assertFalse(requests.any { it.method == "POST" && (it.path?.endsWith("/messages") == true || it.path?.endsWith("/respond") == true) })
+        RelayNotifications.toggle(ctx, false)
+        compose.waitUntil(10000) { manager.activeNotifications.isEmpty() }
+    }
+
+    @Test
+    fun notificationSettingsPersistAndPause() {
+        compose.onNodeWithContentDescription("Open sessions").performClick()
+        compose.onNodeWithContentDescription("Settings").performClick()
+        compose.onNodeWithContentDescription("Background notifications").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Completed turns").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Show session names in alerts").performScrollTo().performClick()
+        scenario.recreate()
+        assertTrue(RelayNotifications.enabled(ctx))
+        assertFalse(RelayNotifications.prefs(ctx).getBoolean("notify:completion", true))
+        assertFalse(RelayNotifications.prefs(ctx).getBoolean("notificationPreview", true))
+        compose.onNodeWithContentDescription("Background notifications").performScrollTo().assertIsOn()
+        InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot().let { bitmap ->
+            File(ctx.getExternalFilesDir(null), "native-notification-settings.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            bitmap.recycle()
+        }
+        compose.onNodeWithContentDescription("Background notifications").performClick()
+        assertFalse(RelayNotifications.enabled(ctx))
     }
 
     @Test

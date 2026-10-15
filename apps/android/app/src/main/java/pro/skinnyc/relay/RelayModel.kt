@@ -145,9 +145,12 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
         return File(cache, "$key.json")
     }
 
+    var notificationTarget by mutableStateOf<Pair<String, Boolean>?>(null)
+
     fun start() {
         if (foreground) return
         foreground = true
+        RelayNotifications.visibleSession = selected
         markOpened(selected)
         viewModelScope.launch {
             refreshSessions()
@@ -157,6 +160,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
 
     fun stop() {
         foreground = false
+        RelayNotifications.visibleSession = null
         retry?.cancel()
         socket?.close(1000, "Background")
         socket = null
@@ -253,6 +257,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
         saveDraft()
         cancelVoice()
         selected = id
+        if (foreground) RelayNotifications.visibleSession = id
         markOpened(id)
         prefs.edit().putString("session", id).apply()
         draft = ""
@@ -741,7 +746,8 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
         }
         stop()
         api.base = value.trim().trimEnd('/')
-        prefs.edit().putString("endpoint", api.base).apply()
+        prefs.edit().putString("endpoint", api.base).remove("notificationCursor").remove("notificationSeen").putLong("notificationSince", System.currentTimeMillis()).apply()
+        RelayNotifications.sync(getApplication())
         selected = ""
         events = emptyList()
         sessions = emptyList()
