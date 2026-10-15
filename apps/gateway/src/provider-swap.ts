@@ -1,3 +1,4 @@
+import { startHarness } from './start-harness.ts';
 import { z } from 'zod';
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { Runtime } from './runtime.ts';
@@ -322,11 +323,13 @@ export class ProviderSwaps {
         if (pane?.terminal_id !== receipt.terminalId)
           throw new Error('Replacement pane owner changed');
         try {
-          await client.request(
-            'agent.start',
-            { name, kind: s.harness, pane_id: receipt.paneId, args, timeout_ms: 30000 },
-            35000,
-          );
+          await startHarness(client, profile.provider, {
+            name,
+            kind: s.harness,
+            pane_id: receipt.paneId,
+            args,
+            timeout_ms: 30000,
+          });
           break;
         } catch (e) {
           if ((e as any).code !== 'agent_pane_busy' || n >= 20) throw e;

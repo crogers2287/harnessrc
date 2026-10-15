@@ -1,3 +1,4 @@
+import { startHarness } from './start-harness.ts';
 import { launchPermissionSchema } from './launch-permissions.ts';
 import { acceptClaudeResumeTrust } from './claude-resume-trust.ts';
 import type { DshHost } from './dsh-host.ts';
@@ -433,26 +434,22 @@ export class Launcher {
       // guarantees no input was sent; only this definite rejection is safe to retry.
       for (let attempt = 0; ; attempt++) {
         try {
-          await client.request(
-            'agent.start',
-            {
-              name: `relay-${input.requestId.replaceAll('-', '').slice(0, 24)}`,
-              kind: p.harness,
-              pane_id: receipt.paneId,
-              args: [
-                ...(receipt.nativeSessionId
-                  ? ['resume', receipt.nativeSessionId, '--remote', `unix://${socket}`]
-                  : []),
-                ...p.args,
-                // Remote threads already received permissions through thread/start.
-                // Codex rejects CLI permission overrides when resuming them.
-                ...(receipt.nativeSessionId ? [] : (permission?.args ?? [])),
-                ...(selectedModel ? [p.modelFlag, selectedModel] : []),
-              ],
-              timeout_ms: 30000,
-            },
-            35000,
-          );
+          await startHarness(client, p.provider, {
+            name: `relay-${input.requestId.replaceAll('-', '').slice(0, 24)}`,
+            kind: p.harness,
+            pane_id: receipt.paneId,
+            args: [
+              ...(receipt.nativeSessionId
+                ? ['resume', receipt.nativeSessionId, '--remote', `unix://${socket}`]
+                : []),
+              ...p.args,
+              // Remote threads already received permissions through thread/start.
+              // Codex rejects CLI permission overrides when resuming them.
+              ...(receipt.nativeSessionId ? [] : (permission?.args ?? [])),
+              ...(selectedModel ? [p.modelFlag, selectedModel] : []),
+            ],
+            timeout_ms: 30000,
+          });
           break;
         } catch (error) {
           if (!(error instanceof HerdrError) || error.code !== 'agent_pane_busy' || attempt >= 20)

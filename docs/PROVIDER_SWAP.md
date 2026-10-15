@@ -45,3 +45,11 @@ Relay supplies the selected provider/model as `ANTHROPIC_MODEL`, `ANTHROPIC_SMAL
 Claude 2.1.300 retains the previous response model in cached compaction parameters during cross-provider resume. CFRproxy launches send `X-CFR-Model` through the native `ANTHROPIC_CUSTOM_HEADERS` setting so authenticated ordinary proxy requests use the selected target even when the client sends an old native model name. This requires the matching CFRproxy update; shared endpoints retain their own model policy. Relay never rewrites native transcripts.
 
 Live validation (2026-10-14): Tidyhive's original native conversation resumed through the selected Codex target. Its large native compaction request returned HTTP 200 on `gpt-6.1-sol`; the following explicit connectivity check returned an assistant reply in 7.92 seconds. The authenticated Relay conversation API also contained that reply. The native conversation and working directory were preserved. This verifies server routing and chat ingestion; it does not replace physical-phone UI validation.
+
+CFRproxy profiles launch and resume through `cfrproxy <harness> ...` inside the
+new Herdr pane. Herdr's canonical-only `agent.start` cannot express a wrapper,
+so Relay checks that the new pane still owns its idle shell, submits one quoted
+`exec cfrproxy ...` command, waits for harness detection, and assigns the managed
+agent name. A lost command acknowledgement is uncertain and is never replayed.
+Harness-default profiles continue to use `agent.start`. The same start helper is
+used for initial sessions and provider swaps in both web and Android.

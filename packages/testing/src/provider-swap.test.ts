@@ -49,6 +49,23 @@ async function setup() {
       return { ok: true };
     }
     if (method === 'pane.get') return { pane: { terminal_id: 'replacement' } };
+    if (method === 'pane.process_info')
+      return {
+        process_info: {
+          shell_pid: 777,
+          foreground_process_group_id: 777,
+          foreground_processes: [{ pid: 777 }],
+        },
+      };
+    if (method === 'pane.send_input') {
+      assert.throws(() => process.kill(child.pid!, 0));
+      assert.ok(params.text.startsWith("exec 'cfrproxy' 'claude'"));
+      return {};
+    }
+    if (method === 'agent.rename') {
+      owner = params.name;
+      return {};
+    }
     if (method === 'agent.start') {
       assert.throws(() => process.kill(child.pid!, 0));
       owner = params.name;
@@ -106,19 +123,12 @@ test('provider swap closes the verified old owner before exact resume, preserves
     assert.equal(receipt.status, 'started');
     assert.ok(
       f.calls.findIndex((c) => c.method === 'pane.close') <
-        f.calls.findIndex((c) => c.method === 'agent.start'),
+        f.calls.findIndex((c) => c.method === 'pane.send_input'),
     );
-    const start = f.calls.find((c) => c.method === 'agent.start')!;
-    assert.deepEqual(start.params.args, [
-      '--resume',
-      f.session.nativeSessionId,
-      '--settings',
-      '{"env":{"ANTHROPIC_BASE_URL":"http://localhost:8420"}}',
-      '--permission-mode',
-      'default',
-      '--model',
-      'proxy/model',
-    ]);
+    const start = f.calls.find((c) => c.method === 'pane.send_input')!;
+    assert.ok(start.params.text.includes(`'--resume' '${f.session.nativeSessionId}'`));
+    assert.ok(start.params.text.includes("'--permission-mode' 'default' '--model' 'proxy/model'"));
+    assert.deepEqual(start.params.keys, ['enter']);
     assert.equal(f.calls.find((c) => c.method === 'tab.create')!.params.cwd, f.session.cwd);
     assert.equal(
       f.calls.find((c) => c.method === 'tab.create')!.params.env.ANTHROPIC_SMALL_FAST_MODEL,
@@ -163,7 +173,7 @@ test('ambiguous start persists uncertainty across restart without starting anoth
   try {
     const original = f.client.request.bind(f.client);
     f.client.request = async (method, params) => {
-      if (method === 'agent.start') throw new Error('Lost confirmation');
+      if (method === 'pane.send_input') throw new Error('Lost confirmation');
       return original(method, params);
     };
     const receipt = await f.swaps.restart(f.session.id, f.input, 'device');
