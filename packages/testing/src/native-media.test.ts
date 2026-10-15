@@ -140,3 +140,48 @@ test('DSH native tool messages retain output, error state and image count withou
   assert.equal(event.data.imageCount, 1);
   assert.deepEqual(nativeFiles(event), []);
 });
+
+test('local Codex file links and cards download exact bytes without a DSH host', async () => {
+  const { writeFile, symlink, truncate } = await import('node:fs/promises');
+  const f = await fixture({ startRuntime: false });
+  try {
+    const s = f.session;
+    const file = `${f.gateway.runtime.config.dataDir}/SUMMARY.md`;
+    const bytes = Buffer.from('# Report\nScreenshots and rollback ✓\n');
+    await writeFile(file, bytes);
+    const event = (target: string) =>
+      f.gateway.store.event(s, {
+        sourceId: target,
+        kind: 'assistant.message',
+        timestamp: new Date().toISOString(),
+        data: { text: `[Report, screenshots and rollback](${target})` },
+      });
+    const e = event(file);
+    const url = `/api/sessions/${s.id}/media/${e.id}/0`;
+    const get = (route = url, headers = f.headers) => f.gateway.app.inject({ url: route, headers });
+    assert.equal((await get(url, {} as any)).statusCode, 401);
+    const response = await get();
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(response.rawPayload, bytes);
+    assert.match(String(response.headers['content-disposition']), /attachment/);
+    assert.deepEqual((await get(url + '?download=1')).rawPayload, bytes);
+    const range = await f.gateway.app.inject({
+      url,
+      headers: { ...f.headers, range: 'bytes=0-7' },
+    });
+    assert.equal(range.statusCode, 206);
+    assert.deepEqual(range.rawPayload, bytes.subarray(0, 8));
+    f.gateway.runtime.config.hosts[0].localFiles = false;
+    assert.equal((await get()).statusCode, 404);
+    f.gateway.runtime.config.hosts[0].localFiles = true;
+    await symlink(file, file + '.md');
+    const linked = event(file + '.md');
+    assert.equal((await get(`/api/sessions/${s.id}/media/${linked.id}/0`)).statusCode, 404);
+    const missing = event(file + '.missing.md');
+    assert.equal((await get(`/api/sessions/${s.id}/media/${missing.id}/0`)).statusCode, 404);
+    await truncate(file, 21 * 1024 * 1024);
+    assert.equal((await get()).statusCode, 413);
+  } finally {
+    await f.close();
+  }
+});

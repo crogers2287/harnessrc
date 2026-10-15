@@ -1,5 +1,6 @@
 import { notificationFeed } from './notifications.ts';
 import { sendMedia } from './media-response.ts';
+import { readNativeFile } from './native-file.ts';
 import { nativeFiles } from '@harnessrc/protocol';
 import { publishArtifact } from './artifacts.ts';
 import { VoiceService, MAX_VOICE_BYTES, voiceMimeSchema } from './voice.ts';
@@ -689,9 +690,21 @@ export async function createGateway(
     const event = row ? JSON.parse(String(row.body)) : undefined;
     const file = event && nativeFiles(event)[index];
     const host = runtime.dshHosts.get(session.hostId);
-    if (!file || !host || event.nativeSessionId !== session.nativeSessionId)
+    const local = config.hosts.some((h) => h.id === session.hostId && h.localFiles);
+    if (!file || (!host && !local) || event.nativeSessionId !== session.nativeSessionId)
       return reply.code(404).send({ error: 'Conversation file not found' });
-    const result = await host.native.file(file.path);
+    let result;
+    try {
+      result = host ? await host.native.file(file.path) : await readNativeFile(file.path);
+    } catch (error) {
+      if (
+        ['ENOENT', 'ENOTDIR', 'ELOOP', 'EACCES'].includes(
+          (error as NodeJS.ErrnoException).code || '',
+        )
+      )
+        return reply.code(404).send({ error: 'Conversation file unavailable' });
+      throw error;
+    }
     return sendMedia(req, reply, file.path.split('/').pop() || 'file', result.mime, result.bytes);
   });
   app.post('/api/interactions/:id/respond', async (req) => {
