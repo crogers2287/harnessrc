@@ -171,3 +171,11 @@ Version 0.1.16 adds **Agent tasks → Sub-agent conversations** for linked Claud
 Adds the session command center, persistent pending-question tray, task progress, AMOLED and reading/activity/haptic preferences, text/code artifact previews and Android file sharing. Returning from settings retains the conversation's saved scroll position. Shared artifacts use authenticated downloads and temporary read-granted FileProvider URIs. PDF/Office files remain downloadable/shareable; text/code previews are limited to 256 KB.
 
 Unit tests, lint, debug and instrumentation APK compilation are required for this release. Physical-device checks remain necessary for share targets, system font scaling, keyboard/insets, vibration, and restoration after Android process eviction; no desktop browser result substitutes for those checks.
+
+### 0.1.22 native validation and delivery recovery
+
+A confirmed gateway receipt now moves an uncertain Android message to accepted and unlocks the composer. Its bubble remains until native history acknowledges it. Recovery preserves newer drafts and transcription text and never resends the request automatically, matching web receipt recovery.
+
+All 23 instrumentation tests passed on a disposable Android 15 x86_64 emulator, including native clipboard/IME image input, Back, keyboard insets, question responses, delivery recovery, dictation drafts, model controls and settings persistence. A strengthened late-receipt/new-identical-draft test also passed separately. Added coverage for AMOLED/reading/activity/spacing/haptic preference persistence and pending-question visibility/expiry with responses-only filtering. Native keyboard-open/closed screenshots were reviewed. Unit tests, lint and debug/test builds passed. Physical-phone share targets, vibration and OEM keyboard/font behavior remain separate checks.
+
+Signed 0.1.22 (versionCode 23) published and verified through authenticated, certificate-validated Tailnet HTTPS: 4,898,869 bytes, SHA-256 `9711f062099a95373c83047e85bc7cb66d08f22cfa77341b67e43c51b33561cb`. The disposable emulator was stopped and its temporary KVM ACL restored.

@@ -214,3 +214,9 @@ Both retain authenticated inline media and image zoom, and add text/code documen
 Web pending sends are now durable across browser restarts and use the original request key/payload for manual safe retry, preserving a newer draft. Android retains its existing durable outbox. Transport delivery is distinct from a subsequent observed agent response. Native transcript echoes reconcile optimistic bubbles; no retries run automatically.
 
 Validation and release evidence are tracked in QOL_IMPLEMENTATION.md. Browser fixture tests do not establish physical Android clipboard, microphone, share-sheet or keyboard behavior.
+
+### 0.1.22 native validation and delivery recovery
+
+A confirmed gateway receipt now moves an uncertain Android message to accepted and unlocks the composer. Its bubble remains until native history acknowledges it. Recovery preserves newer drafts and transcription text and never resends the request automatically, matching web receipt recovery.
+
+All 23 instrumentation tests passed on a disposable Android 15 x86_64 emulator, including native clipboard/IME image input, Back, keyboard insets, question responses, delivery recovery, dictation drafts, model controls and settings persistence. A strengthened late-receipt/new-identical-draft test also passed separately. Added coverage for AMOLED/reading/activity/spacing/haptic preference persistence and pending-question visibility/expiry with responses-only filtering. Native keyboard-open/closed screenshots were reviewed. Unit tests, lint and debug/test builds passed. Physical-phone share targets, vibration and OEM keyboard/font behavior remain separate checks.

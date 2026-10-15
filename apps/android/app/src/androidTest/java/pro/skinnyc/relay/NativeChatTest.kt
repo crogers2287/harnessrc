@@ -135,6 +135,41 @@ class NativeChatTest {
         server.shutdown()
     }
 
+    @Test
+    fun readingPreferencesPersistThroughRecreation() {
+        compose.onNodeWithContentDescription("Open sessions").performClick()
+        compose.onNodeWithContentDescription("Settings").performClick()
+        compose.onNodeWithText("AMOLED black").performScrollTo().performClick()
+        compose.onNodeWithText("Standard", useUnmergedTree = true).performScrollTo().performClick()
+        compose.onNodeWithText("Large", useUnmergedTree = true).performClick()
+        compose.onNodeWithText("Grouped tools", useUnmergedTree = true).performScrollTo().performClick()
+        compose.onNodeWithText("Responses only", useUnmergedTree = true).performClick()
+        compose.onNodeWithContentDescription("Compact message spacing").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Haptic feedback").performScrollTo().performClick()
+        scenario.recreate()
+        scenario.onActivity {
+            assertEquals("amoled", it.model.colorMode)
+            assertEquals(1.15f, it.model.textScale)
+            assertEquals("responses", it.model.activityDetail)
+            assertTrue(it.model.compactSpacing)
+            assertFalse(it.model.haptics)
+        }
+        assertFalse(requests.any { it.path?.endsWith("/messages") == true })
+    }
+
+    @Test
+    fun answerTrayStaysVisibleWithResponsesOnlyAndExpiresLocally() {
+        val expiry = java.time.Instant.now().plusSeconds(12).toString()
+        pendingQuestion = JSONObject("""{"id":"question-1","type":"free-text","status":"pending","expiresAt":"$expiry","prompt":"Pick the next task","metadata":{},"choices":[]}""")
+        scenario.onActivity { it.model.updateReading(activity = "responses"); it.model.reload() }
+        compose.waitUntil(15000) { compose.onAllNodesWithText("Needs your answer · 1").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Needs your answer · 1").performClick()
+        compose.onNodeWithText("Send response").assertExists()
+        compose.waitUntil(15000) { compose.onAllNodesWithText("No unanswered requests. You’re all caught up.").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Send response").assertDoesNotExist()
+        assertFalse(requests.any { it.path?.endsWith("/respond") == true || it.path?.endsWith("/messages") == true })
+    }
+
     private fun find(view: View): RichComposer? {
         if (view is RichComposer) return view
         if (view is ViewGroup)
@@ -216,7 +251,7 @@ class NativeChatTest {
                 .fetchSemanticsNodes()
                 .isNotEmpty()
         }
-        compose.onNodeWithText("Sent · ${messageTimestamp(stamp)}").assertExists()
+        compose.onNodeWithText("Delivered · ${messageTimestamp(stamp)}").assertExists()
         assertEquals(
             2,
             compose
@@ -740,9 +775,14 @@ class NativeChatTest {
         dictate("a new recording")
         scenario.onActivity { it.model.edit(prompt) }
         compose.waitUntil(10000) { var done = false; scenario.onActivity { done = !it.model.sending }; done }
+        val priorReceipts = requests.count { it.path?.contains("message-receipts") == true }
         receiptConfirmed = true
         scenario.onActivity { it.model.reload() }
-        compose.waitUntil(10000) { var done = false; scenario.onActivity { done = it.model.outgoing == null }; done }
+        compose.waitUntil(10000) {
+            var done = false
+            scenario.onActivity { done = it.model.notice == "Delivery confirmed" && it.model.outgoing?.str("state") == "accepted" }
+            done && requests.count { it.path?.contains("message-receipts") == true } > priorReceipts
+        }
         scenario.onActivity {
             assertEquals(prompt, it.model.draft)
             assertEquals("a new recording", it.model.voiceOriginal)

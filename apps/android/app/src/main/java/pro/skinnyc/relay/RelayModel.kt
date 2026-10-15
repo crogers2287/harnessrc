@@ -375,7 +375,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
                         outgoing?.str("idempotencyKey") == key &&
                         // A confirmed gateway receipt means the harness accepted
                         // the prompt, not that it has appeared in native history.
-                        (receipt.optBoolean("nativeSeen") || hasNativeEcho(pending, events))
+                        (receipt.optBoolean("confirmed") || receipt.optBoolean("nativeSeen") || hasNativeEcho(pending, events))
                 ) {
                     if (pending.str("state") == "uncertain" &&
                         (!pending.has("restoredRevision") || pending.optLong("restoredRevision") == draftRevision) &&
@@ -388,7 +388,8 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
                         attachments.filterNot { file ->
                             (0 until sent.length()).any { sent.optString(it) == file.str("id") }
                         }
-                    outgoing = null
+                    outgoing = if (receipt.optBoolean("nativeSeen") || hasNativeEcho(pending, events)) null
+                        else JSONObject(pending.toString()).put("state", "accepted")
                     error = ""
                     notice = "Delivery confirmed"
                     saveDraft()

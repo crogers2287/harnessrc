@@ -20,6 +20,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -470,11 +472,11 @@ fun SettingsScreen(vm: RelayModel, back: () -> Unit) {
         ChoiceField("Activity detail", listOf(json("id" to "responses", "name" to "Responses only"), json("id" to "grouped", "name" to "Grouped tools"), json("id" to "everything", "name" to "Everything")), vm.activityDetail) { vm.updateReading(activity = it) }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("Compact message spacing", Modifier.weight(1f))
-            Switch(checked = vm.compactSpacing, onCheckedChange = { vm.updateReading(compact = it) })
+            Switch(modifier = Modifier.semantics { contentDescription = "Compact message spacing" }, checked = vm.compactSpacing, onCheckedChange = { vm.updateReading(compact = it) })
         }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("Haptic feedback", Modifier.weight(1f))
-            Switch(checked = vm.haptics, onCheckedChange = { vm.updateReading(tactile = it) })
+            Switch(modifier = Modifier.semantics { contentDescription = "Haptic feedback" }, checked = vm.haptics, onCheckedChange = { vm.updateReading(tactile = it) })
         }
         Text("Conversation preview", style = MaterialTheme.typography.labelLarge)
         Text("Your agent’s replies use this text size and spacing.", style = MaterialTheme.typography.bodyLarge)
