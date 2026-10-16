@@ -33,3 +33,13 @@ See [attachment delivery](ATTACHMENTS.md) for same-filesystem configuration, lim
 Claude and Codex now expose a parent-authorized sub-agent catalog and paginated conversation reader through **Agent tasks → Sub-agent conversations** in web and Android 0.1.16. Codex requires explicit `thread_spawn.parent_thread_id` metadata; Claude requires its native parent-owned `subagents` folder. Fred's transcript survey discovered 311 children across 58 readable parent sessions and loaded a real child history. Stable source IDs prevent replay duplicates. This does not add child control or attachment/interactive artifact capabilities. Other harnesses explicitly show that linked child reading is not available.
 
 Task lists include DSH's `todo_write`, Claude `TodoWrite`, Codex `update_plan`/`functions.update_plan`, and native plan events. Free-form prose is not guessed into tasks; Claude's newer TaskCreate/TaskUpdate tools still need separate support.
+
+DSH child sessions (native `origin: subagent`) are read-only in Relay. Their
+history and live follow stream use DSH's durable subagent address, including
+the native parent ID, child ID and declared mode. Treating these rows as ordinary
+sessions produces `session/agent-busy` and prevents the conversation loading.
+Relay retains the native ownership boundary: send, steer, queue, cancellation,
+question responses, permission changes, attachments and model changes remain
+available through the parent workflow rather than direct child controls.
+Missing parent addresses fail closed. This gateway capability projection applies
+to both web and Android; no DSH host restart or transcript changes are required.

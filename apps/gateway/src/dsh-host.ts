@@ -54,6 +54,15 @@ export class DshHost {
         seen.add(id);
         const old = existing.get(id);
         const p = row.projections?.values ?? {};
+        const child =
+          row.origin === 'subagent'
+            ? {
+                parentSessionId: row.parentSessionId ?? '',
+                mode: (['one-shot', 'continuable'].includes(p.subagent?.mode)
+                  ? p.subagent.mode
+                  : 'unknown') as 'one-shot' | 'continuable' | 'unknown',
+              }
+            : undefined;
         const selection = p.modelSelection?.next ?? p.modelSelection?.lastUsed;
         const session: Session = {
           id,
@@ -70,17 +79,21 @@ export class DshHost {
           status: this.questions.hasPending(row.sessionId) ? 'blocked' : dshStatus(row),
           ownership: 'observed',
           presence: row.agentAvailable ? 'live' : 'saved',
-          capabilities: capabilities([
-            'readConversation',
-            'streamConversation',
-            'sendMessage',
-            'changeModel',
-            'steerActiveTurn',
-            'queueTask',
-            'answerQuestion',
-            ...(row.agentAvailable ? ['interruptTurn' as const] : []),
-            ...(this.attachments && this.attachmentSupport ? ['attachFiles' as const] : []),
-          ]),
+          capabilities: capabilities(
+            child
+              ? ['readConversation', 'streamConversation']
+              : [
+                  'readConversation',
+                  'streamConversation',
+                  'sendMessage',
+                  'changeModel',
+                  'steerActiveTurn',
+                  'queueTask',
+                  'answerQuestion',
+                  ...(row.agentAvailable ? ['interruptTurn' as const] : []),
+                  ...(this.attachments && this.attachmentSupport ? ['attachFiles' as const] : []),
+                ],
+          ),
           lastActivity: new Date(row.updatedAt).toISOString(),
           preview: old?.preview ?? '',
           generation: createHash('sha256')
@@ -91,8 +104,9 @@ export class DshHost {
           model: selection?.model,
           agentPreset: typeof p.agentPreset === 'string' ? p.agentPreset : undefined,
           modelUpdatedAt: old?.modelUpdatedAt,
-          diagnostic:
-            'Connected to the existing DSH web host. Native questions are connected. Session permission presets are managed through the native DSH connection.',
+          diagnostic: child
+            ? 'Read-only DSH sub-agent. Send instructions through its parent session.'
+            : 'Connected to the existing DSH web host. Native questions are connected. Session permission presets are managed through the native DSH connection.',
         };
         this.store.saveSession(session);
         if (!this.adapters.has(id))
@@ -113,6 +127,7 @@ export class DshHost {
               this.attachments && this.attachmentSupport
                 ? (session, event) => this.attachments!.nativeEvent(session, event)
                 : undefined,
+              child,
             ),
           );
       }

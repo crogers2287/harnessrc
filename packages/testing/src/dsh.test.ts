@@ -288,3 +288,134 @@ test('DSH discovery, paginated history, native model selection, steering and rec
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test('DSH child history uses its durable parent address and exposes read-only controls', async () => {
+  const { mkdtemp, writeFile, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { Store } = await import('@harnessrc/storage');
+  const { DshHost } = await import('../../../apps/gateway/src/dsh-host.ts');
+  const { WebSocketServer } = await import('ws');
+  const { eventually } = await import('./helpers.ts');
+  const directory = await mkdtemp(join(tmpdir(), 'dsh-child-'));
+  const tokenFile = join(directory, 'token');
+  await writeFile(tokenFile, 't'.repeat(43), { mode: 0o600 });
+  const address = {
+    kind: 'subagent',
+    parentSessionId: 'parent',
+    childSessionId: 'child',
+    mode: 'continuable',
+  };
+  const calls: string[] = [];
+  let followed = false;
+  const server = createServer(async (req, res) => {
+    if (req.method === 'GET') {
+      res.writeHead(302, { 'set-cookie': 'dsh-auth-test=fixture', location: '/' });
+      res.end();
+      return;
+    }
+    let raw = '';
+    for await (const chunk of req) raw += chunk;
+    const body = JSON.parse(raw);
+    calls.push(body.method);
+    let value: unknown;
+    if (body.method === 'session/list')
+      value = {
+        items: [
+          {
+            sessionId: 'child',
+            parentSessionId: 'parent',
+            origin: 'subagent',
+            updatedAt: Date.now(),
+            running: true,
+            agentAvailable: true,
+            projections: {
+              asOfSeq: 0,
+              values: { title: 'Child job', subagent: { mode: 'continuable' } },
+            },
+          },
+        ],
+      };
+    else if (body.method === 'session/projections') value = { asOfSeq: 0, values: {} };
+    else if (body.method === 'session/page') {
+      assert.deepEqual(body.payload.args.request.address, address);
+      value = {
+        records: [
+          {
+            type: 'event',
+            event: {
+              seq: 0,
+              time: Date.now(),
+              type: 'assistant/message',
+              data: {
+                turn: 1,
+                step: 0,
+                message: { content: [{ type: 'text', text: 'Child response' }] },
+              },
+            },
+          },
+        ],
+        hasMore: false,
+      };
+    } else assert.fail(`Unexpected native write: ${body.method}`);
+    res.setHeader('content-type', 'application/json');
+    res.end(
+      JSON.stringify({ type: 'server-response', rpcId: body.rpcId, result: { ok: true, value } }),
+    );
+  });
+  const ws = new WebSocketServer({ server });
+  ws.on('connection', (socket) =>
+    socket.on('message', (raw) => {
+      const body = JSON.parse(raw.toString());
+      if (body.endpoint === 'session/follow') {
+        assert.deepEqual(body.payload.args.request.address, address);
+        followed = true;
+      }
+    }),
+  );
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const store = new Store(':memory:');
+  const endpoint = `http://127.0.0.1:${(server.address() as any).port}`;
+  const host = new DshHost({ id: 'dsh', name: 'DSH', endpoint, tokenFile }, store);
+  try {
+    await host.refresh();
+    const session = store.sessions()[0];
+    assert.match(session.diagnostic!, /Read-only DSH sub-agent/);
+    assert.equal(session.capabilities.readConversation, true);
+    for (const capability of [
+      'sendMessage',
+      'steerActiveTurn',
+      'queueTask',
+      'answerQuestion',
+      'interruptTurn',
+      'changeModel',
+      'attachFiles',
+    ])
+      assert.equal(session.capabilities[capability], false);
+    const adapter = host.adapters.get(session.id)!;
+    adapter.watch(session);
+    const events = await adapter.read(session);
+    assert.equal(events[0].data.text, 'Child response');
+    await eventually(() => followed);
+    const before = calls.length;
+    await assert.rejects(adapter.send(session, {} as any), /read-only/);
+    await assert.rejects(adapter.steer(session, 'change work'), /read-only/);
+    await assert.rejects(adapter.interrupt(session), /read-only/);
+    await assert.rejects(
+      adapter.setModel(session, { provider: 'test', model: 'test' }),
+      /read-only/,
+    );
+    await assert.rejects(adapter.setPermissions(session, 'full-access', 'custom'), /read-only/);
+    await assert.rejects(adapter.respond(session, {} as any, {}), /read-only/);
+    assert.equal((await adapter.permissions(session)).supported, false);
+    assert.deepEqual(await adapter.interactions(session), []);
+    assert.equal(calls.length, before);
+  } finally {
+    host.close();
+    for (const socket of ws.clients) socket.terminate();
+    await new Promise<void>((r) => ws.close(() => r()));
+    await new Promise<void>((r) => server.close(() => r()));
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});

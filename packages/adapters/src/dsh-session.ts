@@ -22,6 +22,8 @@ export const dshRowSchema = z.object({
   updatedAt: z.number(),
   running: z.boolean(),
   agentAvailable: z.boolean(),
+  parentSessionId: z.string().optional(),
+  origin: z.literal('subagent').optional(),
   cwd: z.string().optional(),
   projections: z
     .object({ asOfSeq: z.number(), values: z.record(z.string(), z.any()) })
@@ -36,6 +38,10 @@ const nativeEvent = z.object({
   surfaceOp: z.unknown().optional(),
   sourceEventSeqs: z.array(z.number()).optional(),
 });
+export type DshChildAddress = {
+  parentSessionId: string;
+  mode: 'one-shot' | 'continuable' | 'unknown';
+};
 export type DshRow = z.infer<typeof dshRowSchema>;
 export function dshStatus(row: DshRow): Session['status'] {
   const p = row.projections?.values ?? {};
@@ -157,8 +163,27 @@ export class DshAdapter implements Adapter {
     private questions?: DshQuestions,
     private attachment?: (session: Session, id: string) => DshAttachment,
     private decorate?: (session: Session, event: SourceEvent) => SourceEvent,
+    private child?: DshChildAddress,
   ) {
-    this.capabilities.attachFiles = !!attachment;
+    if (child) this.capabilities = capabilities(['readConversation', 'streamConversation']);
+    else this.capabilities.attachFiles = !!attachment;
+  }
+  private assertWritable() {
+    if (this.child)
+      throw new Error(
+        'This DSH sub-agent is read-only. Send instructions through its parent session.',
+      );
+  }
+  private address(s: Session) {
+    if (!this.child) return { kind: 'session' as const, sessionId: s.nativeSessionId };
+    if (!this.child.parentSessionId)
+      throw new Error('The DSH sub-agent has no verified parent address.');
+    return {
+      kind: 'subagent' as const,
+      parentSessionId: this.child.parentSessionId,
+      childSessionId: s.nativeSessionId,
+      mode: this.child.mode,
+    };
   }
   private async input(s: Session, t: Pick<Task, 'id' | 'prompt' | 'attachments'>) {
     // Resolve and verify ALL owners/checksums before performing any native uploads.
@@ -183,6 +208,7 @@ export class DshAdapter implements Adapter {
     return { ...catalog, current: row.projections?.values.modelSelection?.next };
   }
   async setModel(s: Session, selection: ModelSelection): Promise<ModelCatalog> {
+    this.assertWritable();
     await this.native.selectModel(
       s.nativeSessionId,
       selection.provider,
@@ -192,6 +218,12 @@ export class DshAdapter implements Adapter {
     return this.models(s);
   }
   async permissions(s: Session): Promise<PermissionSettings> {
+    if (this.child)
+      return {
+        supported: false,
+        options: [],
+        reason: 'Manage this sub-agent through its parent session.',
+      };
     const row = await this.row(s);
     const current = row.projections?.values.permissions?.currentValue;
     if (typeof current !== 'string' || !row.agentAvailable)
@@ -211,6 +243,7 @@ export class DshAdapter implements Adapter {
     };
   }
   async setPermissions(s: Session, value: string, expected: string) {
+    this.assertWritable();
     const settings = await this.permissions(s);
     if (!settings.supported || settings.current !== expected)
       throw Object.assign(
@@ -239,13 +272,16 @@ export class DshAdapter implements Adapter {
       : dshStatus(await this.row(s));
   }
   async interactions(s: Session) {
+    if (this.child) return [];
     return this.questions?.interactions(s.nativeSessionId) ?? [];
   }
   validateInteractionResponse(s: Session, interaction: Interaction, response: unknown) {
+    this.assertWritable();
     if (!this.questions) throw new Error('DSH question channel unavailable');
     this.questions.validate(s.nativeSessionId, interaction.nativeRequestId, response);
   }
   async respond(s: Session, interaction: Interaction, response: unknown) {
+    this.assertWritable();
     await this.row(s);
     if (!this.questions) throw new Error('DSH question channel unavailable');
     await this.questions.respond(s.nativeSessionId, interaction.nativeRequestId, response);
@@ -279,7 +315,7 @@ export class DshAdapter implements Adapter {
         .parse(
           await this.native.call('session/page', {
             request: {
-              address: { kind: 'session', sessionId: s.nativeSessionId },
+              address: this.address(s),
               throughSeq: p.asOfSeq,
               maxMessages: 100,
               ...(before === undefined ? {} : { beforeSeq: before }),
@@ -301,6 +337,7 @@ export class DshAdapter implements Adapter {
     return fresh.flatMap((e) => this.events(s, e));
   }
   async send(s: Session, t: Task) {
+    this.assertWritable();
     if (!['idle', 'done'].includes(await this.turnState(s)))
       throw new DeliveryDeferred('DSH agent is busy');
     this.watch(s);
@@ -313,12 +350,14 @@ export class DshAdapter implements Adapter {
     _images?: string[],
     input?: Pick<Task, 'id' | 'prompt' | 'attachments'>,
   ) {
+    this.assertWritable();
     if ((await this.turnState(s)) !== 'working') throw new Error('DSH active turn has ended');
     const task = input ?? { id: randomUUID(), prompt, attachments: [] };
     this.watch(s);
     await this.native.prompt(s.nativeSessionId, task.id, await this.input(s, task), 'steer');
   }
   async interrupt(s: Session) {
+    this.assertWritable();
     const status = await this.turnState(s);
     if (!['working', 'blocked'].includes(status))
       throw new Error('There is no active turn to stop.');
@@ -374,7 +413,7 @@ export class DshAdapter implements Adapter {
             payload: {
               args: {
                 request: {
-                  address: { kind: 'session', sessionId: s.nativeSessionId },
+                  address: this.address(s),
                   maxMessages: 20,
                   assistantStream: true,
                 },
