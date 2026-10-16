@@ -353,6 +353,7 @@ export class ProviderSwaps {
               cwd: resolved,
               model: value.model,
               modelProvider: profile.codexProvider ?? 'openai',
+              config: await this.launcher.codexConfiguration(profile, value.model),
               excludeTurns: true,
               ...(permission?.sandbox ? { sandbox: permission.sandbox } : {}),
               ...(permission?.approvalPolicy ? { approvalPolicy: permission.approvalPolicy } : {}),

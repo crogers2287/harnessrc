@@ -266,6 +266,15 @@ export class Launcher {
       return p.models;
     }
   }
+  async codexConfiguration(p: LaunchProfile, model: string) {
+    if (p.harness !== 'codex' || p.provider.toLowerCase() !== 'cfrproxy') return {};
+    const context = (await this.models(p)).find((m) => m.id === model)?.contextWindow;
+    if (!context) return {};
+    return {
+      model_context_window: context,
+      model_auto_compact_token_limit: Math.floor(context * 0.95),
+    };
+  }
   async launchEnvironment(p: LaunchProfile, model: string) {
     const env: Record<string, string> = {};
     for (const [target, source] of Object.entries(p.environment)) {
@@ -408,6 +417,7 @@ export class Launcher {
             cwd: resolved,
             model: selectedModel,
             modelProvider: p.codexProvider,
+            config: await this.codexConfiguration(p, selectedModel ?? ''),
             ephemeral: false,
             ...(permission?.sandbox ? { sandbox: permission.sandbox } : {}),
             ...(permission?.approvalPolicy ? { approvalPolicy: permission.approvalPolicy } : {}),

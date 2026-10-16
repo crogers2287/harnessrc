@@ -78,3 +78,11 @@ intact and use a native compatible backend, or obtain the owner's choice to
 create a separate Herdr-owned conversation with a readable handoff and explicit
 links back to the original. Never delete opaque context, rewrite native
 transcripts, or claim a plaintext handoff preserves hidden model state.
+
+For Codex CFRproxy profiles, new threads and provider resumes also receive
+`model_context_window` from the selected model's trusted catalog metadata and
+an automatic compaction threshold at 95% of that window. Unknown models receive
+no invented context limit; native account profiles retain their own defaults.
+This prevents a large tool/system prefix from forcing compaction after every
+tool call simply because an unfamiliar provider-qualified ID used Codex's
+smaller fallback window.

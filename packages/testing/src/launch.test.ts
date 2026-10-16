@@ -600,3 +600,35 @@ test('Claude CFR launches pin internal model aliases and the advertised context 
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });
+
+test('Codex proxy context follows verified model metadata and leaves unknown/native models alone', async () => {
+  const store = new Store(':memory:');
+  const profile = launchProfileSchema.parse({
+    id: 'proxy',
+    hostId: 'host',
+    label: 'Proxy',
+    harness: 'codex',
+    provider: 'CFRproxy',
+    workspaceId: 'w1',
+    roots: [tmpdir()],
+    models: [{ id: 'command/model', name: 'Command', contextWindow: 1000000 }],
+  });
+  const launcher = new Launcher(store, [profile], new Map());
+  try {
+    assert.deepEqual(await launcher.codexConfiguration(profile, 'command/model'), {
+      model_context_window: 1000000,
+      model_auto_compact_token_limit: 950000,
+    });
+    assert.deepEqual(await launcher.codexConfiguration(profile, 'unknown'), {});
+    assert.deepEqual(
+      await launcher.codexConfiguration({ ...profile, provider: 'Codex account' }, 'command/model'),
+      {},
+    );
+    assert.deepEqual(
+      await launcher.codexConfiguration({ ...profile, harness: 'claude' }, 'command/model'),
+      {},
+    );
+  } finally {
+    store.close();
+  }
+});
