@@ -53,3 +53,11 @@ so Relay checks that the new pane still owns its idle shell, submits one quoted
 agent name. A lost command acknowledgement is uncertain and is never replayed.
 Harness-default profiles continue to use `agent.start`. The same start helper is
 used for initial sessions and provider swaps in both web and Android.
+
+### Late confirmation and restart conflicts — 2026-10-16
+
+A temporary Herdr managed name/readiness marker may disappear after reconnect even when the replacement has successfully resumed the conversation. Receipt checks can now confirm that already-bound replacement using the recorded pane/terminal, exact native conversation/harness, a fresh live-process binding check, and native idle/done state. A working, missing or replaced process remains uncertain. Recovery performs no process launch, closure or input submission.
+
+Before claiming a distinct restart, Relay attempts that read-only reconciliation of an older unfinished receipt. Unresolved receipts retain the unique per-session lock and return a descriptive HTTP 409 pointing to their original request ID. The atomic claim also rechecks exact request identity after asynchronous validation, so simultaneous identical requests allocate only one replacement instead of leaking a SQLite constraint error. The unique index is retained.
+
+Gateway `9825bff` was deployed and the old Hermes trouble receipt was verified as started with its process identity, terminal and native conversation unchanged; its queue remains paused. All 170 backend tests, TypeScript and ESLint passed, including late name-loss recovery, rejection of changed/working processes, distinct-request conflict handling, and concurrent identical-request deduplication. This shared gateway fix applies to both web and existing APKs; no native update is required.
