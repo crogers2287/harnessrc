@@ -95,3 +95,15 @@ constraints and client-owned calls are returned to the harness for execution.
 Native Responses providers retain their native tool protocol. Lifetime mode
 can compress older tool results, but does not shrink tool schemas and is not
 a replacement for tool discovery.
+
+Live validation (2026-10-16): Hermes trouble's linked Command conversation
+retained its native ID and working directory after a verified restart.
+Codex reported an effective 243,200-token window (its 95% safety margin below
+the configured 256,000 ceiling). After one initial compaction of the previous
+oversized state, a diagnostic completed three successive read-only command
+calls and a final reply without further compaction. Ordinary upstream input
+fell from about 261,000 tokens to 16,000–20,000. A second turn used on-demand
+namespace discovery to execute AI Session Search's read-only `get_index_status`
+and returned a final reply without another compaction. This verifies the
+specific repeated-prefix loop; it does not complete the separate personality
+investigation or certify every possible future workflow.
