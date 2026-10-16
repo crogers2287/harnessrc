@@ -61,3 +61,20 @@ A temporary Herdr managed name/readiness marker may disappear after reconnect ev
 Before claiming a distinct restart, Relay attempts that read-only reconciliation of an older unfinished receipt. Unresolved receipts retain the unique per-session lock and return a descriptive HTTP 409 pointing to their original request ID. The atomic claim also rechecks exact request identity after asynchronous validation, so simultaneous identical requests allocate only one replacement instead of leaking a SQLite constraint error. The unique index is retained.
 
 Gateway `9825bff` was deployed and the old Hermes trouble receipt was verified as started with its process identity, terminal and native conversation unchanged; its queue remains paused. All 170 backend tests, TypeScript and ESLint passed, including late name-loss recovery, rejection of changed/working processes, distinct-request conflict handling, and concurrent identical-request deduplication. This shared gateway fix applies to both web and existing APKs; no native update is required.
+
+### Remote Codex launch configuration — 2026-10-16
+
+New daemon-owned Codex threads receive provider, model and permission settings
+through `thread/start`. Their Herdr CLI then attaches with only `resume <id>
+--remote unix://<socket>`; local profile overrides and `--model` must not be
+passed to that remote attachment. Before submitting the first prompt, Relay
+reads back the exact native thread/provider/model, and leaves startup uncertain
+without submitting any instruction if those values do not match. Web and
+Android use this same launch path.
+
+An exact Codex provider swap cannot translate an encrypted Responses compaction
+item into another provider's readable history. Keep the original conversation
+intact and use a native compatible backend, or obtain the owner's choice to
+create a separate Herdr-owned conversation with a readable handoff and explicit
+links back to the original. Never delete opaque context, rewrite native
+transcripts, or claim a plaintext handoff preserves hidden model state.

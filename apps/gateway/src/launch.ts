@@ -442,11 +442,11 @@ export class Launcher {
               ...(receipt.nativeSessionId
                 ? ['resume', receipt.nativeSessionId, '--remote', `unix://${socket}`]
                 : []),
-              ...p.args,
+              ...(receipt.nativeSessionId ? [] : p.args),
               // Remote threads already received permissions through thread/start.
               // Codex rejects CLI permission overrides when resuming them.
               ...(receipt.nativeSessionId ? [] : (permission?.args ?? [])),
-              ...(selectedModel ? [p.modelFlag, selectedModel] : []),
+              ...(!receipt.nativeSessionId && selectedModel ? [p.modelFlag, selectedModel] : []),
             ],
             timeout_ms: 30000,
           });
@@ -535,6 +535,16 @@ export class Launcher {
           throw new Error('Native launch owner changed before first instruction');
         const native = new CodexDaemon(socket);
         try {
+          const state = await native.request('thread/resume', {
+            threadId: receipt.nativeSessionId,
+            excludeTurns: true,
+          });
+          if (
+            state.thread?.id !== receipt.nativeSessionId ||
+            (selectedModel && state.model !== selectedModel) ||
+            state.modelProvider !== (p.codexProvider ?? 'openai')
+          )
+            throw new Error('Native launch provider/model was not confirmed');
           const result = await native.request('turn/start', {
             threadId: receipt.nativeSessionId,
             clientUserMessageId: input.requestId,
