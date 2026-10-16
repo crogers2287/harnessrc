@@ -582,14 +582,21 @@ test('Claude CFR launches pin internal model aliases and the advertised context 
       'ANTHROPIC_DEFAULT_HAIKU_MODEL',
     ])
       assert.equal(env[key], 'codex/gpt-test');
-    assert.equal(env.CLAUDE_CODE_MAX_CONTEXT_TOKENS, '500000');
+    assert.equal(env.CLAUDE_CODE_MAX_CONTEXT_TOKENS, '256000');
+    assert.equal(env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, '256000');
+    assert.equal(env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE, '85');
     assert.equal(env.ANTHROPIC_CUSTOM_HEADERS, 'X-CFR-Model: codex/gpt-test');
     const unknown = await launcher.launchEnvironment(profile, 'custom/model');
     assert.equal(unknown.ANTHROPIC_MODEL, 'custom/model');
-    assert.equal(unknown.CLAUDE_CODE_MAX_CONTEXT_TOKENS, undefined);
+    assert.equal(unknown.CLAUDE_CODE_MAX_CONTEXT_TOKENS, '256000');
     assert.deepEqual(
       await launcher.launchEnvironment({ ...profile, provider: 'Harness default' }, 'native'),
-      {},
+      {
+        CLAUDE_CODE_MAX_CONTEXT_TOKENS: '256000',
+        CLAUDE_CODE_AUTO_COMPACT_WINDOW: '256000',
+        CLAUDE_AUTOCOMPACT_PCT_OVERRIDE: '85',
+        CLAUDE_CODE_DISABLE_1M_CONTEXT: '1',
+      },
     );
     assert.deepEqual(
       await launcher.launchEnvironment({ ...profile, harness: 'codex' }, 'native'),
@@ -601,7 +608,7 @@ test('Claude CFR launches pin internal model aliases and the advertised context 
   }
 });
 
-test('Codex proxy context follows verified model metadata and leaves unknown/native models alone', async () => {
+test('all Codex profiles enforce the context ceiling without raising smaller model limits', async () => {
   const store = new Store(':memory:');
   const profile = launchProfileSchema.parse({
     id: 'proxy',
@@ -616,17 +623,27 @@ test('Codex proxy context follows verified model metadata and leaves unknown/nat
   const launcher = new Launcher(store, [profile], new Map());
   try {
     assert.deepEqual(await launcher.codexConfiguration(profile, 'command/model'), {
-      model_context_window: 1000000,
-      model_auto_compact_token_limit: 950000,
+      model_context_window: 256000,
+      model_auto_compact_token_limit: 217600,
     });
-    assert.deepEqual(await launcher.codexConfiguration(profile, 'unknown'), {});
+    assert.deepEqual(await launcher.codexConfiguration(profile, 'unknown'), {
+      model_context_window: 256000,
+      model_auto_compact_token_limit: 217600,
+    });
     assert.deepEqual(
       await launcher.codexConfiguration({ ...profile, provider: 'Codex account' }, 'command/model'),
-      {},
+      { model_context_window: 256000, model_auto_compact_token_limit: 217600 },
     );
     assert.deepEqual(
       await launcher.codexConfiguration({ ...profile, harness: 'claude' }, 'command/model'),
       {},
+    );
+    assert.deepEqual(
+      await launcher.codexConfiguration(
+        { ...profile, models: [{ id: 'small', name: 'Small', contextWindow: 131072 }] },
+        'small',
+      ),
+      { model_context_window: 131072, model_auto_compact_token_limit: 111411 },
     );
   } finally {
     store.close();

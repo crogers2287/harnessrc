@@ -40,7 +40,7 @@ A disposable live Herdr/Codex test succeeded through CFRproxy: same UUID/CWD, ne
 
 ### Claude through CFRproxy: internal requests and context
 
-Relay supplies the selected provider/model as `ANTHROPIC_MODEL`, `ANTHROPIC_SMALL_FAST_MODEL`, and the default/Fable/Opus/Sonnet/Haiku model aliases on both new launches and exact-conversation restarts. Passing only `--model` leaves Claude's auxiliary requests able to use native aliases. The launch environment also carries `CLAUDE_CODE_MAX_CONTEXT_TOKENS` when the trusted model catalog advertises a positive context window. Unknown custom models receive no invented window; native-provider profiles and other harnesses retain their own environment behavior. These settings apply when the harness process starts; existing processes must be restarted through the verified provider-swap path to receive them.
+Relay supplies the selected provider/model as `ANTHROPIC_MODEL`, `ANTHROPIC_SMALL_FAST_MODEL`, and the default/Fable/Opus/Sonnet/Haiku model aliases on both new launches and exact-conversation restarts. Passing only `--model` leaves Claude's auxiliary requests able to use native aliases. All Claude launch profiles receive a 256,000-token context ceiling (or the selected model's smaller advertised limit), `CLAUDE_CODE_AUTO_COMPACT_WINDOW`, an 85% automatic compaction threshold, and `CLAUDE_CODE_DISABLE_1M_CONTEXT=1`. `CLAUDE_CODE_MAX_CONTEXT_TOKENS` is also set for CLI versions that honor it; automatic compaction remains enabled. These settings apply when the harness process starts; existing processes must be restarted through the verified provider-swap path to receive them.
 
 Claude 2.1.300 retains the previous response model in cached compaction parameters during cross-provider resume. CFRproxy launches send `X-CFR-Model` through the native `ANTHROPIC_CUSTOM_HEADERS` setting so authenticated ordinary proxy requests use the selected target even when the client sends an old native model name. This requires the matching CFRproxy update; shared endpoints retain their own model policy. Relay never rewrites native transcripts.
 
@@ -79,10 +79,19 @@ create a separate Herdr-owned conversation with a readable handoff and explicit
 links back to the original. Never delete opaque context, rewrite native
 transcripts, or claim a plaintext handoff preserves hidden model state.
 
-For Codex CFRproxy profiles, new threads and provider resumes also receive
-`model_context_window` from the selected model's trusted catalog metadata and
-an automatic compaction threshold at 95% of that window. Unknown models receive
-no invented context limit; native account profiles retain their own defaults.
-This prevents a large tool/system prefix from forcing compaction after every
-tool call simply because an unfamiliar provider-qualified ID used Codex's
-smaller fallback window.
+All Codex launch profiles, including native accounts, receive a maximum configured
+`model_context_window` of 256,000 tokens and `model_auto_compact_token_limit`
+at 85% of that window. Smaller advertised model windows remain smaller;
+unknown models use the operator ceiling. Codex may apply a safety margin or
+an internal model maximum, so its reported effective window can be lower.
+These settings apply to new threads and verified provider resumes; an already
+loaded runtime must be unloaded/resumed before configuration takes effect.
+
+Context limits alone cannot fix an oversized tool prefix. For translated
+Responses backends, the matching CFRproxy update exposes large namespace
+catalogs through bounded, request-scoped `cfr_find_tools` discovery instead of
+sending every complete schema on each call. Selected schemas retain their
+constraints and client-owned calls are returned to the harness for execution.
+Native Responses providers retain their native tool protocol. Lifetime mode
+can compress older tool results, but does not shrink tool schemas and is not
+a replacement for tool discovery.

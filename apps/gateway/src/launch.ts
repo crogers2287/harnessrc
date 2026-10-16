@@ -69,6 +69,8 @@ export type LaunchReceipt = {
 const within = (root: string, candidate: string) =>
   candidate === root || candidate.startsWith(root + path.sep);
 
+export const HARNESS_CONTEXT_LIMIT = 256_000;
+
 export class Launcher {
   constructor(
     private store: Store,
@@ -216,6 +218,16 @@ export class Launcher {
     { at: number; models: { id: string; name: string; contextWindow?: number }[] }
   >();
   async models(p: LaunchProfile): Promise<{ id: string; name: string; contextWindow?: number }[]> {
+    return (await this.uncappedModels(p)).map((m) => ({
+      ...m,
+      ...(m.contextWindow
+        ? { contextWindow: Math.min(m.contextWindow, HARNESS_CONTEXT_LIMIT) }
+        : {}),
+    }));
+  }
+  private async uncappedModels(
+    p: LaunchProfile,
+  ): Promise<{ id: string; name: string; contextWindow?: number }[]> {
     if (p.harness === 'dsh') {
       const host = this.dshHosts.get(p.hostId);
       if (!host?.connected) return [];
@@ -267,12 +279,12 @@ export class Launcher {
     }
   }
   async codexConfiguration(p: LaunchProfile, model: string) {
-    if (p.harness !== 'codex' || p.provider.toLowerCase() !== 'cfrproxy') return {};
-    const context = (await this.models(p)).find((m) => m.id === model)?.contextWindow;
-    if (!context) return {};
+    if (p.harness !== 'codex') return {};
+    const context =
+      (await this.models(p)).find((m) => m.id === model)?.contextWindow ?? HARNESS_CONTEXT_LIMIT;
     return {
       model_context_window: context,
-      model_auto_compact_token_limit: Math.floor(context * 0.95),
+      model_auto_compact_token_limit: Math.floor(context * 0.85),
     };
   }
   async launchEnvironment(p: LaunchProfile, model: string) {
@@ -281,6 +293,14 @@ export class Launcher {
       const value = process.env[source];
       if (!value) throw new Error('Provider credentials are not configured on this host');
       env[target] = value;
+    }
+    if (p.harness === 'claude') {
+      const context =
+        (await this.models(p)).find((m) => m.id === model)?.contextWindow ?? HARNESS_CONTEXT_LIMIT;
+      env.CLAUDE_CODE_MAX_CONTEXT_TOKENS = String(context);
+      env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = String(context);
+      env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE = '85';
+      env.CLAUDE_CODE_DISABLE_1M_CONTEXT = '1';
     }
     if (p.harness === 'claude' && p.provider.toLowerCase() === 'cfrproxy' && model) {
       // Match CFRproxy's launcher: --model alone leaves internal/fast requests
@@ -297,8 +317,6 @@ export class Launcher {
       env.ANTHROPIC_DEFAULT_OPUS_MODEL = model;
       env.ANTHROPIC_DEFAULT_SONNET_MODEL = model;
       env.ANTHROPIC_DEFAULT_HAIKU_MODEL = model;
-      const context = (await this.models(p)).find((m) => m.id === model)?.contextWindow;
-      if (context) env.CLAUDE_CODE_MAX_CONTEXT_TOKENS = String(context);
     }
     return env;
   }
