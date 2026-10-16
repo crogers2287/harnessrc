@@ -48,6 +48,22 @@ export class ProviderSwaps {
       .get(id);
     return row ? (JSON.parse(String(row.receipt)) as SwapReceipt) : undefined;
   }
+  private inflight(id: string): SwapReceipt | undefined {
+    const row = this.runtime.store.db
+      .prepare(
+        "SELECT receipt FROM provider_swaps WHERE session_id=? AND json_extract(receipt,'$.status') IN ('restarting','uncertain')",
+      )
+      .get(id);
+    return row ? JSON.parse(String(row.receipt)) : undefined;
+  }
+  private conflict(receipt: SwapReceipt) {
+    return Object.assign(
+      new Error(
+        `A previous provider restart is still unconfirmed. Check restart ${receipt.requestId} before starting another. No additional session was started.`,
+      ),
+      { statusCode: 409 },
+    );
+  }
   async inspect(id: string) {
     const receipt = this.receipt(id);
     if (
@@ -64,12 +80,24 @@ export class ProviderSwaps {
     const { agent } = await client.request('agent.get', { target: receipt.paneId });
     if (
       agent.terminal_id !== receipt.terminalId ||
-      agent.name !== name ||
       agent.agent !== s.harness ||
-      agent.agent_session?.value !== s.nativeSessionId ||
-      !(await harnessReady(client, agent))
+      agent.agent_session?.value !== s.nativeSessionId
     )
       return receipt;
+    let ready = agent.name === name && (await harnessReady(client, agent));
+    // Herdr can lose its temporary managed name/readiness after reconnecting.
+    // A replacement already bound by Relay can instead prove its exact live
+    // process identity and native idle state. This never sends input or starts it.
+    if (!ready && s.terminalId === receipt.terminalId && s.paneId === receipt.paneId) {
+      try {
+        await this.runtime.assertBinding(s);
+        const state = await this.runtime.adapters.get(s.id)?.turnState?.(s);
+        ready = ['idle', 'done'].includes(state ?? '');
+      } catch {
+        return receipt;
+      }
+    }
+    if (!ready) return receipt;
     await this.runtime.refresh(s.hostId);
     if (this.runtime.store.session(s.id).terminalId !== receipt.terminalId) return receipt;
     const current = this.runtime.store.session(s.id);
@@ -141,13 +169,28 @@ export class ProviderSwaps {
     const value = swapInput.parse(input),
       store = this.runtime.store;
     const fingerprint = JSON.stringify({ sessionId: id, ...value });
-    const prior = store.db
-      .prepare('SELECT fingerprint,receipt FROM provider_swaps WHERE id=?')
-      .get(value.requestId);
-    if (prior) {
+    const priorReceipt = () => {
+      const prior = store.db
+        .prepare('SELECT fingerprint,receipt FROM provider_swaps WHERE id=?')
+        .get(value.requestId);
+      if (!prior) return undefined;
       if (prior.fingerprint !== fingerprint)
         throw new Error('Restart request ID was used for different settings');
-      return JSON.parse(String(prior.receipt));
+      return JSON.parse(String(prior.receipt)) as SwapReceipt;
+    };
+    const prior = priorReceipt();
+    if (prior) return prior;
+    const active = this.inflight(id);
+    if (active) {
+      // Reconcile late confirmation before claiming a distinct restart. An
+      // unresolved operation still owns its lock; never delete it to retry.
+      try {
+        await this.inspect(active.requestId);
+      } catch {
+        /* Keep the lock. */
+      }
+      const unresolved = this.inflight(id);
+      if (unresolved) throw this.conflict(unresolved);
     }
     const s = store.session(id);
     if (s.generation !== value.generation || !s.connected)
@@ -223,7 +266,13 @@ export class ProviderSwaps {
         .prepare('UPDATE provider_swaps SET receipt=? WHERE id=?')
         .run(JSON.stringify(receipt), value.requestId);
     // Re-check generation and claim atomically before the first lifecycle mutation.
-    store.transaction(() => {
+    const raced = store.transaction(() => {
+      // Validation above awaits native calls. Another HTTP request can claim
+      // during those awaits, including a replay of this exact request UUID.
+      const duplicate = priorReceipt();
+      if (duplicate) return duplicate;
+      const other = this.inflight(id);
+      if (other) throw this.conflict(other);
       if (store.session(id).generation !== value.generation)
         throw new Error('Session owner changed');
       store.db
@@ -240,6 +289,7 @@ export class ProviderSwaps {
         permission: value.permission,
       });
     });
+    if (raced) return raced;
     try {
       const client = this.runtime.clients.get(s.hostId)!;
       receipt.phase = 'prepare';

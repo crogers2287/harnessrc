@@ -316,3 +316,88 @@ test('native child work prevents archival and an archive acknowledgement loss st
   assert.equal(archives, 1);
   assert.equal(restores, 1);
 });
+
+test('late confirmation recovers an already bound native owner after Herdr loses its managed name', async () => {
+  const f = await setup();
+  try {
+    const receipt = await f.swaps.restart(f.session.id, f.input, 'device');
+    receipt.status = 'uncertain';
+    receipt.phase = 'confirm';
+    f.gateway.store.db
+      .prepare('UPDATE provider_swaps SET receipt=? WHERE id=?')
+      .run(JSON.stringify(receipt), receipt.requestId);
+    const request = f.client.request.bind(f.client);
+    f.client.request = async (method, params) => {
+      const result = await request(method, params);
+      if (method === 'agent.get') {
+        delete result.agent.name;
+        delete result.agent.interactive_ready;
+      }
+      return result;
+    };
+    const offset = f.calls.length;
+    f.gateway.runtime.adapters.set(f.session.id, { turnState: async () => 'working' } as any);
+    assert.equal((await f.swaps.inspect(receipt.requestId))?.status, 'uncertain');
+    f.gateway.runtime.adapters.set(f.session.id, { turnState: async () => 'idle' } as any);
+    const binding = f.gateway.runtime.assertBinding;
+    f.gateway.runtime.assertBinding = async () => {
+      throw new Error('Process replaced');
+    };
+    assert.equal((await f.swaps.inspect(receipt.requestId))?.status, 'uncertain');
+    f.gateway.runtime.assertBinding = binding;
+    assert.equal((await f.swaps.inspect(receipt.requestId))?.status, 'started');
+    assert.ok(f.calls.slice(offset).every((c) => c.method === 'agent.get'));
+    assert.equal(f.gateway.store.session(f.session.id).queuePaused, true);
+  } finally {
+    await f.close();
+  }
+});
+
+test('a distinct restart reconciles late completion, while an unresolved restart returns a useful conflict', async () => {
+  const f = await setup();
+  try {
+    const receipt = await f.swaps.restart(f.session.id, f.input, 'device');
+    receipt.status = 'uncertain';
+    receipt.phase = 'start';
+    const save = () =>
+      f.gateway.store.db
+        .prepare('UPDATE provider_swaps SET receipt=? WHERE id=?')
+        .run(JSON.stringify(receipt), receipt.requestId);
+    save();
+    const input = { ...f.input, requestId: randomUUID(), generation: 'resumed-owner' };
+    const offset = f.calls.length;
+    await assert.rejects(
+      f.swaps.restart(f.session.id, input, 'device'),
+      (error: any) =>
+        error.statusCode === 409 &&
+        error.message.includes(receipt.requestId) &&
+        !error.message.includes('UNIQUE'),
+    );
+    assert.equal(f.calls.length, offset);
+    assert.equal(f.swaps.receipt(input.requestId), undefined);
+    receipt.phase = 'confirm';
+    save();
+    const next = await f.swaps.restart(f.session.id, input, 'device');
+    assert.equal(f.swaps.receipt(receipt.requestId)?.status, 'started');
+    assert.equal(next.status, 'started');
+    assert.equal(f.calls.filter((c) => c.method === 'tab.create').length, 2);
+  } finally {
+    await f.close();
+  }
+});
+
+test('concurrent identical restart requests claim only one replacement', async () => {
+  const f = await setup();
+  try {
+    const results = await Promise.all([
+      f.swaps.restart(f.session.id, f.input, 'device'),
+      f.swaps.restart(f.session.id, f.input, 'device'),
+    ]);
+    assert.ok(results.every((r) => r.requestId === f.input.requestId));
+    assert.equal(f.swaps.receipt(f.input.requestId)?.status, 'started');
+    assert.equal(f.calls.filter((c) => c.method === 'tab.create').length, 1);
+    assert.equal(f.calls.filter((c) => c.method === 'pane.close').length, 1);
+  } finally {
+    await f.close();
+  }
+});
