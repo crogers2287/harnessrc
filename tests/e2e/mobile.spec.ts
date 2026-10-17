@@ -2829,3 +2829,109 @@ test('QOL text artifact preview and share preserve the exact file bytes', async 
   expect(await readFile((await file.path())!, 'utf8')).toBe(content);
   await page.screenshot({ path: 'test-results/qol-document-preview.png' });
 });
+
+for (const width of [1280, 390]) {
+  test(`browser text selection stays intact across scrolling and live updates (${width}px)`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await pair(page);
+    const { sessions } = await page.evaluate(async () => (await fetch('/api/sessions')).json());
+    const session = { ...sessions[0], status: 'working', sessionName: 'Selection acceptance' };
+    const events = Array.from({ length: 40 }, (_, index) => ({
+      id: `selection-${index}`,
+      sourceId: `selection-native-${index}`,
+      sequence: index + 1,
+      sessionId: session.id,
+      nativeSessionId: session.nativeSessionId,
+      source: 'mock',
+      kind: index % 2 ? 'assistant.message' : 'user.message',
+      timestamp: new Date().toISOString(),
+      data: {
+        text:
+          `Selection message ${index}: ` +
+          'Readable content with a stable place in the conversation. '.repeat(3),
+      },
+    }));
+    let stream: any;
+    await page.route('**/api/sessions', (route) =>
+      route.fulfill({ json: { sessions: [session] } }),
+    );
+    await page.route(`**/api/sessions/${session.id}`, (route) =>
+      route.fulfill({ json: { session, tasks: [], interactions: [] } }),
+    );
+    await page.route('**/events?*', (route) => route.fulfill({ json: { events } }));
+    await page.routeWebSocket('**/ws', (socket) => {
+      stream = socket;
+      socket.send(JSON.stringify({ type: 'invalidate', sessions: [session] }));
+    });
+    await page.reload();
+    await openSessions(page);
+    await page.locator('button.session-row').filter({ hasText: 'Selection acceptance' }).click();
+    const pane = page.locator('.conversation-scroll');
+    await pane.evaluate((element) => {
+      element.scrollTop = 0;
+    });
+    // Both endpoints must remain available even when they are many screens apart.
+    const paragraphs = page.locator('.transcript .message-content .markdown-paragraph');
+    await expect(paragraphs).toHaveCount(40);
+    const points = await paragraphs.first().evaluate((element) => {
+      const node = element.firstChild!;
+      const range = document.createRange();
+      range.setStart(node, 0);
+      range.setEnd(node, 9);
+      const box = range.getBoundingClientRect();
+      return { x: box.x, right: box.right, y: box.y + box.height / 2 };
+    });
+    await page.mouse.move(points.x + 1, points.y);
+    await page.mouse.down();
+    await page.mouse.move(points.right, points.y, { steps: 12 });
+    await page.mouse.up();
+    await expect
+      .poll(() => page.evaluate(() => window.getSelection()?.toString()))
+      .toMatch(/^Selection/);
+    const selected = await paragraphs.evaluateAll((elements) => {
+      const selection = window.getSelection()!;
+      const range = document.createRange();
+      range.setStart(elements[0].firstChild!, 0);
+      range.setEnd(elements[20].firstChild!, 21);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      return selection.toString();
+    });
+    expect(selected).toContain('Selection message 10:');
+    expect(selected).toContain('Selection message 20:');
+    await expect(page.getByRole('button', { name: 'Latest messages', exact: true })).toBeVisible();
+    await pane.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    for (let index = 0; index < 3; index++)
+      stream.send(
+        JSON.stringify({
+          type: 'event',
+          event: {
+            ...events[0],
+            id: `selection-delta-${index}`,
+            sequence: 41 + index,
+            kind: 'assistant.delta',
+            data: {
+              itemId: 'selection-live-reply',
+              text: ['A new ', 'streamed ', 'reply.'][index],
+            },
+          },
+        }),
+      );
+    await expect(page.getByText('A new streamed reply.', { exact: true })).toBeAttached();
+    await page.waitForTimeout(1200); // Include the receipt clock's periodic render.
+    expect(await page.evaluate(() => window.getSelection()?.toString())).toBe(selected);
+    expect(await page.evaluate(() => window.getSelection()?.anchorNode?.isConnected)).toBe(true);
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+    await page.keyboard.press('Control+c');
+    const copied = await page.evaluate(() => navigator.clipboard.readText());
+    expect(copied.match(/Selection message \d+:/g)).toEqual(
+      selected.match(/Selection message \d+:/g),
+    );
+    expect(copied).not.toContain('A new streamed reply.');
+    await page.screenshot({ path: `test-results/selection-${width}.png` });
+  });
+}

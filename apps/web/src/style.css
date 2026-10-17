@@ -3454,9 +3454,9 @@ body,
 .sent-attachment audio {
   width: 100%;
 }
-/* Virtualizer owns anchor correction; browser anchoring must not compensate a second time. */
+/* Natural-flow messages retain selection endpoints and the browser's reading anchor. */
 .conversation-scroll {
-  overflow-anchor: none;
+  overflow-anchor: auto;
   scroll-behavior: auto;
 }
 /* A contenteditable grows naturally. Resetting its height on each keystroke moves the caret. */

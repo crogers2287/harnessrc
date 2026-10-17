@@ -14,14 +14,7 @@ function RichResponse(props: import('./RichResponse.tsx').RichProps) {
 import { responseParts } from '@harnessrc/protocol';
 import { SessionPermissions } from './SessionPermissions.tsx';
 import { watchMobileBack } from './navigation.ts';
-import {
-  NativeFileLink,
-  GatewayFileLink,
-  NativeMedia,
-  NativeMediaGallery,
-  MediaPreviewProvider,
-} from './NativeMedia.tsx';
-import { nativeFiles } from '@harnessrc/protocol';
+import { NativeMediaGallery, MediaPreviewProvider } from './NativeMedia.tsx';
 import { notifyEvent } from './notifications.ts';
 import { DshQuestions } from './DshQuestions.tsx';
 import { SessionRow, sessionLabel } from './SessionActions.tsx';
@@ -44,10 +37,7 @@ import { NewSession } from './NewSession.tsx';
 import { SessionDrawer } from './SessionDrawer.tsx';
 import { useEffect, useRef, useState, useMemo, type FormEvent, type ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useVirtualizer } from '@tanstack/react-virtual';
-import Markdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import rehypeHighlight from 'rehype-highlight';
+import { MessageMarkdown } from './MessageMarkdown.tsx';
 import {
   ArrowLeft,
   ArrowDown,
@@ -134,55 +124,7 @@ function Mark({ text, event, plain = false }: { text: string; event?: Event; pla
         </>
       );
   }
-  return (
-    <Markdown
-      remarkPlugins={[remarkGfm]}
-      rehypePlugins={[rehypeHighlight]}
-      components={{
-        p: ({ children }) => <div className="markdown-paragraph">{children}</div>,
-        table: ({ children }) => (
-          <div
-            className="markdown-table-scroll"
-            tabIndex={0}
-            role="region"
-            aria-label="Scrollable table"
-          >
-            <table>{children}</table>
-          </div>
-        ),
-        a: ({ href, children }) => {
-          const index = event
-            ? nativeFiles(event).findIndex((f) => f.path === href || encodeURI(f.path) === href)
-            : -1;
-          return event && index >= 0 ? (
-            <NativeFileLink event={event} index={index}>
-              {children}
-            </NativeFileLink>
-          ) : /^\/api\/(?:android\/apk|sessions\/[^/]+\/(?:attachments\/[a-fA-F0-9-]{36}|media\/[a-fA-F0-9-]{36}\/\d{1,2}))$/.test(
-              href || '',
-            ) ? (
-            <GatewayFileLink path={href!}>{children}</GatewayFileLink>
-          ) : (
-            <a href={href} target="_blank" rel="noopener noreferrer">
-              {children}
-            </a>
-          );
-        },
-        img: ({ src, alt }) => {
-          const index = event
-            ? nativeFiles(event).findIndex((f) => f.path === src || encodeURI(f.path) === src)
-            : -1;
-          return event && index >= 0 ? (
-            <NativeMedia event={event} index={index} />
-          ) : (
-            <img src={src} alt={alt ?? ''} loading="lazy" />
-          );
-        },
-      }}
-    >
-      {text}
-    </Markdown>
-  );
+  return <MessageMarkdown text={text} event={event} />;
 }
 export function App() {
   const query = useQueryClient();
@@ -727,6 +669,24 @@ function Conversation({
   const restored = useRef(false);
   const pinned = useRef(true);
   const transcript = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const pauseForSelection = () => {
+      const selection = window.getSelection();
+      const element = transcript.current;
+      if (
+        element &&
+        selection &&
+        !selection.isCollapsed &&
+        ((selection.anchorNode && element.contains(selection.anchorNode)) ||
+          (selection.focusNode && element.contains(selection.focusNode)))
+      ) {
+        pinned.current = false;
+        setAtBottom(false);
+      }
+    };
+    document.addEventListener('selectionchange', pauseForSelection);
+    return () => document.removeEventListener('selectionchange', pauseForSelection);
+  }, []);
   const submission = useRef<
     | { prompt: string; key: string; attachments: string[]; mode: string; voiceToken?: number }
     | undefined
@@ -741,16 +701,6 @@ function Conversation({
     () => conversationItems(merged, preferences.activity),
     [merged, preferences.activity],
   );
-  const virtual = useVirtualizer({
-    count: visible.length,
-    getScrollElement: () => scroll.current,
-    estimateSize: () => 140,
-    overscan: 5,
-    getItemKey: (index) => visible[index].id,
-  });
-  // Preserve the reader's anchor; a single frame callback owns bottom following.
-  virtual.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) =>
-    !pinned.current && item.end <= (instance.scrollOffset ?? 0);
   useEffect(() => {
     drafts.set(session.id, draft);
     try {
@@ -777,13 +727,13 @@ function Conversation({
       if (offset !== undefined) {
         pinned.current = false;
         setAtBottom(false);
-        virtual.scrollToOffset(offset);
-      } else virtual.scrollToOffset(virtual.getTotalSize(), { align: 'end' });
+        if (scroll.current) scroll.current.scrollTop = offset;
+      } else if (scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight;
       restored.current = true;
     }
     if (pinned.current && visible.length !== lastCount.current) followLatest();
     lastCount.current = visible.length;
-  }, [visible.length, virtual, session.id, route.view]);
+  }, [visible.length, session.id, route.view]);
   useEffect(() => {
     const element = transcript.current;
     if (!element) return;
@@ -1115,7 +1065,7 @@ function Conversation({
         onScroll={() => {
           if (scroll.current) {
             scrollPositions.set(session.id, scroll.current.scrollTop);
-            // Layout/virtualizer scroll events must never resume following.
+            // Layout-induced scroll events must never resume following.
             if (
               scroll.current.scrollHeight -
                 scroll.current.scrollTop -
@@ -1159,34 +1109,19 @@ function Conversation({
                 : 'Ask a question, describe a change, or attach a file to get started.'}
           </Empty>
         )}
-        <div
-          className="transcript"
-          ref={transcript}
-          style={{ height: virtual.getTotalSize(), position: 'relative' }}
-        >
-          {virtual.getVirtualItems().map((row) => (
-            <div
-              key={row.key}
-              data-index={row.index}
-              ref={virtual.measureElement}
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                transform: `translateY(${row.start}px)`,
-              }}
-            >
+        <div className="transcript" ref={transcript}>
+          {visible.map((event) => (
+            <div key={event.id} data-event-id={event.id}>
               <RichActionContext.Provider
                 value={(text) => setDraft((current) => (current ? `${current}\n${text}` : text))}
               >
                 <EventCard
-                  event={visible[row.index]}
+                  event={event}
                   deliveryLabel={
-                    visible[row.index].kind === 'user.message'
+                    event.kind === 'user.message'
                       ? merged.some(
                           (e) =>
-                            e.sequence > visible[row.index].sequence &&
+                            e.sequence > event.sequence &&
                             ['assistant.message', 'assistant.delta'].includes(e.kind),
                         )
                         ? 'Delivered · Agent responded'

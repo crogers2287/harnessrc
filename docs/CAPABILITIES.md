@@ -43,3 +43,11 @@ question responses, permission changes, attachments and model changes remain
 available through the parent workflow rather than direct child controls.
 Missing parent addresses fail closed. This gateway capability projection applies
 to both web and Android; no DSH host restart or transcript changes are required.
+
+Web conversation text uses natural document flow, with loaded message nodes kept
+mounted across scrolling. Markdown element types remain stable across clock and
+live-event updates; selecting transcript text suspends bottom following. Browser
+anchoring preserves the reading position as content changes. Earlier history is
+still loaded explicitly. Chromium desktop and phone-width regression checks cover
+mouse selection, selection across many messages, scrolling, incoming deltas, and
+clipboard order. The Android renderer is unchanged.
