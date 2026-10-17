@@ -23,7 +23,7 @@ for event in ['PreToolUse','PostToolUse','PostToolUseFailure']:
  groups=config.setdefault('hooks',{}).setdefault(event,[])
  for group in groups:
   group['hooks']=[h for h in group.get('hooks',[]) if 'claude-question-hook.mjs' not in h.get('command','')]
- groups.append({'matcher':'AskUserQuestion','hooks':[{'type':'command','command':question_command,'timeout':86400 if event=='PreToolUse' else 5}]})
+ groups.append({'matcher':'AskUserQuestion|ExitPlanMode','hooks':[{'type':'command','command':question_command,'timeout':86400 if event=='PreToolUse' else 5}]})
 permission_script=a.release/'scripts/claude-permission-hook.ts'
 loader=a.release/'node_modules/tsx/dist/loader.mjs'
 if not permission_script.is_file() or not loader.is_file():raise SystemExit('Permission hook or tsx loader missing from release')

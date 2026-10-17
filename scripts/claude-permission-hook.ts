@@ -54,6 +54,9 @@ export async function permissionHook(
           hookEventName: 'PermissionRequest',
           decision: {
             behavior,
+            ...(behavior === 'allow' && (payload as any)?.tool_name === 'ExitPlanMode'
+              ? { updatedInput: (payload as any).tool_input }
+              : {}),
             ...(behavior === 'deny' ? { message: 'Denied through Harness Remote' } : {}),
           },
         },

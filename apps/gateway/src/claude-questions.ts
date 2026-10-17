@@ -15,21 +15,31 @@ const questionSchema = z.object({
     .min(1)
     .max(20),
 });
-const payloadSchema = z.object({
+const hookPayload = z.object({
   session_id: z.string(),
   hook_event_name: z.enum(['PreToolUse', 'PostToolUse', 'PostToolUseFailure']),
-  tool_name: z.literal('AskUserQuestion'),
   tool_use_id: z.string().min(1).max(200),
   sender_pids: z.array(z.number().int().positive()).max(32),
   agent_id: z.string().optional(),
-  tool_input: z.object({
-    questions: z
-      .array(questionSchema)
-      .min(1)
-      .max(4)
-      .refine((q) => new Set(q.map((v) => v.question)).size === q.length),
-  }),
 });
+const payloadSchema = z.discriminatedUnion('tool_name', [
+  hookPayload.extend({
+    tool_name: z.literal('AskUserQuestion'),
+    tool_input: z
+      .object({
+        questions: z
+          .array(questionSchema)
+          .min(1)
+          .max(4)
+          .refine((q) => new Set(q.map((v) => v.question)).size === q.length),
+      })
+      .passthrough(),
+  }),
+  hookPayload.extend({
+    tool_name: z.literal('ExitPlanMode'),
+    tool_input: z.object({ plan: z.string().max(200000).optional() }).passthrough(),
+  }),
+]);
 const responseSchema = z.object({
   answers: z
     .array(
@@ -124,31 +134,60 @@ export class ClaudeQuestions {
       (interaction.generation !== s.generation || interaction.metadata.invocation !== invocation)
     )
       throw new Error('Question invocation changed');
+    const plan = h.tool_name === 'ExitPlanMode';
     if (!interaction || interaction.status === 'expired')
       interaction = this.runtime.broker.open(s.id, {
         nativeRequestId: nativeId,
-        type: 'single-choice',
-        prompt: h.tool_input.questions.map((q) => q.question).join('\n\n'),
+        type: plan ? 'command-approval' : 'single-choice',
+        prompt:
+          h.tool_name === 'ExitPlanMode'
+            ? `Approve this plan and continue?${h.tool_input.plan ? '\n\n' + h.tool_input.plan : ''}`
+            : h.tool_input.questions.map((q) => q.question).join('\n\n'),
+        ...(plan
+          ? {
+              choices: [
+                { id: 'allow', label: 'Approve plan and continue' },
+                { id: 'deny', label: 'Keep planning' },
+              ],
+            }
+          : {}),
         route: 'claude-hook',
         expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-        responseSchema: {
-          type: 'object',
-          required: ['answers'],
-          additionalProperties: false,
-          properties: { answers: {} },
-        },
-        metadata: {
-          questionFormat: 'choice-batch',
-          questions: h.tool_input.questions.map((q, index) => ({ ...q, id: String(index) })),
-          invocation,
-          toolUseId: h.tool_use_id,
-          dshQuestions: h.tool_input.questions.map((q, index) => ({ ...q, id: String(index) })),
-        },
+        responseSchema: plan
+          ? { type: 'string', enum: ['allow', 'deny'] }
+          : {
+              type: 'object',
+              required: ['answers'],
+              additionalProperties: false,
+              properties: { answers: {} },
+            },
+        metadata:
+          h.tool_name === 'ExitPlanMode'
+            ? {
+                tool: h.tool_name,
+                input: h.tool_input,
+                invocation,
+                toolUseId: h.tool_use_id,
+              }
+            : {
+                questionFormat: 'choice-batch',
+                questions: h.tool_input.questions.map((q, index) => ({ ...q, id: String(index) })),
+                invocation,
+                toolUseId: h.tool_use_id,
+                dshQuestions: h.tool_input.questions.map((q, index) => ({
+                  ...q,
+                  id: String(index),
+                })),
+              },
       });
     if (method === 'question-ack')
       return { output: {}, status: this.runtime.broker.acknowledge(interaction.id).status };
     interaction = this.runtime.broker.heartbeat(interaction.id);
-    s.capabilities = { ...s.capabilities, answerQuestion: true };
+    s.capabilities = {
+      ...s.capabilities,
+      answerQuestion: true,
+      ...(plan ? { approveAction: true, rejectAction: true } : {}),
+    };
     this.runtime.store.saveSession(s);
     if (interaction.status !== 'answered') return { status: interaction.status, output: {} };
     return {
@@ -156,11 +195,20 @@ export class ClaudeQuestions {
       output: {
         hookSpecificOutput: {
           hookEventName: 'PreToolUse',
-          permissionDecision: 'allow',
-          updatedInput: {
-            ...h.tool_input,
-            answers: this.answers(interaction, interaction.response),
-          },
+          ...(h.tool_name === 'ExitPlanMode'
+            ? interaction.response === 'allow'
+              ? { permissionDecision: 'allow', updatedInput: h.tool_input }
+              : {
+                  permissionDecision: 'deny',
+                  permissionDecisionReason: 'The user chose to keep planning in Relay.',
+                }
+            : {
+                permissionDecision: 'allow',
+                updatedInput: {
+                  ...h.tool_input,
+                  answers: this.answers(interaction, interaction.response),
+                },
+              }),
         },
       },
     };

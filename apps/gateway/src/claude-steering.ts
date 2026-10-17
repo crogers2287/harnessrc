@@ -119,7 +119,7 @@ export class ClaudeSteering {
       }
       return { output: {} };
     }
-    if (h.tool_name === 'AskUserQuestion') return { output: {} };
+    if (['AskUserQuestion', 'ExitPlanMode'].includes(h.tool_name ?? '')) return { output: {} };
     // Start/prompt hooks register support but must not turn an old steer into a new turn.
     if (['SessionStart', 'UserPromptSubmit'].includes(h.hook_event_name)) return { output: {} };
     if (

@@ -49,7 +49,7 @@ try {
     if (input.length > 256 * 1024) throw new Error('Hook input too large');
   }
   const payload = JSON.parse(input);
-  if (payload.agent_id || payload.tool_name !== 'AskUserQuestion')
+  if (payload.agent_id || !['AskUserQuestion', 'ExitPlanMode'].includes(payload.tool_name))
     throw new Error('Not a main-thread question');
   payload.sender_pids = ancestors();
   const socket = process.env.RC_HOOK_SOCKET;

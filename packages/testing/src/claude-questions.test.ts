@@ -203,3 +203,108 @@ test('installed standalone question hook waits, transmits exact updatedInput, an
     await f.close();
   }
 });
+
+for (const answer of ['allow', 'deny']) {
+  test(`Claude ExitPlanMode ${answer} waits for the exact user decision and finishes without a chat turn`, async () => {
+    const f = await fixture({ harness: 'claude', startRuntime: false });
+    const { startHookServer } = await import('../../../apps/gateway/src/hook-server.ts');
+    const socket = path.join(f.dir, 'plan.sock');
+    const server = await startHookServer(f.gateway.runtime, socket);
+    let child: ReturnType<typeof spawn> | undefined;
+    try {
+      const s = f.session;
+      f.gateway.store.saveSession({ ...s, processIdentity: `test:${process.pid}` });
+      f.gateway.runtime.assertBinding = async () => {};
+      child = spawn(process.execPath, ['scripts/claude-question-hook.mjs'], {
+        env: { ...process.env, RC_HOOK_SOCKET: socket },
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+      let output = '';
+      child.stdout!.on('data', (b) => (output += b.toString()));
+      const done = new Promise<void>((resolve, reject) => {
+        child!.on('exit', (code) =>
+          code === 0 ? resolve() : reject(new Error(`Hook exit ${code}`)),
+        );
+        child!.on('error', reject);
+      });
+      const input = {
+        plan: '# Proposed changes\nKeep the current permission policy.',
+        allowedPrompts: [],
+      };
+      const payload = {
+        session_id: s.nativeSessionId,
+        hook_event_name: 'PreToolUse',
+        tool_name: 'ExitPlanMode',
+        tool_use_id: `toolu_plan_${answer}`,
+        tool_input: input,
+      };
+      child.stdin!.end(JSON.stringify(payload));
+      await eventually(() => f.gateway.store.interactions(s.id).length === 1);
+      const interaction = f.gateway.store.interactions(s.id)[0];
+      assert.equal(output, '', 'never approve merely because the hook fired');
+      assert.equal(interaction.type, 'command-approval');
+      assert.match(interaction.prompt, /Proposed changes/);
+      const detail = (
+        await f.gateway.app.inject({
+          method: 'GET',
+          url: `/api/sessions/${s.id}`,
+          headers: f.headers,
+        })
+      ).json();
+      assert.equal(detail.interactions[0].status, 'pending');
+      assert.equal(detail.session.capabilities.approveAction, true);
+      await assert.rejects(
+        f.gateway.runtime.broker.respond(interaction.id, 'yes', 'device'),
+        /offered choice/,
+      );
+      await f.gateway.runtime.broker.respond(interaction.id, answer, 'device');
+      await done;
+      const result = JSON.parse(output).hookSpecificOutput;
+      assert.equal(result.hookEventName, 'PreToolUse');
+      assert.equal(result.permissionDecision, answer);
+      if (answer === 'allow') assert.deepEqual(result.updatedInput, input);
+      else assert.equal(result.updatedInput, undefined);
+      assert.equal(f.gateway.store.interaction(interaction.id).status, 'resolved');
+      assert.equal(f.gateway.store.tasks(s.id).length, 0);
+      assert.equal(f.mock.prompts.length, 0);
+    } finally {
+      child?.kill();
+      await new Promise<void>((r) => server.close(() => r()));
+      await f.close();
+    }
+  });
+}
+
+test('legacy Claude PermissionRequest plan approval includes the unchanged native tool input', async () => {
+  const f = await fixture({ harness: 'claude', startRuntime: false });
+  const { startHookServer } = await import('../../../apps/gateway/src/hook-server.ts');
+  const { permissionHook } = await import('../../../scripts/claude-permission-hook.ts');
+  const socket = path.join(f.dir, 'permission.sock');
+  const server = await startHookServer(f.gateway.runtime, socket);
+  try {
+    const input = {
+      plan: '# Keep this plan',
+      allowedPrompts: [{ tool: 'Bash', prompt: 'run tests' }],
+    };
+    const done = permissionHook(
+      socket,
+      {
+        session_id: f.session.nativeSessionId,
+        hook_event_name: 'PermissionRequest',
+        tool_name: 'ExitPlanMode',
+        tool_input: input,
+      },
+      5000,
+    );
+    await eventually(() => f.gateway.store.interactions(f.session.id).length === 1);
+    const i = f.gateway.store.interactions(f.session.id)[0];
+    await f.gateway.runtime.broker.respond(i.id, 'allow', 'device');
+    const output = await done;
+    assert.deepEqual(output.hookSpecificOutput!.decision.updatedInput, input);
+    assert.equal(output.hookSpecificOutput!.decision.behavior, 'allow');
+    assert.equal(f.mock.prompts.length, 0);
+  } finally {
+    await new Promise<void>((r) => server.close(() => r()));
+    await f.close();
+  }
+});

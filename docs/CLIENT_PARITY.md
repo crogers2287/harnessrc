@@ -254,3 +254,33 @@ Existing drafts and attachments survive quick replies. See
 The APK update is required for native menus/navigation. Shared backend handling
 alone does not add these controls to older APKs. Android instrumentation was
 compiled but cannot run with the currently missing disposable-emulator image.
+
+### Claude plan approvals and questions (2026-10-17)
+
+The shared Claude question hook now handles `ExitPlanMode` as an exact native tool
+interaction, alongside `AskUserQuestion`. Both clients receive the existing
+approval card with **Approve plan and continue** / **Keep planning** choices and
+the supplied plan text. Approval returns the unchanged tool input paired with
+`permissionDecision: allow`; rejection returns `deny`. Neither choice sends a
+chat turn or changes the session's permission policy. The steering mailbox skips
+these interactive tools so queued steering cannot contaminate the question.
+The PermissionRequest fallback used by already-running clients also returns
+`updatedInput` for approved `ExitPlanMode` requests; a bare allow is insufficient
+for this interactive tool in current Claude Code.
+
+The installer registers the narrow `AskUserQuestion|ExitPlanMode` matcher and
+preserves unrelated hooks. Existing hook commands use the `current` release path,
+so the fallback fix applies without restarting a working harness. A Claude
+process that snapshots hook matchers may need its normal hook reload or next
+resume to acquire the expanded PreToolUse matcher. An already-dismissed hook
+cannot retroactively receive an answer; do not manufacture a replacement question
+from transcript prose or bypass the native prompt with terminal keys.
+
+Tests cover both plan decisions through the standalone script/socket, unchanged
+plan input, exact response validation, approval capabilities, no extra chat/task,
+legacy PermissionRequest output, question batches and steering ownership fences.
+Both clients use their existing card components; no APK update is required.
+
+Validation: 180 backend tests and the two mobile-browser approval/Claude-question
+regressions pass, with TypeScript, scoped ESLint and formatting checks. Android UI
+code is unchanged; a fresh physical-device plan-approval check is outstanding.
