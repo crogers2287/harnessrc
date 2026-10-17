@@ -95,6 +95,15 @@ const config = configSchema.parse({
           sandbox: 'read-only',
           approvalPolicy: 'on-request',
         },
+        {
+          id: 'full-access',
+          name: 'Full access / YOLO',
+          description:
+            'Run without sandbox restrictions or approval prompts. Select only for work you trust.',
+          args: ['--sandbox', 'danger-full-access', '--ask-for-approval', 'never'],
+          sandbox: 'danger-full-access',
+          approvalPolicy: 'never',
+        },
       ],
     },
   ],

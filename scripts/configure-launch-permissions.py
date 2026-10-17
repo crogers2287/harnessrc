@@ -5,11 +5,19 @@ Does not change defaults or permissions on any running session.
 import argparse, json, os, shutil, time
 from pathlib import Path
 p = argparse.ArgumentParser()
-p.add_argument('--claude-bypass-only', action='store_true', help='Add the Claude bypass choice without replacing presets, defaults or other harness settings.')
+choices = p.add_mutually_exclusive_group()
+choices.add_argument('--claude-bypass-only', action='store_true', help='Add the Claude bypass choice without replacing presets, defaults or other harness settings.')
+choices.add_argument('--codex-full-access-only', action='store_true', help='Add the Codex full-access/YOLO choice without replacing presets, defaults or other harness settings.')
 p.add_argument('--config', type=Path, default=Path.home()/'.config/relay/config.json')
 a = p.parse_args()
 config = json.loads(a.config.read_text())
 for profile in config.get('launchProfiles', []):
+    if a.codex_full_access_only:
+        if profile.get('harness') == 'codex':
+            presets = profile.setdefault('permissionPresets', [])
+            if not any(preset.get('id') == 'full-access' for preset in presets):
+                presets.append(dict(id='full-access', name='Full access / YOLO', description='Run without sandbox restrictions or approval prompts. Select only for work you trust.', args=['--sandbox', 'danger-full-access', '--ask-for-approval', 'never'], sandbox='danger-full-access', approvalPolicy='never'))
+        continue
     if a.claude_bypass_only:
         if profile.get('harness') == 'claude':
             presets = profile.setdefault('permissionPresets', [])

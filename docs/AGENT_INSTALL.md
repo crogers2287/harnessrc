@@ -226,7 +226,7 @@ node --import tsx scripts/render-install-config.ts \
   > "$HOME/.config/relay/config.candidate.json"
 ```
 
-Review the candidate before activation. If `config.json` exists, back it up privately and merge; do not replace a config that already manages sessions. For a fresh install, activate the reviewed candidate with `install -m600 "$HOME/.config/relay/config.candidate.json" "$HOME/.config/relay/config.json"`. Output uses `hostId: local`, this user's home/transcript/project roots, localhost CFRproxy, and Claude/Codex launch profiles. It intentionally omits guessed Codex daemon paths, other hosts, Codex full-access presets, provider keys, voice servers and DSH tokens.
+Review the candidate before activation. If `config.json` exists, back it up privately and merge; do not replace a config that already manages sessions. For a fresh install, activate the reviewed candidate with `install -m600 "$HOME/.config/relay/config.candidate.json" "$HOME/.config/relay/config.json"`. Output uses `hostId: local`, this user's home/transcript/project roots, localhost CFRproxy, and Claude/Codex launch profiles. It intentionally omits guessed Codex daemon paths, other hosts, provider keys, voice servers and DSH tokens.
 
 Claude's launch selector includes **Ask when needed**, **Plan**, and **Bypass permissions**. Bypass is an explicit per-launch choice, mapped to `--dangerously-skip-permissions`; it is not the default. Web and Android read these choices from this server's launch profiles.
 
@@ -238,6 +238,8 @@ git pull --ff-only
 python3 scripts/configure-launch-permissions.py --claude-bypass-only
 systemctl --user restart relay.service
 ```
+
+For an existing Codex profile missing **Full access / YOLO**, use `python3 scripts/configure-launch-permissions.py --codex-full-access-only` instead, then restart Relay. Fresh generated Codex profiles include Workspace access, Read only, and Full access / YOLO. The latter maps to `--sandbox danger-full-access --ask-for-approval never`, including native daemon permission metadata; it is an explicit choice rather than the default.
 
 The command backs up the config privately, preserves existing presets/defaults and other harness settings, and does not change running sessions. Use `--config /actual/path/config.json` if the service reads a nonstandard configuration. Reopen New session in the app and select Claude → Bypass permissions.
 

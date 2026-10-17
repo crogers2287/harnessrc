@@ -29,3 +29,22 @@ Run from the updated Relay checkout on that installation's own server. Use
 `--config /actual/path/config.json` for a nonstandard service configuration.
 The helper creates a private backup before writing. Reopen New session after
 the service restarts. See [installation and upgrade details](AGENT_INSTALL.md).
+
+## Permissions when starting Codex
+
+Fresh Codex launch profiles offer **Workspace access**, **Read only**, and
+**Full access / YOLO**. Full access uses `--sandbox danger-full-access
+--ask-for-approval never`; profiles also carry `sandbox: danger-full-access`
+and `approvalPolicy: never` so the native daemon launch/resume path receives
+the same policy when CLI flags are not used. Workspace remains the default.
+
+To add this choice to an existing Codex profile without replacing other
+presets, defaults, or Claude settings, run from the updated server checkout:
+
+```bash
+python3 scripts/configure-launch-permissions.py --codex-full-access-only
+systemctl --user restart relay.service
+```
+
+Reopen New session → Codex → Full access / YOLO. This does not change an
+already-running session's policy and does not require an APK update.

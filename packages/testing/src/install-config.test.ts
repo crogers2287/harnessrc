@@ -35,6 +35,12 @@ test('installer config is host-neutral, schema-valid and connects both launch pr
   assert.deepEqual(permissions.find((p) => p.id === 'bypass')?.args, [
     '--dangerously-skip-permissions',
   ]);
+  const codexPermissions = config.launchProfiles[1].permissionPresets;
+  assert.equal(codexPermissions[0].id, 'workspace');
+  const yolo = codexPermissions.find((p) => p.id === 'full-access');
+  assert.equal(yolo?.sandbox, 'danger-full-access');
+  assert.equal(yolo?.approvalPolicy, 'never');
+  assert.deepEqual(yolo?.args, ['--sandbox', 'danger-full-access', '--ask-for-approval', 'never']);
   assert.equal(JSON.stringify(result).includes('fred.taile'), false);
 });
 test('installer rejects insecure origins and missing authoritative socket/workspace inputs', () => {
@@ -58,7 +64,7 @@ test('installer rejects insecure origins and missing authoritative socket/worksp
   );
 });
 
-test('existing-install Claude bypass upgrade preserves custom presets, defaults and other harnesses', async () => {
+test('existing-install targeted permission upgrades preserve presets, defaults and other harnesses', async () => {
   const { mkdtemp, writeFile, readFile, readdir, rm } = await import('node:fs/promises');
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
@@ -74,7 +80,14 @@ test('existing-install Claude bypass upgrade preserves custom presets, defaults 
           { id: 'custom', name: 'Custom', args: ['--permission-mode', 'default'] },
         ],
       },
-      { id: 'codex', harness: 'codex', permissionPresets: [] },
+      {
+        id: 'codex',
+        harness: 'codex',
+        defaultModel: 'codex/custom',
+        permissionPresets: [
+          { id: 'custom-codex', name: 'Custom Codex', args: ['--sandbox', 'read-only'] },
+        ],
+      },
     ],
     unrelated: { keep: true },
   };
@@ -104,6 +117,32 @@ test('existing-install Claude bypass upgrade preserves custom presets, defaults 
       JSON.parse(await readFile(configPath, 'utf8')).launchProfiles[0].permissionPresets.length,
       2,
     );
+    const upgradeCodex = () =>
+      execFileSync('python3', [
+        'scripts/configure-launch-permissions.py',
+        '--codex-full-access-only',
+        '--config',
+        configPath,
+      ]);
+    upgradeCodex();
+    const withCodex = JSON.parse(await readFile(configPath, 'utf8'));
+    assert.deepEqual(withCodex.launchProfiles[0], saved.launchProfiles[0]);
+    assert.deepEqual(withCodex.unrelated, original.unrelated);
+    assert.deepEqual(withCodex.launchProfiles[1].permissionPresets, [
+      ...original.launchProfiles[1].permissionPresets,
+      {
+        id: 'full-access',
+        name: 'Full access / YOLO',
+        description:
+          'Run without sandbox restrictions or approval prompts. Select only for work you trust.',
+        args: ['--sandbox', 'danger-full-access', '--ask-for-approval', 'never'],
+        sandbox: 'danger-full-access',
+        approvalPolicy: 'never',
+      },
+    ]);
+    assert.equal(withCodex.launchProfiles[1].defaultModel, 'codex/custom');
+    upgradeCodex();
+    assert.deepEqual(JSON.parse(await readFile(configPath, 'utf8')), withCodex);
     assert.ok((await readdir(dir)).some((name) => name.includes('before-launch-permissions')));
   } finally {
     await rm(dir, { recursive: true, force: true });
