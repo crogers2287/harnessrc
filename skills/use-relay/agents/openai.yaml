@@ -1,0 +1,4 @@
+interface:
+  display_name: "Use Relay"
+  short_description: "Control Herdr-owned agent sessions through Relay MCP"
+  default_prompt: "Use $use-relay to find and attach to the existing session for this project, inspect its state, and carry out my requested action."

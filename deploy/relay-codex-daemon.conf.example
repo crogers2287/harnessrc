@@ -1,0 +1,5 @@
+# Install as ~/.config/systemd/user/relay.service.d/codex-daemon.conf
+# Adjust the UID/path to the existing daemon's private control socket directory.
+# Required only when codexDaemons is configured and PrivateTmp=true.
+[Service]
+BindReadOnlyPaths=/tmp/codex-daemon-1000

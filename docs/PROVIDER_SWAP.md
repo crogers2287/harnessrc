@@ -1,0 +1,109 @@
+# Resume a conversation with another provider
+
+Hold a session in the drawer and choose **Swap provider** (web and Android 0.1.18+). Select a configured provider profile, model and permission preset, then confirm. Choose a CFRproxy profile to route the resumed conversation through your proxy. Providers come from this server's configuration; no host name is hardcoded.
+
+Relay preserves the harness, native conversation UUID, host, working directory, workspace, history and saved title. Herdr closes the old pane and launches the replacement in another pane in the same workspace. The terminal and owner generation change. This is native resume, not a new conversation seeded with a summary.
+
+## Support and prerequisites
+
+Currently supported: local Herdr-owned Claude Code and Codex with a native UUID and matching launch profile. The host must permit local file access; the CWD must pass allowed-root checks. Other harnesses display an unsupported explanation; supported live model controls remain available. Relay does not describe a fresh DSH/Hermes/OMP launch as an exact resume.
+
+Finish or stop the current turn and active sub-agents, and resolve questions/approvals first. Codex children with separate Herdr owners must be closed separately. Provider credentials remain in trusted server configuration/environment. Clients cannot submit arbitrary arguments, environment, sockets or paths. New permissions require an explicit choice; full access is not silently carried to another provider.
+
+## Lifecycle
+
+1. Validate exact native ownership, idle state, profile, credentials, CWD, model and permissions.
+2. Save an idempotent receipt, pause queued work and prepare an empty pane through Herdr.
+3. Recheck idle ownership, close the old pane through Herdr, wait for its exact process to exit and verify no old native owner remains.
+4. Resume and launch through Herdr. Success requires a ready replacement bound to the original native UUID.
+5. Keep queued work paused for review. Old-generation tasks are not automatically retargeted.
+
+Loaded daemon-backed Codex threads ignore provider overrides. Relay uses documented native `thread/archive` / `thread/unarchive` to unload the old runtime, restores originally unarchived idle descendants, then calls `thread/resume` with the selected provider/model/permissions before attaching the CLI. It verifies the returned provider and model. Active descendants are rejected before archival. See the [Codex app-server API](https://learn.chatgpt.com/docs/app-server).
+
+Claude uses native `--resume <UUID>` with profile/model/permission arguments. Local Codex without a daemon uses `resume <UUID>` with those arguments. Herdr remains the supervisor.
+
+Claude's known folder-trust startup screen is continued automatically during authorized launches/resumes. Relay verifies the selected CWD, exact Herdr pane/terminal/name, live foreground process and the specific trust menu before sending its fixed native selection through Herdr. This covers the bootstrap prompt before Claude's question hooks exist; other questions/approvals use their usual interaction path and selected permissions.
+
+If startup hooks bind late, a receipt check can reconcile an uncertain `confirm`/`bind` result only after the exact replacement owner reports the original native conversation ID. Receipt checks never send input or launch processes. Confirmed swaps update the displayed model with a new timestamp so older history cannot restore the pre-swap model. Internal restart process names are mapped back to the original conversation title during startup as well as after binding.
+
+## Uncertain restarts
+
+Clients persist the original UUID/body before submitting. **Check restart** reads its durable receipt; **Retry same request** reuses the UUID and cannot start a second replacement. A definite validation rejection without a saved receipt permits editing choices. A timeout does not mean nothing happened.
+
+Gateway restart or failed native confirmation produces an **uncertain** receipt. Relay does not automatically retry an ambiguous launch, release the restart lock or resume the queue. An operator must inspect the recorded phase, pane/terminal IDs and native ownership. SQLite `provider_swaps.receipt` includes those identifiers and, before Codex archival, the root and originally unarchived descendant UUIDs. A hard crash during archival can require native unarchive of those exact conversations. Ordinary partial failures attempt restoration; hard-crash recovery remains manual. Never blindly delete a receipt or start another owner to resolve uncertainty.
+
+## MCP and verification
+
+`relay_provider_options` discovers profiles. `relay_restart_provider` requires the original UUID, current generation, profile/model/permission and confirmation. `relay_provider_receipt` inspects the result after a timeout. All use the same authorization and ownership checks as the clients. See [agent control](AGENT_CONTROL.md).
+
+A disposable live Herdr/Codex test succeeded through CFRproxy: same UUID/CWD, new terminal, confirmed provider/model. Only allocated test panes were closed. Service tests cover exact arguments, exit ordering, validation, idempotency, ambiguous launch handling, unload/resume and descendant restoration. Mobile browser tests cover the form and retained request identity. Android unit/lint/build checks pass. Physical-phone provider-swap verification and a live Claude provider-swap test remain outstanding.
+
+### Claude through CFRproxy: internal requests and context
+
+Relay supplies the selected provider/model as `ANTHROPIC_MODEL`, `ANTHROPIC_SMALL_FAST_MODEL`, and the default/Fable/Opus/Sonnet/Haiku model aliases on both new launches and exact-conversation restarts. Passing only `--model` leaves Claude's auxiliary requests able to use native aliases. All Claude launch profiles receive a 256,000-token context ceiling (or the selected model's smaller advertised limit), `CLAUDE_CODE_AUTO_COMPACT_WINDOW`, an 85% automatic compaction threshold, and `CLAUDE_CODE_DISABLE_1M_CONTEXT=1`. `CLAUDE_CODE_MAX_CONTEXT_TOKENS` is also set for CLI versions that honor it; automatic compaction remains enabled. These settings apply when the harness process starts; existing processes must be restarted through the verified provider-swap path to receive them.
+
+Claude 2.1.300 retains the previous response model in cached compaction parameters during cross-provider resume. CFRproxy launches send `X-CFR-Model` through the native `ANTHROPIC_CUSTOM_HEADERS` setting so authenticated ordinary proxy requests use the selected target even when the client sends an old native model name. This requires the matching CFRproxy update; shared endpoints retain their own model policy. Relay never rewrites native transcripts.
+
+Live validation (2026-10-14): Tidyhive's original native conversation resumed through the selected Codex target. Its large native compaction request returned HTTP 200 on `gpt-6.1-sol`; the following explicit connectivity check returned an assistant reply in 7.92 seconds. The authenticated Relay conversation API also contained that reply. The native conversation and working directory were preserved. This verifies server routing and chat ingestion; it does not replace physical-phone UI validation.
+
+CFRproxy profiles launch and resume through `cfrproxy <harness> ...` inside the
+new Herdr pane. Herdr's canonical-only `agent.start` cannot express a wrapper,
+so Relay checks that the new pane still owns its idle shell, submits one quoted
+`cfrproxy ...` (keeping Herdr’s shell parent alive) command, waits for harness detection, and assigns the managed
+agent name. A lost command acknowledgement is uncertain and is never replayed.
+Harness-default profiles continue to use `agent.start`. The same start helper is
+used for initial sessions and provider swaps in both web and Android.
+
+### Late confirmation and restart conflicts — 2026-10-16
+
+A temporary Herdr managed name/readiness marker may disappear after reconnect even when the replacement has successfully resumed the conversation. Receipt checks can now confirm that already-bound replacement using the recorded pane/terminal, exact native conversation/harness, a fresh live-process binding check, and native idle/done state. A working, missing or replaced process remains uncertain. Recovery performs no process launch, closure or input submission.
+
+Before claiming a distinct restart, Relay attempts that read-only reconciliation of an older unfinished receipt. Unresolved receipts retain the unique per-session lock and return a descriptive HTTP 409 pointing to their original request ID. The atomic claim also rechecks exact request identity after asynchronous validation, so simultaneous identical requests allocate only one replacement instead of leaking a SQLite constraint error. The unique index is retained.
+
+Gateway `9825bff` was deployed and the old Hermes trouble receipt was verified as started with its process identity, terminal and native conversation unchanged; its queue remains paused. All 170 backend tests, TypeScript and ESLint passed, including late name-loss recovery, rejection of changed/working processes, distinct-request conflict handling, and concurrent identical-request deduplication. This shared gateway fix applies to both web and existing APKs; no native update is required.
+
+### Remote Codex launch configuration — 2026-10-16
+
+New daemon-owned Codex threads receive provider, model and permission settings
+through `thread/start`. Their Herdr CLI then attaches with only `resume <id>
+--remote unix://<socket>`; local profile overrides and `--model` must not be
+passed to that remote attachment. Before submitting the first prompt, Relay
+reads back the exact native thread/provider/model, and leaves startup uncertain
+without submitting any instruction if those values do not match. Web and
+Android use this same launch path.
+
+An exact Codex provider swap cannot translate an encrypted Responses compaction
+item into another provider's readable history. Keep the original conversation
+intact and use a native compatible backend, or obtain the owner's choice to
+create a separate Herdr-owned conversation with a readable handoff and explicit
+links back to the original. Never delete opaque context, rewrite native
+transcripts, or claim a plaintext handoff preserves hidden model state.
+
+All Codex launch profiles, including native accounts, receive a maximum configured
+`model_context_window` of 256,000 tokens and `model_auto_compact_token_limit`
+at 85% of that window. Smaller advertised model windows remain smaller;
+unknown models use the operator ceiling. Codex may apply a safety margin or
+an internal model maximum, so its reported effective window can be lower.
+These settings apply to new threads and verified provider resumes; an already
+loaded runtime must be unloaded/resumed before configuration takes effect.
+
+Context limits alone cannot fix an oversized tool prefix. For translated
+Responses backends, the matching CFRproxy update exposes large namespace
+catalogs through bounded, request-scoped `cfr_find_tools` discovery instead of
+sending every complete schema on each call. Selected schemas retain their
+constraints and client-owned calls are returned to the harness for execution.
+Native Responses providers retain their native tool protocol. Lifetime mode
+can compress older tool results, but does not shrink tool schemas and is not
+a replacement for tool discovery.
+
+Live validation (2026-10-16): Hermes trouble's linked Command conversation
+retained its native ID and working directory after a verified restart.
+Codex reported an effective 243,200-token window (its 95% safety margin below
+the configured 256,000 ceiling). After one initial compaction of the previous
+oversized state, a diagnostic completed three successive read-only command
+calls and a final reply without further compaction. Ordinary upstream input
+fell from about 261,000 tokens to 16,000–20,000. A second turn used on-demand
+namespace discovery to execute AI Session Search's read-only `get_index_status`
+and returned a final reply without another compaction. This verifies the
+specific repeated-prefix loop; it does not complete the separate personality
+investigation or certify every possible future workflow.

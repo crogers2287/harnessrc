@@ -178,7 +178,7 @@ python3 "$HOME/harnessrc/scripts/install-claude-steering.py" \
   --release "$HOME/harnessrc" --socket "$HOME/.local/state/relay/hooks.sock"
 ```
 
-This preserves other hooks, registers exact main-process question routing, and backs up settings. Load changed hooks according to the installed Claude version; already-open native prompts cannot be attached retroactively. Do not restart busy sessions. The separate documented PermissionRequest hook in `deploy/claude-hooks.example.json` can be merged for command/file approvals: use real absolute Node/tsx/script paths, preserve hooks, and never replace settings wholesale. See [Claude hook behavior](claude-steering.md).
+This preserves other hooks, registers exact main-process question routing, and backs up settings. Load changed hooks according to the installed Claude version; already-open native prompts cannot be attached retroactively. Do not restart busy sessions. The installer also merges the documented PermissionRequest hook for command/file/MCP approvals, including subagent requests. It preserves unrelated hooks and uses the real absolute Node/tsx/script paths. `deploy/claude-hooks.example.json` is available for manual setup. See [Claude hook behavior](claude-steering.md).
 
 ### Codex: provider choice matters
 
@@ -226,7 +226,22 @@ node --import tsx scripts/render-install-config.ts \
   > "$HOME/.config/relay/config.candidate.json"
 ```
 
-Review the candidate before activation. If `config.json` exists, back it up privately and merge; do not replace a config that already manages sessions. For a fresh install, activate the reviewed candidate with `install -m600 "$HOME/.config/relay/config.candidate.json" "$HOME/.config/relay/config.json"`. Output uses `hostId: local`, this user's home/transcript/project roots, localhost CFRproxy, and Claude/Codex launch profiles. It intentionally omits guessed Codex daemon paths, other hosts, unsafe full-access presets, provider keys, voice servers and DSH tokens.
+Review the candidate before activation. If `config.json` exists, back it up privately and merge; do not replace a config that already manages sessions. For a fresh install, activate the reviewed candidate with `install -m600 "$HOME/.config/relay/config.candidate.json" "$HOME/.config/relay/config.json"`. Output uses `hostId: local`, this user's home/transcript/project roots, localhost CFRproxy, and Claude/Codex launch profiles. It intentionally omits guessed Codex daemon paths, other hosts, provider keys, voice servers and DSH tokens.
+
+Claude's launch selector includes **Ask when needed**, **Plan**, and **Bypass permissions**. Bypass is an explicit per-launch choice, mapped to `--dangerously-skip-permissions`; it is not the default. Web and Android read these choices from this server's launch profiles.
+
+If an existing installation lacks that choice, update its checkout and add only the missing Claude bypass preset:
+
+```bash
+cd "$HOME/harnessrc"
+git pull --ff-only
+python3 scripts/configure-launch-permissions.py --claude-bypass-only
+systemctl --user restart relay.service
+```
+
+For an existing Codex profile missing **Full access / YOLO**, use `python3 scripts/configure-launch-permissions.py --codex-full-access-only` instead, then restart Relay. Fresh generated Codex profiles include Workspace access, Read only, and Full access / YOLO. The latter maps to `--sandbox danger-full-access --ask-for-approval never`, including native daemon permission metadata; it is an explicit choice rather than the default.
+
+The command backs up the config privately, preserves existing presets/defaults and other harness settings, and does not change running sessions. Use `--config /actual/path/config.json` if the service reads a nonstandard configuration. Reopen New session in the app and select Claude → Bypass permissions.
 
 Choose an actual supported default model in each launch profile's `defaultModel`, or explicitly choose one in the app. Do not copy an unrelated account default into CFRproxy. The model catalog URL is loopback and includes all enabled proxy models. Permission presets are trusted installation configuration; the app chooses supported values, not arbitrary CLI flags. Test permission readback before sending the first task.
 
@@ -409,3 +424,7 @@ Read `README.md` → this guide → `docs/ARCHITECTURE.md` → `docs/SECURITY.md
 | CFRproxy | Its `main.go`, `launch.go`, `internal/api`, `internal/proxy`, `internal/store`, `scripts/sync_hermes_cfrproxy.py` and `docs` |
 
 Hotspots are ownership/generation checks, native request identity, uncertain-delivery reconciliation, proxy/model selection, tailnet ingress trust and credential handling. Adapt file paths and schemas around these rules rather than bypassing them. Report which checkpoints passed and which remain blocked; a config file alone is not an installed system.
+
+## Agentic access after installation
+
+Install the [Relay MCP control plane and use-relay skill](AGENT_CONTROL.md) in each controlling agent, including separately configured Hermes profiles. The controller connects to your verified HTTPS/Tailscale ingress and uses the same permission, ownership, interaction and receipt routes as the app. This lets an agent attach to the project conversation and coordinate the existing harness without navigating panes or launching a second writer. Herdr remains mandatory.

@@ -1,0 +1,17 @@
+[Unit]
+Description=Relay dictation cleanup (CPU-only, independent of GPU model swapping)
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/llama.cpp/build/bin/llama-server --model %h/models/qwen2-5-3b-instruct-gguf/Qwen2.5-3B-Instruct-Q4_K_M.gguf --alias relay-dictation-cleanup --host 100.104.46.14 --port 8712 --device none --gpu-layers 0 --threads 6 --ctx-size 4096 --parallel 1
+Restart=on-failure
+RestartSec=3
+Nice=10
+MemoryMax=6G
+NoNewPrivileges=true
+StandardOutput=null
+StandardError=journal
+
+[Install]
+WantedBy=default.target

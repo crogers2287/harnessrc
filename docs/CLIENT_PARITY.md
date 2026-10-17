@@ -6,28 +6,30 @@ Both clients are first-class Relay clients. A user-facing feature or fix must be
 
 “Implemented” below describes code coverage, not a claim of physical-device or every-harness verification. All control operations require gateway capabilities and the correct ownership mode.
 
-| Workflow | Web | Android APK | Evidence / gap |
-| --- | --- | --- | --- |
-| Session search, harness filter, profile/model/CWD, saved sessions | Implemented | Implemented | App.tsx / RelayApp.kt, Protocol.kt |
-| Recency-first session list (last opened or agent activity) | Implemented | Implemented | Client-local open timestamps; pinned sessions remain above the chronological list |
-| Rename, pin, archive, supported turn interruption | Implemented | Implemented | SessionActions / Screens.kt |
-| Start session, folder selection, DSH profile, model/custom model | Implemented | Implemented | NewSession.tsx / LaunchScreen |
-| Send, Steer, explicit Queue | Implemented | Implemented | Gateway messages API is authoritative |
-| Outgoing chat bubble remains until native transcript echo | Implemented | Implemented | A gateway-accepted receipt alone no longer hides the message |
-| Appearance theme and accent palette | Implemented | Implemented | Both have system/light/dark and persistent teal, blue, violet, and amber accents |
-| Uncertain delivery recovery | Retains card, Restore draft / Dismiss | Durable original-key Retry safely | Gap: web does not yet provide the equivalent original-key retry control; Restore draft must not be described as safe retry |
-| Questions, approvals, stale request handling | Implemented | Implemented | Same interaction API; native request_user_input supported on verified CLI Codex; other async formats and CLI approvals remain limited |
-| Queue edit, cancel, pause/resume | Implemented | Implemented | App.tsx / QueueScreen |
-| Reorder pending tasks | Implemented | Missing | Add native reorder controls against the existing gateway route |
-| Model and session permissions | Implemented | Implemented | Capability gated; confirm permission changes |
-| File/image upload, previews, download | Implemented | Implemented | Native keyboard image insertion is Android-specific; browser permission/platform restrictions remain |
-| Dictation, cleanup, editable result | Implemented | Implemented | Shared gateway speech service; never auto-send |
-| Streaming, earlier history, reader scroll preservation | Implemented | Implemented | Browser and native regressions are separate |
-| Native task-notice formatting and source timestamps | Implemented | Implemented | Shared TS behavior has a separate Kotlin implementation: test both for format changes |
-| Tailnet access | Implemented | Implemented | Gateway authorization remains mandatory |
-| Off-tailnet device pairing | Implemented | Missing | Android currently fails closed outside authorized tailnet access |
-| Notification preferences | Browser notifications while open | Missing | Neither client implements reliable closed-app push |
-| Installation/update | PWA install and APK download | Signed APK installation | A web deployment cannot update installed Kotlin code |
+| Workflow                                                          | Web                                   | Android APK                         | Evidence / gap                                                                                                                        |
+| ----------------------------------------------------------------- | ------------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Session search, harness filter, profile/model/CWD, saved sessions | Implemented                           | Implemented                         | App.tsx / RelayApp.kt, Protocol.kt                                                                                                    |
+| Recency-first session list (last opened or agent activity)        | Implemented                           | Implemented                         | Client-local open timestamps; pinned sessions remain above the chronological list                                                     |
+| Rename, pin, archive, supported turn interruption                 | Implemented                           | Implemented                         | SessionActions / Screens.kt                                                                                                           |
+| Start session, folder selection, DSH profile, model/custom model  | Implemented                           | Implemented                         | NewSession.tsx / LaunchScreen                                                                                                         |
+| Send, Steer, explicit Queue                                       | Implemented                           | Implemented                         | Gateway messages API is authoritative                                                                                                 |
+| Outgoing chat bubble remains until native transcript echo         | Implemented                           | Implemented                         | A gateway-accepted receipt alone no longer hides the message                                                                          |
+| Appearance theme and accent palette                               | Implemented                           | Implemented                         | Both have system/light/dark and persistent teal, blue, violet, and amber accents                                                      |
+| Uncertain delivery recovery                                       | Retains card, Restore draft / Dismiss | Durable original-key Retry safely   | Gap: web does not yet provide the equivalent original-key retry control; Restore draft must not be described as safe retry            |
+| Questions, approvals, stale request handling                      | Implemented                           | Implemented                         | Same interaction API; native request_user_input supported on verified CLI Codex; other async formats and CLI approvals remain limited |
+| Queue edit, cancel, pause/resume                                  | Implemented                           | Implemented                         | App.tsx / QueueScreen                                                                                                                 |
+| Reorder pending tasks                                             | Implemented                           | Missing                             | Add native reorder controls against the existing gateway route                                                                        |
+| Model and session permissions                                     | Implemented                           | Implemented                         | Capability gated; confirm permission changes                                                                                          |
+| Restart exact conversation with another provider                  | Implemented                           | Implemented (0.1.18+)               | Long-press → Swap provider; local Claude/Codex only; see PROVIDER_SWAP.md                                                             |
+| File/image upload, previews, download                             | Implemented                           | Implemented                         | Native keyboard image insertion is Android-specific; browser permission/platform restrictions remain                                  |
+| File saves survive disappearing message rows                      | Browser-managed                       | App-root picker/ViewModel (0.1.18+) | Fetch and validate before opening picker; physical system-picker check outstanding                                                    |
+| Dictation, cleanup, editable result                               | Implemented                           | Implemented                         | Shared gateway speech service; never auto-send                                                                                        |
+| Streaming, earlier history, reader scroll preservation            | Implemented                           | Implemented                         | Browser and native regressions are separate                                                                                           |
+| Native task-notice formatting and source timestamps               | Implemented                           | Implemented                         | Shared TS behavior has a separate Kotlin implementation: test both for format changes                                                 |
+| Tailnet access                                                    | Implemented                           | Implemented                         | Gateway authorization remains mandatory                                                                                               |
+| Off-tailnet device pairing                                        | Implemented                           | Missing                             | Android currently fails closed outside authorized tailnet access                                                                      |
+| Notification preferences | Questions, completions and failures while open | Opt-in background Tailnet service, category channels, privacy and session links | Native direct push requires Tailscale and unrestricted battery use; closed-browser Web Push is not implemented |
+| Installation/update                                               | PWA install and APK download          | Signed APK installation             | A web deployment cannot update installed Kotlin code                                                                                  |
 
 ## Change and release contract
 
@@ -194,3 +196,91 @@ Navigation detail: Android child Back returns to the child catalog; the web chil
 ### Claude AskUserQuestion (Android 0.1.17)
 
 Web and Android recognize choice-batch metadata on Claude's exact hook interactions, preserving descriptions, multi-select and custom replies. The shared session view reports blocking native interactions as blocked, rather than working. Web regression coverage verifies options and exact batch responses; native unit/lint/build and real Claude headless hook roundtrip pass. Older APKs receive a compatible question list and their legacy answer format remains valid; 0.1.17 adds the full multi-select batch UI. Real terminal concurrent answering and physical phone rendering remain separate checks.
+
+### Definite pre-dispatch rejection and uncertain delivery recovery (Android 0.1.20)
+
+Both clients keep drafts editable when the gateway positively rejects a message before native dispatch (including HTTP 422 for idle-to-busy races). This differs from transport uncertainty, which retains the original request identity and must never automatically resend. Web restores an empty composer and removes the rejected optimistic bubble; Android preserves its durable draft. The gateway marks dispatch attempted only after queue and attachment preflight pass.
+
+Android 0.1.20 adds **Keep draft / clear notice** for an uncertain receipt. Its confirmation explains that the agent may already have received the message. This only dismisses local delivery state, preserves the draft, and sends nothing. Web already provides separate **Restore draft** and **Dismiss** actions. Physical-phone confirmation and draft recovery remain unverified; unit/lint/release builds do not establish device behavior.
+
+## QOL command center and reading controls — 2026-10-14
+
+Both clients now expose a session command center with native model/permission/mode controls, connection state, current plan step, task progress, sub-agent navigation, pending questions, provider restart and supported turn interruption. Provider attribution is shown only when a successful launch/restart receipt matches the current native owner; unknown providers are explicitly reported as unknown. Existing unsupported harness controls remain unavailable.
+
+Both clients offer persistent accent/theme selection including AMOLED, text sizing, compact/comfortable spacing, optional haptics and Responses/Grouped/Everything activity views. Android combines the chosen size with system font scaling; web uses root font sizing and normal browser zoom. Browser vibration depends on platform support. Question trays remain outside the filtered activity list and expired requests stop being actionable locally.
+
+Both retain authenticated inline media and image zoom, and add text/code document previews (256 KB preview limit) and sharing. HTML source is displayed as text, never executed. Binary documents such as Office files remain downloadable/shareable rather than claiming a universal document renderer. Web uses the system file share sheet where supported and falls back to download; Android shares a temporary FileProvider URI with a read grant and cleans old shared files after seven days.
+
+Web pending sends are now durable across browser restarts and use the original request key/payload for manual safe retry, preserving a newer draft. Android retains its existing durable outbox. Transport delivery is distinct from a subsequent observed agent response. Native transcript echoes reconcile optimistic bubbles; no retries run automatically.
+
+Validation and release evidence are tracked in QOL_IMPLEMENTATION.md. Browser fixture tests do not establish physical Android clipboard, microphone, share-sheet or keyboard behavior.
+
+### 0.1.22 native validation and delivery recovery
+
+A confirmed gateway receipt now moves an uncertain Android message to accepted and unlocks the composer. Its bubble remains until native history acknowledges it. Recovery preserves newer drafts and transcription text and never resends the request automatically, matching web receipt recovery.
+
+All 23 instrumentation tests passed on a disposable Android 15 x86_64 emulator, including native clipboard/IME image input, Back, keyboard insets, question responses, delivery recovery, dictation drafts, model controls and settings persistence. A strengthened late-receipt/new-identical-draft test also passed separately. Added coverage for AMOLED/reading/activity/spacing/haptic preference persistence and pending-question visibility/expiry with responses-only filtering. Native keyboard-open/closed screenshots were reviewed. Unit tests, lint and debug/test builds passed. Physical-phone share targets, vibration and OEM keyboard/font behavior remain separate checks.
+
+2026-10-14 notification update: native 0.1.23 adds private background delivery over Tailscale with durable replay, notification categories/privacy, pending-question cleanup and session/answer-tray navigation. Web also recognizes `turn.completed` while running. No FCM credentials or third-party relay is required. Android's quiet foreground connection and battery configuration differ from browser foreground-only notifications; see ANDROID.md. Validation: 166 backend tests and 25 Android runtime tests passed, plus native unit/lint and TypeScript/ESLint checks.
+
+### Local native-file download fix — 2026-10-14
+
+Gateway `7e207bb` fixes the shared media endpoint used by Android and web inline links and file cards. Previously the endpoint required a DSH host even for Codex/Claude references. Explicit assistant file references on configured `localFiles` hosts now resolve locally; remote DSH reads retain their native transport. Authentication, session/event/native-session binding, a 20 MB limit, bounded regular-file reads and attachment disposition remain enforced. Missing files and symlinks fail cleanly.
+
+Validation: 167 backend tests, TypeScript and ESLint passed. Live Canna Sol downloads returned HTTP 200 and byte-for-byte matches for `SUMMARY.md` (4,644 bytes) and `manifest.json` (2,795 bytes). No client sources changed; installed APK 0.1.23 uses the repaired endpoint without an update. Phone tap behavior was not rerun on a physical device.
+
+### Reader-controlled scrolling — 2026-10-15
+
+Web and Android now pause bottom-following as soon as the reader touches the conversation or scrolls it. Reaching the bottom through a layout change or scroll gesture does not resume following; use Latest messages to resume. This closes the touch-down/delayed-scroll race on Android and prevents web scroll events from silently re-pinning the reader. The web virtualizer only compensates resized rows fully above the viewport, not the partially visible row being read.
+
+Validation: browser live-stream regression passed, including a synthetic layout-induced bottom scroll; Android emulator reader-position regression passed for incoming messages/tools, repeated status refreshes, explicit Latest messages, and touch-down before drag recognition. Android unit tests, lint, debug and signed release builds passed; TypeScript, ESLint and web production build passed. APK 0.1.24 is required for the native fix. Physical-phone behavior still needs confirmation.
+
+### Server-independent APK — 2026-10-15
+
+Android 0.1.25 has no embedded gateway origin, tailnet hostname or IP, and its build script no longer provisions a build machine's Tailscale identity. Fresh installs open server setup; saved explicit HTTPS origins survive upgrades. An optional runtime Tailscale IPv4 fallback applies only to the configured hostname while retaining normal certificate verification. Foreground chat and background notifications use the same configuration. Connection settings are at the top of Settings; host labels and launch directories use the gateway's catalog instead of Fred labels. Absolute external links also work without a configured base origin.
+
+Switching origins cancels old requests, ignores old socket callbacks, resets the live selection/notification cursor, and scopes conversation caches, drafts and pending launch receipts to their server. Legacy drafts and launch receipts migrate to the previously saved origin. Web already uses its current origin and server-provided hosts; no web behavior change was required.
+
+Validation: final full Android integration run passed all 26 tests, including new-install setup, saved-origin restart, keyboard insets, native Back, links, image insertion, recording, interaction replies, notification delivery, and uncertain message recovery. Unit tests, Android lint, debug/test builds, signed release build and web artifact-renderer production build passed. The signed APK's bytecode was checked for the former Fred hostname/IP; neither was present. Signed release setup screenshots were inspected with the keyboard closed and open. A separate person's physical phone and tailnet were not available for testing. See ANDROID.md for HTTPS, Tailscale authorization, CFRproxy and Herdr setup requirements.
+
+## Slash commands and shortcuts, 2026-10-17
+
+Web and Android 0.1.26 share the authenticated command endpoint and native routing.
+Both offer slash suggestions, a keyboard shortcut menu, Stop/Ctrl+C, Escape,
+Yes/Continue/No, session settings, task progress and child viewers. Commands are
+not chat prompts or queued work; pending questions use exact answer cards.
+Existing drafts and attachments survive quick replies. See
+[session commands](SESSION_COMMANDS.md) for native transports and constraints.
+The APK update is required for native menus/navigation. Shared backend handling
+alone does not add these controls to older APKs. Android instrumentation was
+compiled but cannot run with the currently missing disposable-emulator image.
+
+### Claude plan approvals and questions (2026-10-17)
+
+The shared Claude question hook now handles `ExitPlanMode` as an exact native tool
+interaction, alongside `AskUserQuestion`. Both clients receive the existing
+approval card with **Approve plan and continue** / **Keep planning** choices and
+the supplied plan text. Approval returns the unchanged tool input paired with
+`permissionDecision: allow`; rejection returns `deny`. Neither choice sends a
+chat turn or changes the session's permission policy. The steering mailbox skips
+these interactive tools so queued steering cannot contaminate the question.
+The PermissionRequest fallback used by already-running clients also returns
+`updatedInput` for approved `ExitPlanMode` requests; a bare allow is insufficient
+for this interactive tool in current Claude Code.
+
+The installer registers the narrow `AskUserQuestion|ExitPlanMode` matcher and
+preserves unrelated hooks. Existing hook commands use the `current` release path,
+so the fallback fix applies without restarting a working harness. A Claude
+process that snapshots hook matchers may need its normal hook reload or next
+resume to acquire the expanded PreToolUse matcher. An already-dismissed hook
+cannot retroactively receive an answer; do not manufacture a replacement question
+from transcript prose or bypass the native prompt with terminal keys.
+
+Tests cover both plan decisions through the standalone script/socket, unchanged
+plan input, exact response validation, approval capabilities, no extra chat/task,
+legacy PermissionRequest output, question batches and steering ownership fences.
+Both clients use their existing card components; no APK update is required.
+
+Validation: 180 backend tests and the two mobile-browser approval/Claude-question
+regressions pass, with TypeScript, scoped ESLint and formatting checks. Android UI
+code is unchanged; a fresh physical-device plan-approval check is outstanding.

@@ -7,3 +7,44 @@ DSH uses its installed `permissionPresets/catalog` remote and `permissions.curre
 Claude CLI and Codex connections currently report permission changes unavailable. Existing per-action approvals are separate. Relay does not send a `/permission` chat prompt, auto-approve pending requests, modify a global harness configuration, or start a second writer to simulate this setting.
 
 Tests cover native payload/routing, stale settings, invalid presets, read/control authorization, explicit confirmation, browser selection and confirmation. Live changes are tested only on a disposable native session, with its initial setting restored.
+
+## Permissions when starting Claude
+
+The New session permission selector reads `launchProfiles[].permissionPresets`
+from the connected Relay server. Fresh generated Claude profiles include
+**Ask when needed**, **Plan**, and **Bypass permissions**. Bypass maps to
+`--dangerously-skip-permissions` only when explicitly selected; it does not
+change the default or permissions of existing sessions. No APK update is
+required to display a server-configured preset.
+
+Older installations can add just this missing choice, preserving their custom
+presets and other configuration, with:
+
+```bash
+python3 scripts/configure-launch-permissions.py --claude-bypass-only
+systemctl --user restart relay.service
+```
+
+Run from the updated Relay checkout on that installation's own server. Use
+`--config /actual/path/config.json` for a nonstandard service configuration.
+The helper creates a private backup before writing. Reopen New session after
+the service restarts. See [installation and upgrade details](AGENT_INSTALL.md).
+
+## Permissions when starting Codex
+
+Fresh Codex launch profiles offer **Workspace access**, **Read only**, and
+**Full access / YOLO**. Full access uses `--sandbox danger-full-access
+--ask-for-approval never`; profiles also carry `sandbox: danger-full-access`
+and `approvalPolicy: never` so the native daemon launch/resume path receives
+the same policy when CLI flags are not used. Workspace remains the default.
+
+To add this choice to an existing Codex profile without replacing other
+presets, defaults, or Claude settings, run from the updated server checkout:
+
+```bash
+python3 scripts/configure-launch-permissions.py --codex-full-access-only
+systemctl --user restart relay.service
+```
+
+Reopen New session → Codex → Full access / YOLO. This does not change an
+already-running session's policy and does not require an APK update.
