@@ -1,14 +1,21 @@
 #!/usr/bin/env python3
-"""Install permission choices verified against Fred's Claude and Codex CLI help.
+"""Install permission choices for supported Claude and Codex CLI launches.
 Does not change defaults or permissions on any running session.
 """
 import argparse, json, os, shutil, time
 from pathlib import Path
 p = argparse.ArgumentParser()
+p.add_argument('--claude-bypass-only', action='store_true', help='Add the Claude bypass choice without replacing presets, defaults or other harness settings.')
 p.add_argument('--config', type=Path, default=Path.home()/'.config/relay/config.json')
 a = p.parse_args()
 config = json.loads(a.config.read_text())
 for profile in config.get('launchProfiles', []):
+    if a.claude_bypass_only:
+        if profile.get('harness') == 'claude':
+            presets = profile.setdefault('permissionPresets', [])
+            if not any(preset.get('id') == 'bypass' for preset in presets):
+                presets.append(dict(id='bypass', name='Bypass permissions', description='Allow actions without Claude permission prompts. Select only for work you trust.', args=['--dangerously-skip-permissions']))
+        continue
     if profile.get('harness') == 'claude':
         profile['permissionPresets'] = [
             dict(id='manual', name='Ask before actions', description='Claude asks before actions that need permission.', args=['--permission-mode', 'manual']),

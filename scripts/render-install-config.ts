@@ -62,6 +62,13 @@ const config = configSchema.parse({
       permissionPresets: [
         { id: 'default', name: 'Ask when needed', args: ['--permission-mode', 'default'] },
         { id: 'plan', name: 'Plan', args: ['--permission-mode', 'plan'] },
+        {
+          id: 'bypass',
+          name: 'Bypass permissions',
+          description:
+            'Allow actions without Claude permission prompts. Select only for work you trust.',
+          args: ['--dangerously-skip-permissions'],
+        },
       ],
     },
     {
