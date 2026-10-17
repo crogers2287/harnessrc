@@ -258,6 +258,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun choose(id: String) {
+        commandNotice = ""
         if (id == selected) return
         saveDraft()
         cancelVoice()
@@ -317,6 +318,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun edit(text: String) {
+        commandNotice = ""
         draftRevision++
         draft = text
         saveDraft()
@@ -485,7 +487,42 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    var commandNotice by mutableStateOf("")
+    var commandAction by mutableStateOf("")
+    fun command(line: String) {
+        val s = session ?: return
+        if (sending || working) return
+        if (!s.can("sendMessage") && !s.can("steerActiveTurn")) { error = "This conversation is read-only"; return }
+        if (attachments.isNotEmpty() && draft.trim() == line) { error = "Send slash commands without attachments"; return }
+        val id = s.id
+        val key = "command:${api.base}:$id"
+        val previous = runCatching { JSONObject(prefs.getString(key, "")!!) }.getOrNull()
+        val payload = previous?.takeIf { it.str("line") == line && it.str("generation") == s.data.str("generation") }
+            ?: json("line" to line, "generation" to s.data.str("generation"), "requestId" to UUID.randomUUID().toString())
+        if (!prefs.edit().putString(key, payload.toString()).commit()) { error = "Could not save command recovery. Nothing was sent."; return }
+        commandNotice = "Sending command…"
+        operation("/api/sessions/$id/commands", payload, failure = { commandNotice = "" }) { result ->
+            prefs.edit().remove(key).commit()
+            if (selected == id) {
+                if (draft.trim() == line) { draft = ""; voiceOriginal = ""; saveDraft() }
+                notice = result.str("message")
+                commandNotice = result.str("message")
+                commandAction = result.str("action")
+                viewModelScope.launch { loadCurrent() }
+            }
+        }
+    }
+    fun quickReply(text: String) {
+        if (text !in listOf("Yes", "Continue", "No") || sending || working || uploading > 0 || transcribing || outgoing?.str("state") == "uncertain") return
+        val s = session ?: return
+        val mode = s.modes().firstOrNull { it != "queue" } ?: return
+        submit(s.id, json("prompt" to text, "idempotencyKey" to UUID.randomUUID().toString(), "attachments" to JSONArray()), mode, text)
+    }
     fun send(mode: String) {
+        if (isSlashCommand(draft)) {
+            if (mode == "queue") { error = "Slash commands cannot be queued. Choose Send to run the command."; return }
+            command(draft.trim()); return
+        }
         if (sending || uploading > 0 || transcribing || outgoing?.str("state") == "uncertain")
             return
         val s = session ?: return

@@ -1,3 +1,5 @@
+import { taskInputSchema } from '@harnessrc/protocol';
+import { SessionCommands } from './commands.ts';
 import { notificationFeed } from './notifications.ts';
 import { sendMedia } from './media-response.ts';
 import { readNativeFile } from './native-file.ts';
@@ -52,6 +54,7 @@ export async function createGateway(
     runtime.dshHosts,
   );
   launcher.recover();
+  const commands = new SessionCommands(runtime);
   const providerSwaps = new ProviderSwaps(runtime, launcher);
   const tailnet = new TailnetAuth(options.tailnetLookup);
   const auth = new Auth(store, config.dataDir);
@@ -530,6 +533,17 @@ export async function createGateway(
     return { ok: true };
   });
   const permissionChanges = new Set<string>();
+  const runCommand = async (id: string, deviceId: string, input: unknown) => {
+    if (permissionChanges.has(id))
+      throw new Error('Session controls are changing. Refresh before another command.');
+    permissionChanges.add(id);
+    try {
+      return await commands.run(id, deviceId, input);
+    } finally {
+      permissionChanges.delete(id);
+    }
+  };
+
   for (const kind of ['permissions', 'mode'] as const) {
     const setter = kind === 'permissions' ? 'setPermissions' : 'setMode';
     app.get(`/api/sessions/:id/${kind}`, async (req) => {
@@ -640,14 +654,30 @@ export async function createGateway(
       .get(id, nativeId, nativeId);
     return { nativeSeen: !!echo, confirmed: receipt.status === 'confirmed' };
   });
+  app.post('/api/sessions/:id/commands', async (req) => {
+    const { id } = req.params as { id: string };
+    check(req, id, true);
+    return runCommand(id, req.device.id, req.body);
+  });
   app.post('/api/sessions/:id/messages', async (req) => {
     const { id } = req.params as { id: string };
     check(req, id, true);
+    const body = taskInputSchema.parse(req.body);
+    if (/^\/[a-zA-Z][\w:-]*(?: |$)/.test(body.prompt.trim())) {
+      if (body.attachments.length) throw new Error('Send slash commands without attachments.');
+      return runCommand(id, req.device.id, {
+        requestId: body.idempotencyKey,
+        generation: store.session(id).generation,
+        line: body.prompt,
+      });
+    }
     return sendMessage(runtime, id, req.device.id, req.body);
   });
   app.post('/api/sessions/:id/tasks', async (req) => {
     const { id } = req.params as { id: string };
     check(req, id, true);
+    if (/^\/[a-zA-Z][\w:-]*(?: |$)/.test(taskInputSchema.parse(req.body).prompt.trim()))
+      throw new Error('Slash commands cannot be queued. Use Send to execute a native command.');
     const task = runtime.queue.add(id, req.body);
     store.audit(req.device.id, 'task.queue', id, { taskId: task.id });
     return { task };

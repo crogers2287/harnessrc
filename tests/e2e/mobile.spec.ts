@@ -2935,3 +2935,43 @@ for (const width of [1280, 390]) {
     await page.screenshot({ path: `test-results/selection-${width}.png` });
   });
 }
+
+test('slash commands and quick shortcuts use control routes and preserve a separate draft', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await pair(page);
+  await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
+  const commands: string[] = [];
+  const messages: any[] = [];
+  await page.route('**/api/sessions/*/commands', async (route) => {
+    const body = route.request().postDataJSON();
+    commands.push(body.line);
+    expect(body.requestId).toBeTruthy();
+    expect(body.generation).toBeTruthy();
+    await route.fulfill({ json: { mode: 'command', message: 'Native command complete' } });
+  });
+  await page.route('**/api/sessions/*/messages', async (route) => {
+    messages.push(route.request().postDataJSON());
+    await route.fulfill({ json: { mode: 'send' } });
+  });
+  const input = page.getByLabel('Instruction', { exact: true });
+  await input.fill('/compact');
+  await input.press('Control+Enter');
+  await expect.poll(() => commands).toEqual(['/compact']);
+  await expect(input).toHaveText('');
+  expect(messages).toHaveLength(0);
+  await input.fill('Keep this draft');
+  await page.getByRole('button', { name: 'Quick shortcuts', exact: true }).click();
+  await page
+    .getByRole('dialog', { name: 'Quick shortcuts' })
+    .getByRole('button', { name: 'Continue', exact: true })
+    .click();
+  await expect.poll(() => messages.length).toBe(1);
+  expect(messages[0].prompt).toBe('Continue');
+  expect(messages[0].attachments).toEqual([]);
+  await expect(input).toHaveText('Keep this draft');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.getByRole('button', { name: 'Quick shortcuts', exact: true }).click();
+  await page.screenshot({ path: 'test-results/quick-shortcuts-mobile.png' });
+});

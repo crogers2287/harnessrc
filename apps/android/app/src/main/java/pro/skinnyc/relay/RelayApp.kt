@@ -96,6 +96,14 @@ private fun RelayAppContent(vm: RelayModel, shared: Intent?, nativeKeyboardVisib
     val scope = rememberCoroutineScope()
     val conversationState = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
     var screen by rememberSaveable { mutableStateOf("") }
+    var quickShortcuts by remember { mutableStateOf(false) }
+    LaunchedEffect(vm.commandAction) {
+        if (vm.commandAction == "help") quickShortcuts = true
+        else if (vm.commandAction.isNotEmpty()) screen = commandScreen(vm.commandAction)
+        vm.commandAction = ""
+    }
+    if (quickShortcuts) QuickShortcuts(vm) { quickShortcuts = false }
+
     LaunchedEffect(vm.notificationTarget, vm.sessions) {
         vm.notificationTarget?.let { (id, question) ->
             if (vm.sessions.any { it.id == id }) {
@@ -1010,6 +1018,9 @@ fun Composer(vm: RelayModel) {
                         Text("Finish dictation", Modifier.padding(start = 8.dp))
                     }
             }
+            if (vm.draft.startsWith("/")) LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(slashShortcuts) { name -> AssistChip(onClick = { vm.command("/$name") }, label = { Text("/$name") }, enabled = !vm.working && !vm.sending) }
+            }
             NativeComposer(
                 vm.draft,
                 MaterialTheme.colorScheme.onSurface,
@@ -1019,6 +1030,7 @@ fun Composer(vm: RelayModel) {
                 Modifier.fillMaxWidth().heightIn(min = 48.dp, max = 164.dp),
             )
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                ActionIcon(Icons.Outlined.Keyboard, "Quick shortcuts", !vm.working && !vm.sending && (vm.session?.can("sendMessage") == true || vm.session?.can("steerActiveTurn") == true)) { vm.commandAction = "help" }
                 Box {
                     ActionIcon(
                         Icons.Outlined.Add,
@@ -1142,7 +1154,8 @@ fun Composer(vm: RelayModel) {
                 FilledIconButton(
                     onClick = { vm.send(mode) },
                     enabled =
-                        mode in modes &&
+                        (mode in modes || (isSlashCommand(vm.draft) && vm.session?.can("sendMessage") == true)) &&
+                            !vm.working &&
                             !vm.sending &&
                             !vm.transcribing &&
                             !recorder.recording &&
@@ -1160,6 +1173,8 @@ fun Composer(vm: RelayModel) {
                         )
                 }
             }
+
+            if (vm.commandNotice.isNotBlank()) Text(vm.commandNotice, Modifier.padding(horizontal = 6.dp, vertical = 6.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (vm.voiceOriginal.isNotBlank()) {
                 var showOriginal by remember(vm.voiceOriginal) { mutableStateOf(false) }
                 Text(

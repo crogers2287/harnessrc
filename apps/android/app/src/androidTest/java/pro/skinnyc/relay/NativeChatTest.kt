@@ -50,7 +50,7 @@ class NativeChatTest {
         get() = ApplicationProvider.getApplicationContext<Context>()
 
     private val session =
-        """{"id":"test-session","sessionName":"Mobile clipboard check","project":"Relay","hostId":"Fred","harness":"dsh","agentPreset":"haxor","model":"fred/flash-next","cwd":"/home/crogers2287/harnessrc","status":"working","connected":true,"capabilities":{"readConversation":true,"sendMessage":true,"steerActiveTurn":true,"queueTask":true,"attachFiles":true,"answerQuestion":true,"changeModel":true}}"""
+        """{"id":"test-session","generation":"fixture-owner","sessionName":"Mobile clipboard check","project":"Relay","hostId":"Fred","harness":"dsh","agentPreset":"haxor","model":"fred/flash-next","cwd":"/home/crogers2287/harnessrc","status":"working","connected":true,"capabilities":{"readConversation":true,"sendMessage":true,"steerActiveTurn":true,"queueTask":true,"attachFiles":true,"answerQuestion":true,"changeModel":true,"interruptTurn":true}}"""
 
     @Before
     fun setup() {
@@ -117,6 +117,11 @@ class NativeChatTest {
                                 """{"attachment":{"id":"11111111-1111-4111-8111-111111111111","name":"Screenshot.png","mime":"image/png","size":128}}"""
                             path.contains("/dictation?") ->
                                 json("text" to "Please check the image and fix the layout.", "original" to dictationOriginal, "cleaned" to true).toString()
+
+                            path.endsWith("/commands") -> {
+                                val line = JSONObject(request.body.clone().readUtf8()).str("line")
+                                json("mode" to "command", "message" to "Native command received", "action" to if (line == "/model") "details" else "").toString()
+                            }
                             path.endsWith("/messages") -> """{"mode":"steer"}"""
                             path.contains("message-receipts") ->
                                 """{"nativeSeen":false,"confirmed":$receiptConfirmed}"""
@@ -145,6 +150,30 @@ class NativeChatTest {
         RelayNotifications.toggle(ctx, false)
         scenario.close()
         server.shutdown()
+    }
+
+
+    @Test
+    fun slashAndQuickRepliesUseSeparateNativeRoutesAndKeepDraft() {
+        scenario.onActivity { it.model.edit("Keep this draft") }
+        compose.onNodeWithContentDescription("Quick shortcuts").performClick()
+        compose.onNodeWithText("Continue").performClick()
+        compose.waitUntil(10000) { requests.any { it.path?.endsWith("/messages") == true } }
+        val reply = requests.last { it.path?.endsWith("/messages") == true }
+        assertEquals("Continue", JSONObject(reply.body.clone().readUtf8()).str("prompt"))
+        scenario.onActivity { assertEquals("Keep this draft", it.model.draft) }
+        compose.waitUntil(10000) {
+            var done = false
+            scenario.onActivity { done = !it.model.sending }
+            done
+        }
+        scenario.onActivity { it.model.edit("/compact"); it.model.send("steer") }
+        compose.waitUntil(10000) { requests.any { it.path?.endsWith("/commands") == true } }
+        val command = JSONObject(requests.last { it.path?.endsWith("/commands") == true }.body.clone().readUtf8())
+        assertEquals("/compact", command.str("line"))
+        assertEquals("fixture-owner", command.str("generation"))
+        assertTrue(command.str("requestId").isNotBlank())
+        assertEquals(1, requests.count { it.path?.endsWith("/messages") == true })
     }
 
     @Test

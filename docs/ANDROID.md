@@ -199,3 +199,17 @@ Transport contract: `GET /api/notifications` establishes a cursor without replay
 Validation: all 166 backend tests, TypeScript and ESLint passed. All 25 Android instrumentation tests passed on the disposable Android 15 emulator after fixing notification-intent consumption to preserve Activity launch identity. Coverage includes delivery with the Activity stopped, question/completion channels, repeated-feed deduplication, opening the answer tray without submitting chat, disabling the service, and preference persistence. Unit tests, lint and debug/test APK builds passed; the notification settings screenshot was reviewed. Actual phone sleep/OEM battery behavior, notification sound/haptics and boot delivery still require a physical-device check. The test emulator and temporary KVM permission were cleaned up.
 
 Delivery: gateway/web `41386fa` deployed and healthy. Signed APK 0.1.23 (versionCode 24) published; authenticated certificate-validated Tailnet download returned 4,929,685 bytes with SHA-256 `ab82f4e8e635dc2ae4041f9b22662888f34a7b1decb85e78375c7c17127dfafe`. The live notification endpoint returned a valid empty-history baseline.
+
+## 0.1.26: native commands and shortcut menu
+
+Install over the existing app to retain pairing and drafts. A keyboard button
+opens quick shortcuts; typing `/` displays common command suggestions. Slash
+commands use Relay's native control path, and quick replies keep a separate
+draft intact. Stop/Ctrl+C and Escape respect connection capabilities; pending
+questions must be answered using their cards. See [session commands](SESSION_COMMANDS.md).
+
+Android unit tests, lint and debug/test APK builds pass. A dedicated native
+instrumentation regression was added and compiled. Emulator execution and
+keyboard/font-scale screenshots remain unverified because the local disposable
+AVD's system image is missing; desktop Chromium results are not native-device
+validation.

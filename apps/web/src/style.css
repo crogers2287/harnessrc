@@ -3627,3 +3627,22 @@ body,
   background: var(--soft);
   font-size: 0.875rem;
 }
+
+.quick-shortcuts,
+.slash-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.quick-shortcuts button,
+.slash-suggestions button {
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--text);
+  background: var(--surface);
+}
+.slash-suggestions {
+  margin-bottom: 10px;
+}

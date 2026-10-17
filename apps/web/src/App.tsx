@@ -39,6 +39,7 @@ import { useEffect, useRef, useState, useMemo, type FormEvent, type ReactNode } 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { MessageMarkdown } from './MessageMarkdown.tsx';
 import {
+  Keyboard,
   ArrowLeft,
   ArrowDown,
   ArrowUp,
@@ -623,6 +624,7 @@ function Conversation({
     setDraft((current) => (current ? `${current.trimEnd()}\n${text}` : text)),
   );
   const [behavior, setBehavior] = useState('auto');
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [questionsOpen, setQuestionsOpen] = useState(false);
   const [clock, setClock] = useState(Date.now());
   useEffect(() => {
@@ -763,7 +765,7 @@ function Conversation({
     onSuccess: (_result, submitted) => {
       setReceiptId(_result?.task?.id);
       feedback();
-      voice.clearResult(submitted.voiceToken);
+      if (submitted.voiceToken !== undefined) voice.clearResult(submitted.voiceToken);
       if (submitted.mode === 'queue')
         setDraft((current) => (current === submitted.prompt ? '' : current));
       else
@@ -807,8 +809,57 @@ function Conversation({
         );
     },
   });
+  const command = useMutation({
+    mutationFn: async (line: string) => {
+      const key = `relay-command:${session.id}`;
+      const prior = JSON.parse(sessionStorage.getItem(key) || 'null');
+      const value =
+        prior?.line === line && prior.generation === session.generation
+          ? prior
+          : { line, generation: session.generation, requestId: crypto.randomUUID() };
+      sessionStorage.setItem(key, JSON.stringify(value));
+      const result = await api<{ action?: string; message: string }>(
+        `/api/sessions/${session.id}/commands`,
+        { method: 'POST', body: JSON.stringify(value) },
+      );
+      sessionStorage.removeItem(key);
+      return result;
+    },
+    onSuccess: (result, line) => {
+      setDraft((current) => (current.trim() === line ? '' : current));
+      setNotice(result.message);
+      setShortcutsOpen(result.action === 'help');
+      if (result.action && result.action !== 'help')
+        navigate({
+          session: session.id,
+          view: result.action === 'tasks' ? 'queue' : result.action,
+        });
+      void query.invalidateQueries({ queryKey: ['detail', session.id] });
+    },
+  });
+  const quickReply = (text: string) => {
+    const key = crypto.randomUUID();
+    if (!outgoing.begin(key, text, [])) {
+      setNotice('Could not save delivery recovery. Nothing was sent.');
+      return;
+    }
+    setShortcutsOpen(false);
+    send.mutate({ prompt: text, key, attachments: [], mode: 'send' });
+  };
   const submit = (e: FormEvent) => {
     e.preventDefault();
+    if (/^\/[a-zA-Z][\w:-]*(?: |$)/.test(draft.trim())) {
+      if (mode === 'queue') {
+        setNotice('Slash commands cannot be queued. Choose Send to run the command.');
+        return;
+      }
+      if (attachments.files.length) {
+        setNotice('Send slash commands without attachments.');
+        return;
+      }
+      if (!command.isPending) command.mutate(draft.trim());
+      return;
+    }
     if (
       (!draft.trim() && !attachments.files.length) ||
       send.isPending ||
@@ -1240,6 +1291,22 @@ function Conversation({
             }}
           >
             {voice.panel}
+            {draft.startsWith('/') && (
+              <div className="slash-suggestions" aria-label="Slash commands">
+                {['help', 'model', 'permissions', 'plan', 'compact', 'tasks', 'agents', 'stop'].map(
+                  (name) => (
+                    <button
+                      type="button"
+                      key={name}
+                      disabled={command.isPending}
+                      onClick={() => command.mutate('/' + name)}
+                    >
+                      /{name}
+                    </button>
+                  ),
+                )}
+              </div>
+            )}
             <AttachmentTray value={attachments} />
             <ComposerInput
               ref={composer}
@@ -1272,6 +1339,14 @@ function Conversation({
                   <option value="queue">Queue for later</option>
                 </select>
               </div>
+              <button
+                type="button"
+                className="secondary"
+                aria-label="Quick shortcuts"
+                onClick={() => setShortcutsOpen(true)}
+              >
+                <Keyboard size={20} />
+              </button>
               {voice.button}
               <button
                 className="send-button"
@@ -1281,7 +1356,8 @@ function Conversation({
                   voice.busy ||
                   attachments.busy ||
                   attachments.invalid ||
-                  busyWithoutSteering ||
+                  (busyWithoutSteering && !draft.startsWith('/')) ||
+                  command.isPending ||
                   send.isPending ||
                   !session.connected
                 }
@@ -1315,6 +1391,72 @@ function Conversation({
               {pending.length > 0 ? ' Pending approvals can be answered above.' : ''}
             </span>
           </div>
+        )}
+        {shortcutsOpen && (
+          <Dialog title="Quick shortcuts" close={() => setShortcutsOpen(false)}>
+            <div className="quick-shortcuts">
+              <button
+                disabled={
+                  !session.capabilities.interruptTurn ||
+                  !['working', 'blocked'].includes(session.status) ||
+                  command.isPending
+                }
+                onClick={() => command.mutate('/stop')}
+              >
+                Stop · Ctrl+C
+              </button>
+              <button
+                disabled={
+                  !session.capabilities.interruptTurn ||
+                  !['working', 'blocked'].includes(session.status) ||
+                  command.isPending
+                }
+                onClick={() => command.mutate('/esc')}
+              >
+                Escape · Esc
+              </button>
+              {['Yes', 'Continue', 'No'].map((text) => (
+                <button
+                  key={text}
+                  disabled={
+                    pending.length > 0 ||
+                    session.status === 'blocked' ||
+                    busyWithoutSteering ||
+                    send.isPending ||
+                    command.isPending ||
+                    !session.connected
+                  }
+                  onClick={() => quickReply(text)}
+                >
+                  {text}
+                </button>
+              ))}
+              {(pending.length > 0 || session.status === 'blocked') && (
+                <button
+                  onClick={() => {
+                    setShortcutsOpen(false);
+                    setQuestionsOpen(true);
+                  }}
+                >
+                  Answer current question
+                </button>
+              )}
+              {['model', 'permissions', 'plan', 'compact', 'tasks', 'agents'].map((name) => (
+                <button
+                  key={name}
+                  disabled={command.isPending}
+                  onClick={() => command.mutate('/' + name)}
+                >
+                  /{name}
+                </button>
+              ))}
+            </div>
+          </Dialog>
+        )}
+        {command.error && (
+          <p className="error" role="alert">
+            {command.error.message}
+          </p>
         )}
         {send.error && (
           <p className="error" role="alert">

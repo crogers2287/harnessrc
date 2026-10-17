@@ -93,6 +93,7 @@ export class CodexDaemon {
   }
   async request(
     method:
+      | 'thread/compact/start'
       | 'thread/read'
       | 'thread/resume'
       | 'thread/settings/update'

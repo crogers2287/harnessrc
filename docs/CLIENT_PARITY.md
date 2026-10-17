@@ -242,3 +242,15 @@ Android 0.1.25 has no embedded gateway origin, tailnet hostname or IP, and its b
 Switching origins cancels old requests, ignores old socket callbacks, resets the live selection/notification cursor, and scopes conversation caches, drafts and pending launch receipts to their server. Legacy drafts and launch receipts migrate to the previously saved origin. Web already uses its current origin and server-provided hosts; no web behavior change was required.
 
 Validation: final full Android integration run passed all 26 tests, including new-install setup, saved-origin restart, keyboard insets, native Back, links, image insertion, recording, interaction replies, notification delivery, and uncertain message recovery. Unit tests, Android lint, debug/test builds, signed release build and web artifact-renderer production build passed. The signed APK's bytecode was checked for the former Fred hostname/IP; neither was present. Signed release setup screenshots were inspected with the keyboard closed and open. A separate person's physical phone and tailnet were not available for testing. See ANDROID.md for HTTPS, Tailscale authorization, CFRproxy and Herdr setup requirements.
+
+## Slash commands and shortcuts, 2026-10-17
+
+Web and Android 0.1.26 share the authenticated command endpoint and native routing.
+Both offer slash suggestions, a keyboard shortcut menu, Stop/Ctrl+C, Escape,
+Yes/Continue/No, session settings, task progress and child viewers. Commands are
+not chat prompts or queued work; pending questions use exact answer cards.
+Existing drafts and attachments survive quick replies. See
+[session commands](SESSION_COMMANDS.md) for native transports and constraints.
+The APK update is required for native menus/navigation. Shared backend handling
+alone does not add these controls to older APKs. Android instrumentation was
+compiled but cannot run with the currently missing disposable-emulator image.
