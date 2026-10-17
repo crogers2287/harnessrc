@@ -284,3 +284,36 @@ Both clients use their existing card components; no APK update is required.
 Validation: 180 backend tests and the two mobile-browser approval/Claude-question
 regressions pass, with TypeScript, scoped ESLint and formatting checks. Android UI
 code is unchanged; a fresh physical-device plan-approval check is outstanding.
+
+### Visible running tools (Android 0.1.27)
+
+Web and Android now keep current tool commands visible outside the collapsed
+activity history, including when activity preferences hide historical tools.
+They show elapsed time and explicitly say no tool result has arrived. After 30
+seconds the UI explains that a tool may still be running or waiting for terminal
+input. Stop current turn uses the existing native command/interruption route,
+preserves a separate draft, and respects connection and capability restrictions.
+Exact native tool-call IDs match parallel completions; legacy calls without IDs
+are matched only when there is one unambiguous active call. Native turn boundaries
+clear activity. DSH invocation IDs are now retained alongside result IDs.
+
+DSH's persistent Bash conversation API normally returns PTY output only when
+the command finishes. The optional native observer in `integrations/dsh-terminal.mjs`
+reads retained terminal scrollback from the exact live agent through DSH's owned
+terminal service while that command is still running. A private Unix socket and
+configured `terminalSocket` bind the gateway to that native observer. Both clients
+poll the selected working DSH session every three seconds and render its bounded,
+control-code-stripped output as plain selectable text. It is not persisted as
+chat or interpreted as a question, approval or HTML.
+
+The bridge is read-only: terminal keystrokes are not connected. Users can stop the
+current turn and send instructions to the agent; actual structured DSH questions
+retain their native cards. Relay never sends `yes`, disables SSH verification,
+or invents an approval from an observed terminal prompt. Hosts without the observer
+retain the honest no-live-output warning. See DSH_TERMINAL.md for installation.
+
+Validation: 183 backend tests, TypeScript, scoped ESLint, production build, and
+three browser checks (390px/1280px current command, exact Stop route, retained
+draft, matching completion, reading-position regression) pass. Android unit tests,
+lint, debug/test APK builds pass. The additional native UI regression is compiled;
+emulator execution remains blocked by the missing disposable system image.

@@ -11,7 +11,7 @@ function RichResponse(props: import('./RichResponse.tsx').RichProps) {
     </Suspense>
   );
 }
-import { responseParts } from '@harnessrc/protocol';
+import { activeToolCalls, toolCommand, responseParts } from '@harnessrc/protocol';
 import { SessionPermissions } from './SessionPermissions.tsx';
 import { watchMobileBack } from './navigation.ts';
 import { NativeMediaGallery, MediaPreviewProvider } from './NativeMedia.tsx';
@@ -75,6 +75,7 @@ import type { SessionView, Event, Interaction, Task } from '@harnessrc/protocol'
 import { Status, IconButton, Empty } from '@harnessrc/ui';
 type AgentPlan = { steps: { text: string; status: string }[]; text: string; updatedAt: string };
 type Detail = {
+  terminalOutput?: string;
   plan?: AgentPlan | null;
   session: SessionView;
   interactions: Interaction[];
@@ -606,6 +607,7 @@ function Conversation({
   const query = useQueryClient();
   const detail = useQuery<Detail>({
     queryKey: ['detail', session.id],
+    refetchInterval: session.harness === 'dsh' && session.status === 'working' ? 3000 : false,
     queryFn: () => api(`/api/sessions/${session.id}`),
   });
   const events = useQuery<{ events: Event[] }>({
@@ -1197,6 +1199,11 @@ function Conversation({
             <WorkingIndicator
               harness={session.agentPreset || agentLabel(session.harness)}
               events={merged}
+              canStop={session.capabilities.interruptTurn}
+              stopping={command.isPending}
+              stop={() => command.mutate('/stop')}
+              now={clock}
+              terminalOutput={detail.data?.terminalOutput ?? ''}
             />
           )}
         <div className="interaction-stack">
@@ -1483,7 +1490,25 @@ function Conversation({
     </MediaPreviewProvider>
   );
 }
-function WorkingIndicator({ harness, events }: { harness: string; events: Event[] }) {
+function WorkingIndicator({
+  harness,
+  events,
+  canStop,
+  stopping,
+  stop,
+  now,
+  terminalOutput,
+}: {
+  harness: string;
+  events: Event[];
+  canStop: boolean;
+  stopping: boolean;
+  stop: () => void;
+  now: number;
+  terminalOutput: string;
+}) {
+  const active = activeToolCalls(events);
+
   const latest = [...events]
     .reverse()
     .find(
@@ -1504,16 +1529,52 @@ function WorkingIndicator({ harness, events }: { harness: string; events: Event[
         ? 'Writing a response'
         : 'Working on your request';
   return (
-    <div className="working-indicator" role="status" aria-label={`${harness} is working`}>
+    <div className="working-indicator" aria-label={`${harness} is working`}>
       <span className="working-dots" aria-hidden="true">
         <i />
         <i />
         <i />
       </span>
       <span>
-        <strong>{harness} is working</strong>
+        <strong role="status" aria-label={`${harness} is working`}>
+          {harness} is working
+        </strong>
         <span className="working-detail">{detail}</span>
       </span>
+      {active.length > 0 && (
+        <div className="active-tools" aria-label="Current tool activity">
+          {active.map((event) => {
+            const seconds = Math.max(0, Math.floor((now - Date.parse(event.timestamp)) / 1000));
+            const elapsed = `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+            const commandText = toolCommand(event);
+            return (
+              <section key={event.id} className="active-tool">
+                <strong>
+                  {String(event.data.tool ?? 'Tool')} · {elapsed}
+                </strong>
+                {commandText && <pre tabIndex={0}>{commandText}</pre>}
+                <p>No tool result received yet.</p>
+                {terminalOutput && (
+                  <pre aria-label="Live terminal output" tabIndex={0}>
+                    {terminalOutput}
+                  </pre>
+                )}
+                {seconds >= 30 && !terminalOutput && (
+                  <p className="tool-wait-note">
+                    The tool may still be running or waiting for terminal input. Live terminal
+                    output is not available here. You can stop the turn to regain control.
+                  </p>
+                )}
+              </section>
+            );
+          })}
+          {canStop && (
+            <button disabled={stopping} onClick={stop}>
+              {stopping ? 'Stopping…' : 'Stop current turn'}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

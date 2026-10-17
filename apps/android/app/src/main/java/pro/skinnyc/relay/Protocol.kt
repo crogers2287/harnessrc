@@ -305,3 +305,33 @@ fun groupConversationActivity(rows: List<ChatEvent>): List<List<ChatEvent>> {
     }
     return groups
 }
+
+
+/** Mirror native invocation identity; never let a parallel result close another tool. */
+fun activeToolCalls(events: List<ChatEvent>): List<ChatEvent> {
+    val active = mutableListOf<ChatEvent>()
+    fun identity(e: ChatEvent) = listOf("toolCallId", "toolId", "callId").firstNotNullOfOrNull { e.body.str(it).takeIf { v -> v.isNotBlank() } }
+    for (event in events) {
+        when (event.kind) {
+            "turn.started", "turn.completed", "turn.failed" -> active.clear()
+            "tool.invocation" -> active.add(event)
+            "tool.output", "tool.completion" -> {
+                val id = identity(event)
+                var index = if (id == null) -1 else active.indexOfFirst { identity(it) == id }
+                if (index < 0 && active.size == 1 && identity(active[0]) == null) index = 0
+                if (index >= 0) active.removeAt(index)
+            }
+        }
+    }
+    return active
+}
+
+fun toolCommand(event: ChatEvent): String {
+    val input = event.body.opt("input")
+    val value = when (input) {
+        is JSONObject -> input
+        is String -> runCatching { JSONObject(input) }.getOrElse { return input }
+        else -> return ""
+    }
+    return listOf("command", "cmd", "description").firstNotNullOfOrNull { (value.opt(it) as? String) } ?: ""
+}

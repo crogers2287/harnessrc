@@ -213,3 +213,12 @@ instrumentation regression was added and compiled. Emulator execution and
 keyboard/font-scale screenshots remain unverified because the local disposable
 AVD's system image is missing; desktop Chromium results are not native-device
 validation.
+
+### 0.1.27: visible running tool commands
+
+Current commands and elapsed time stay visible above the composer instead of
+being hidden in Agent activity. Long waits explain missing output and provide
+Stop current turn without discarding a draft. With the native observer enabled,
+the app shows retained DSH terminal output while a command runs; the bridge is
+read-only. See DSH_TERMINAL.md for activation and limitations. Native unit tests/lint/builds pass; the new UI test is compiled
+but has not run on an emulator or physical phone.

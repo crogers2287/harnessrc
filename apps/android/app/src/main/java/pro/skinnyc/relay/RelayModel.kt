@@ -81,6 +81,8 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
         get() = sessions.find { it.id == selected }
 
     var plan by mutableStateOf<JSONObject?>(null)
+    var terminalOutput by mutableStateOf("")
+        private set
     var events by mutableStateOf(listOf<ChatEvent>())
         private set
 
@@ -134,6 +136,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
     private var foreground = false
     private var retry: Job? = null
     private var refresh: Job? = null
+    private var terminalPoll: Job? = null
     private var voiceJob: Job? = null
     private var retryAudio: File? = null
     private var retrySession = ""
@@ -155,6 +158,13 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
         foreground = true
         RelayNotifications.visibleSession = selected
         markOpened(selected)
+        terminalPoll?.cancel()
+        terminalPoll = viewModelScope.launch {
+            while (foreground) {
+                delay(3000)
+                if (connected && session?.harness == "dsh" && session?.status == "working") detail(selected)
+            }
+        }
         viewModelScope.launch {
             refreshSessions()
             connect()
@@ -163,6 +173,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
 
     fun stop() {
         foreground = false
+        terminalPoll?.cancel()
         RelayNotifications.visibleSession = null
         retry?.cancel()
         socket?.close(1000, "Background")
@@ -272,6 +283,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
         outgoing = null
         plan = null
         events = emptyList()
+        terminalOutput = ""
         interactions = emptyList()
         tasks = emptyList()
         notice = ""
@@ -373,6 +385,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
         try {
             val data = api.api("/api/sessions/$id")
             if (selected != id) return
+            terminalOutput = data.str("terminalOutput")
             interactions = data.rows("interactions")
             tasks = data.rows("tasks")
             plan = data.optJSONObject("plan")

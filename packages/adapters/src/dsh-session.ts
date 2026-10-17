@@ -106,7 +106,11 @@ export function dshEvents(input: unknown): SourceEvent[] {
       {
         ...base,
         kind: 'tool.invocation',
-        data: { tool: d.name ?? d.tool?.name ?? 'Tool', input: d.arguments ?? d.input },
+        data: {
+          tool: d.name ?? d.tool?.name ?? 'Tool',
+          input: d.arguments ?? d.input,
+          toolCallId: d.callId,
+        },
       },
     ];
   if (e.type === 'tool/result')

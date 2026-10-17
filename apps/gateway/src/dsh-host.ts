@@ -12,6 +12,7 @@ export const dshHostSchema = z.object({
   name: z.string(),
   endpoint: z.string().url(),
   tokenFile: z.string(),
+  terminalSocket: z.string().startsWith('/').optional(),
 });
 export class DshHost {
   native: DshClient;

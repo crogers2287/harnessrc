@@ -3646,3 +3646,37 @@ body,
 .slash-suggestions {
   margin-bottom: 10px;
 }
+
+.working-indicator:has(.active-tools) {
+  flex-wrap: wrap;
+}
+.active-tools {
+  flex-basis: 100%;
+  min-width: 0;
+  width: 100%;
+}
+.active-tool {
+  margin-top: 12px;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.active-tool pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 12em;
+  overflow: auto;
+  user-select: text;
+  font-size: 0.85rem;
+}
+.active-tool p {
+  margin: 8px 0 0;
+}
+.tool-wait-note {
+  color: var(--muted);
+}
+.active-tools > button {
+  margin-top: 8px;
+  min-height: 48px;
+}

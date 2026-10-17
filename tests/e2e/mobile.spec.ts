@@ -2975,3 +2975,98 @@ test('slash commands and quick shortcuts use control routes and preserve a separ
   await page.getByRole('button', { name: 'Quick shortcuts', exact: true }).click();
   await page.screenshot({ path: 'test-results/quick-shortcuts-mobile.png' });
 });
+
+for (const width of [390, 1280])
+  test(`running DSH command is visible without expanding tool activity (${width}px)`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await pair(page);
+    const { sessions } = await page.evaluate(async () => (await fetch('/api/sessions')).json());
+    const session = {
+      ...sessions[0],
+      harness: 'dsh',
+      sessionName: 'DSH visibility',
+      status: 'working',
+      capabilities: { ...sessions[0].capabilities, interruptTurn: true },
+    };
+    const events = [
+      {
+        id: 'live-tool',
+        sourceId: 'native-tool',
+        sequence: 500,
+        sessionId: session.id,
+        nativeSessionId: session.nativeSessionId,
+        source: 'dsh',
+        kind: 'tool.invocation',
+        timestamp: new Date(Date.now() - 120000).toISOString(),
+        data: {
+          tool: 'bash',
+          toolCallId: 'ssh-call',
+          input: JSON.stringify({ command: 'ssh -o ConnectTimeout=10 desktop2025 hostname' }),
+        },
+      },
+    ];
+    await page.route('**/api/sessions', (route) =>
+      route.fulfill({ json: { sessions: [session] } }),
+    );
+    await page.route(`**/api/sessions/${session.id}`, (route) =>
+      route.fulfill({
+        json: {
+          session,
+          interactions: [],
+          tasks: [],
+          terminalOutput:
+            width === 1280
+              ? 'Are you sure you want to continue connecting (yes/no/[fingerprint])?'
+              : '',
+        },
+      }),
+    );
+    await page.route('**/events?*', (route) => route.fulfill({ json: { events } }));
+    let stream: any;
+    await page.routeWebSocket('**/ws', (socket) => {
+      stream = socket;
+      socket.send(JSON.stringify({ type: 'invalidate', sessions: [session] }));
+    });
+    const commands: string[] = [];
+    await page.route('**/commands', async (route) => {
+      commands.push(route.request().postDataJSON().line);
+      await route.fulfill({ json: { mode: 'command', message: 'Current turn cancelled.' } });
+    });
+    await page.reload();
+    await openSessions(page);
+    await page.locator('button.session-row').filter({ hasText: 'DSH visibility' }).click();
+    const activity = page.getByLabel('Current tool activity', { exact: true });
+    await expect(
+      activity.getByText('ssh -o ConnectTimeout=10 desktop2025 hostname', { exact: true }),
+    ).toBeVisible();
+    await expect(activity.getByText('No tool result received yet.', { exact: true })).toBeVisible();
+    if (width === 390) await expect(activity).toContainText('waiting for terminal input');
+    else
+      await expect(activity.getByLabel('Live terminal output')).toContainText(
+        'yes/no/[fingerprint]',
+      );
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await page.screenshot({ path: `test-results/active-tool-${width}.png` });
+    await page.getByLabel('Instruction', { exact: true }).fill('Keep my draft');
+    await activity.getByRole('button', { name: 'Stop current turn', exact: true }).click();
+    await expect.poll(() => commands).toEqual(['/stop']);
+    await expect(page.getByLabel('Instruction', { exact: true })).toHaveText('Keep my draft');
+    stream.send(
+      JSON.stringify({
+        type: 'event',
+        event: {
+          ...events[0],
+          id: 'tool-done',
+          sourceId: 'result',
+          sequence: 501,
+          kind: 'tool.output',
+          data: { toolCallId: 'ssh-call', text: 'Host key verification failed.' },
+        },
+      }),
+    );
+    await expect(activity).toHaveCount(0);
+  });

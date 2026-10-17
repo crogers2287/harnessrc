@@ -254,3 +254,4 @@ export { nativeFiles, mediaKind, type NativeFile } from './media.ts';
 
 export * from './permissions.ts';
 export { responseParts, type ResponsePart } from './rich-response.ts';
+export { activeToolCalls, toolCommand } from './activity.ts';

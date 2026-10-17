@@ -1,3 +1,4 @@
+import { dshTerminalOutput } from './dsh-terminal.ts';
 import { taskInputSchema } from '@harnessrc/protocol';
 import { SessionCommands } from './commands.ts';
 import { notificationFeed } from './notifications.ts';
@@ -421,6 +422,13 @@ export async function createGateway(
     check(req, id);
     return {
       session: sessionViews(req.device).find((s) => s.id === id),
+      terminalOutput: await (async () => {
+        const session = store.session(id);
+        const socket = runtime.dshHosts.get(session.hostId)?.config.terminalSocket;
+        return socket && session.status === 'working'
+          ? dshTerminalOutput(socket, session.nativeSessionId)
+          : '';
+      })(),
       interactions: store.interactions(id),
       tasks: store.tasks(id),
       plan: store.latestPlan(id),

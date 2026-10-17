@@ -154,6 +154,25 @@ class NativeChatTest {
 
 
     @Test
+    fun activeCommandShowsWaitAndStopsWithoutSendingDraft() {
+        scenario.onActivity { it.model.edit("Keep my draft") }
+        compose.waitUntil(10000) { liveSocket != null }
+        liveSocket!!.send(json("type" to "event", "event" to json(
+            "id" to "active-ssh", "sequence" to 200, "sessionId" to "test-session", "kind" to "tool.invocation",
+            "timestamp" to java.time.Instant.now().minusSeconds(120).toString(),
+            "data" to json("tool" to "bash", "toolCallId" to "ssh", "input" to json("command" to "ssh desktop2025 hostname")),
+        )).toString())
+        compose.onNodeWithText("ssh desktop2025 hostname").assertIsDisplayed()
+        compose.onNodeWithText("No tool result received yet.").assertIsDisplayed()
+        compose.onNodeWithText("Stop current turn").performScrollTo().performClick()
+        compose.waitUntil(10000) { requests.any { it.path?.endsWith("/commands") == true } }
+        val body = JSONObject(requests.last { it.path?.endsWith("/commands") == true }.body.clone().readUtf8())
+        assertEquals("/stop", body.str("line"))
+        assertFalse(requests.any { it.path?.endsWith("/messages") == true })
+        scenario.onActivity { assertEquals("Keep my draft", it.model.draft) }
+    }
+
+    @Test
     fun slashAndQuickRepliesUseSeparateNativeRoutesAndKeepDraft() {
         scenario.onActivity { it.model.edit("Keep this draft") }
         compose.onNodeWithContentDescription("Quick shortcuts").performClick()

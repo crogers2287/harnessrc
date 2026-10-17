@@ -580,19 +580,8 @@ fun Chat(vm: RelayModel, modifier: Modifier) {
             }
             if (vm.session?.busy == true)
                 item("working") {
-                    Row(
-                        Modifier.padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                        Text(
-                            if (vm.session?.pending ?: 0 > 0) "Waiting for your answer"
-                            else "${vm.session?.agent} is working",
-                            Modifier.padding(start = 12.dp),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+                    ActiveToolActivity(vm)
+
                 }
             if (rows.isEmpty())
                 item("empty") {
