@@ -1,0 +1,337 @@
+package pro.skinnyc.relay
+
+import org.json.JSONArray
+import org.json.JSONObject
+
+fun JSONObject.str(key: String, default: String = "") =
+    optString(key, default).takeUnless { it == "null" } ?: default
+
+fun JSONObject.obj(key: String) = optJSONObject(key) ?: JSONObject()
+
+fun JSONObject.rows(key: String) = (optJSONArray(key) ?: JSONArray()).objects()
+
+fun JSONArray.objects() = (0 until length()).mapNotNull { optJSONObject(it) }
+
+fun json(vararg values: Pair<String, Any?>) =
+    JSONObject().apply { values.forEach { (k, v) -> put(k, v) } }
+
+data class Session(val data: JSONObject) {
+    val id = data.str("id")
+    val title =
+        data.str("relayName").ifBlank {
+            data.str("sessionName").ifBlank { data.str("project", "Session") }
+        }
+    val harness = data.str("harness")
+    val agent =
+        when (harness) {
+            "dsh" -> "DSH"
+            "claude" -> "Claude Code"
+            "codex" -> "Codex"
+            "omp" -> "OMP"
+            "pi" -> "Pi"
+            else -> harness.replaceFirstChar { it.uppercase() }
+        }
+    val profile = data.str("agentPreset")
+    val model = data.str("model", "Model not reported")
+    val cwd = data.str("cwd")
+    val status = data.str("status")
+    val busy
+        get() = status == "working" || status == "blocked"
+
+    val pending = data.optInt("pendingCount")
+    val queued = data.optInt("queuedCount")
+    val subtitle
+        get() = listOf(agent, profile, model).filter { it.isNotBlank() }.joinToString(" · ")
+
+    fun can(capability: String) = data.obj("capabilities").optBoolean(capability)
+
+    fun modes(): List<String> = buildList {
+        if (pending == 0 && (if (busy) can("steerActiveTurn") else can("sendMessage")))
+            add(if (busy) "steer" else "send")
+        if (can("queueTask")) add("queue")
+    }
+}
+
+/** Pinned sessions stay on top; the rest sort by the latest open or agent event. */
+fun sortedSessions(
+    sessions: List<Session>,
+    lastOpened: Map<String, Long> = emptyMap(),
+): List<Session> =
+    sessions.sortedWith(
+        compareByDescending<Session> { it.data.optBoolean("pinned") }
+            .thenByDescending { sessionRecencyMillis(it, lastOpened) }
+            .thenBy { it.id }
+    )
+
+fun sessionRecencyMillis(session: Session, lastOpened: Map<String, Long>): Long {
+    val activity =
+        runCatching { java.time.Instant.parse(session.data.str("lastActivity")).toEpochMilli() }
+            .getOrDefault(0L)
+    return maxOf(activity, lastOpened[session.id] ?: 0L)
+}
+
+fun sessionRecencyLabel(
+    session: Session,
+    lastOpened: Map<String, Long>,
+    now: Long = System.currentTimeMillis(),
+): String {
+    val opened = lastOpened[session.id] ?: 0L
+    val activity =
+        runCatching { java.time.Instant.parse(session.data.str("lastActivity")).toEpochMilli() }
+            .getOrDefault(0L)
+    val timestamp = maxOf(opened, activity)
+    if (timestamp == 0L) return "No recent activity"
+    val elapsed = (now - timestamp).coerceAtLeast(0L)
+    val age = when {
+        elapsed < 60_000 -> "Just now"
+        elapsed < 3_600_000 -> "${elapsed / 60_000}m ago"
+        elapsed < 86_400_000 -> "${elapsed / 3_600_000}h ago"
+        elapsed < 604_800_000 -> "${elapsed / 86_400_000}d ago"
+        else -> java.time.Instant.ofEpochMilli(timestamp)
+            .atZone(java.time.ZoneId.systemDefault())
+            .toLocalDate()
+            .format(java.time.format.DateTimeFormatter.ofPattern("MMM d"))
+    }
+    return "${if (opened > activity) "Opened" else "Activity"} · $age"
+}
+
+data class ChatEvent(val data: JSONObject) {
+    val id = data.str("id")
+    val sequence = data.optLong("sequence")
+    val kind = data.str("kind")
+    val body = data.obj("data")
+    val text = body.str("text")
+    val item = body.str("itemId")
+}
+
+/** Native event IDs, never text similarity, determine transcript identity. */
+fun mergeEvents(existing: List<ChatEvent>, incoming: List<ChatEvent>): List<ChatEvent> {
+    val all = (existing + incoming).associateBy { it.id }.values.sortedBy { it.sequence }
+    val replaced =
+        all.flatMap { event ->
+                val values = event.body.optJSONArray("replacesEventSourceIds") ?: JSONArray()
+                (0 until values.length()).map { values.optString(it) }
+            }
+            .toSet()
+    return all.filterNot { it.data.str("sourceId") in replaced }
+}
+
+/** Finds a transcript echo to clear an accepted composer bubble, even without request IDs. */
+fun hasNativeEcho(outgoing: JSONObject, events: List<ChatEvent>): Boolean {
+    val key = outgoing.str("idempotencyKey")
+    val prompt = outgoing.str("prompt").trim()
+    val started = outgoing.optLong("startedAtMillis", 0L)
+    val attachmentIds =
+        (outgoing.optJSONArray("attachments") ?: JSONArray()).let { array ->
+            (0 until array.length()).map { array.optString(it) }.sorted()
+        }
+    return events.any { event ->
+        if (event.kind != "user.message") return@any false
+        val body = event.body
+        if (key.isNotBlank() && (body.str("requestId") == key || body.str("taskId") == key))
+            return@any true
+        if (attachmentIds.isNotEmpty()) return@any false
+        val timestamp =
+            runCatching { java.time.Instant.parse(event.data.str("timestamp")).toEpochMilli() }
+                .getOrDefault(0L)
+        timestamp >= started - 1000 && displayText(event.text).trim() == prompt
+    }
+}
+
+fun conversationRows(events: List<ChatEvent>): List<ChatEvent> {
+    val complete =
+        events
+            .filter { it.kind == "assistant.message" && it.item.isNotBlank() }
+            .map { it.item }
+            .toSet()
+    val deltas = linkedMapOf<String, ChatEvent>()
+    val output = mutableListOf<ChatEvent>()
+    events.forEach { event ->
+        if (event.kind == "assistant.delta") {
+            if (event.item !in complete) {
+                val key = event.item.ifBlank { event.data.str("turnId", event.id) }
+                val old = deltas[key]
+                val combined =
+                    JSONObject(event.data.toString())
+                        .put(
+                            "data",
+                            JSONObject(event.body.toString())
+                                .put("text", (old?.text ?: "") + event.text),
+                        )
+                deltas[key] =
+                    ChatEvent(
+                        combined
+                            .put("id", old?.id ?: event.id)
+                            .put("sequence", old?.sequence ?: event.sequence)
+                    )
+            }
+        } else if (
+            event.kind in
+                setOf(
+                    "user.message",
+                    "assistant.message",
+                    "reasoning.summary",
+                    "tool.invocation",
+                    "tool.output",
+                    "tool.completion",
+                    "file.change",
+                    "artifact.created",
+                    "diff",
+                    "plan",
+                    "turn.failed",
+                )
+        )
+            output.add(event)
+    }
+    return (output + deltas.values).sortedBy { it.sequence }
+}
+
+fun displayText(value: String): String {
+    var text = value.replace(Regex("\\n?\\[Relay request [a-f0-9-]+]"), "")
+    val reply =
+        Regex(
+                "^\\s*<send_user_message_question_reply>\\s*([\\s\\S]*?)\\s*</send_user_message_question_reply>\\s*$"
+            )
+            .find(text)
+    if (reply != null)
+        runCatching {
+            return JSONArray(reply.groupValues[1]).objects().joinToString("\n\n") {
+                "**${it.str("question")}**\n${it.str("answer")}"
+            }
+        }
+    val command = Regex("<command-name>(.*?)</command-name>").find(text)
+    if (command != null)
+        return command.groupValues[1] +
+            " " +
+            (Regex("<command-args>([\\s\\S]*?)</command-args>").find(text)?.groupValues?.get(1)
+                ?: "")
+    text =
+        text.replace(
+            Regex("</?(?:local-command-stdout|local-command-stderr|pasted_content)(?: [^>]*)?>"),
+            "",
+        )
+    return text.trim()
+}
+
+data class TaskNotice(
+    val title: String,
+    val summary: String,
+    val details: List<Pair<String, String>>,
+)
+
+/** Only complete, known transport envelopes are interpreted; code examples stay literal. */
+fun taskNotice(text: String): TaskNotice? {
+    val match =
+        Regex(
+                """^\s*<task-notification>([\s\S]*?)</task-notification>\s*(?:<system-reminder>([\s\S]*?)</system-reminder>\s*)?$"""
+            )
+            .matchEntire(text) ?: return null
+    val fields = linkedMapOf<String, String>()
+    var valid = true
+    val rest =
+        Regex(
+                """<(task-id|tool-use-id|output-file|status|summary|task-type|result|note|usage|diagnostics)>([\s\S]*?)</\1>"""
+            )
+            .replace(match.groupValues[1]) {
+                val key = it.groupValues[1]
+                if (fields.containsKey(key)) valid = false
+                fields[key] = it.groupValues[2].trim()
+                ""
+            }
+    if (!valid || rest.isNotBlank() || fields["summary"].isNullOrBlank()) return null
+    val title =
+        when (fields["status"]) {
+            "completed" -> "Background task completed"
+            "failed" -> "Background task failed"
+            "killed" -> "Background task stopped"
+            else -> "Background task update"
+        }
+    val labels =
+        mapOf(
+            "task-id" to "Task",
+            "tool-use-id" to "Tool call",
+            "output-file" to "Output file",
+            "task-type" to "Task type",
+            "note" to "Note",
+        )
+    val details =
+        fields
+            .filterKeys { it != "summary" }
+            .map { (key, value) ->
+                (labels[key] ?: key.replaceFirstChar { it.uppercase() }) to
+                    if (key == "usage" || key == "diagnostics")
+                        value
+                            .replace(Regex("</[^>]+>"), "; ")
+                            .replace(Regex("<([^>]+)>"), "$1: ")
+                            .trim()
+                    else value
+            } +
+            match.groupValues[2]
+                .takeIf { it.isNotBlank() }
+                ?.let { listOf("Context" to it.trim()) }
+                .orEmpty()
+    return TaskNotice(title, fields.getValue("summary"), details)
+}
+
+fun messageTimestamp(
+    value: String,
+    zone: java.time.ZoneId = java.time.ZoneId.systemDefault(),
+    locale: java.util.Locale = java.util.Locale.getDefault(),
+): String? =
+    runCatching {
+            java.time.Instant.parse(value)
+                .atZone(zone)
+                .format(
+                    java.time.format.DateTimeFormatter.ofLocalizedDateTime(
+                            java.time.format.FormatStyle.MEDIUM,
+                            java.time.format.FormatStyle.SHORT,
+                        )
+                        .withLocale(locale)
+                )
+        }
+        .getOrNull()
+
+/** Adjacent native tool activity shares one stable disclosure; messages remain boundaries. */
+fun isGroupedActivity(event: ChatEvent) =
+    event.kind.startsWith("tool.") || event.kind == "reasoning.summary"
+
+fun groupConversationActivity(rows: List<ChatEvent>): List<List<ChatEvent>> {
+    val groups = mutableListOf<MutableList<ChatEvent>>()
+    rows.forEach { event ->
+        val previous = groups.lastOrNull()
+        if (isGroupedActivity(event) && previous != null && isGroupedActivity(previous.first()))
+            previous.add(event)
+        else groups.add(mutableListOf(event))
+    }
+    return groups
+}
+
+
+/** Mirror native invocation identity; never let a parallel result close another tool. */
+fun activeToolCalls(events: List<ChatEvent>): List<ChatEvent> {
+    val active = mutableListOf<ChatEvent>()
+    fun identity(e: ChatEvent) = listOf("toolCallId", "toolId", "callId").firstNotNullOfOrNull { e.body.str(it).takeIf { v -> v.isNotBlank() } }
+    for (event in events) {
+        when (event.kind) {
+            "turn.started", "turn.completed", "turn.failed" -> active.clear()
+            "tool.invocation" -> active.add(event)
+            "tool.output", "tool.completion" -> {
+                val id = identity(event)
+                var index = if (id == null) -1 else active.indexOfFirst { identity(it) == id }
+                if (index < 0 && active.size == 1 && identity(active[0]) == null) index = 0
+                if (index >= 0) active.removeAt(index)
+            }
+        }
+    }
+    return active
+}
+
+fun toolCommand(event: ChatEvent): String {
+    val input = event.body.opt("input")
+    val value = when (input) {
+        is JSONObject -> input
+        is String -> runCatching { JSONObject(input) }.getOrElse { return input }
+        else -> return ""
+    }
+    return listOf("command", "cmd", "description").firstNotNullOfOrNull { (value.opt(it) as? String) } ?: ""
+}

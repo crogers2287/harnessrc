@@ -1,0 +1,622 @@
+import { startHarness, harnessReady } from './start-harness.ts';
+import { launchPermissionSchema } from './launch-permissions.ts';
+import { acceptClaudeResumeTrust } from './claude-resume-trust.ts';
+import type { DshHost } from './dsh-host.ts';
+import { CodexDaemon } from '../../../packages/adapters/src/codex-daemon.ts';
+import { realpath, readdir, stat, mkdir, open } from 'node:fs/promises';
+import path from 'node:path';
+import { z } from 'zod';
+import type { Store } from '@harnessrc/storage';
+import { HerdrError, type HerdrClient } from '@harnessrc/herdr';
+
+// Profiles are trusted host configuration. Clients choose IDs, never commands or environment.
+export const launchProfileSchema = z.object({
+  id: z.string().regex(/^[a-z0-9-]+$/),
+  hostId: z.string(),
+  label: z.string(),
+  harness: z.enum(['claude', 'codex', 'pi', 'omp', 'opencode', 'hermes', 'dsh']),
+  provider: z.string().default('Harness default'),
+  modelsEndpoint: z.string().url().optional(),
+  defaultModel: z
+    .string()
+    .regex(/^[a-zA-Z0-9][a-zA-Z0-9._:/@+-]*$/)
+    .optional(),
+  codexProvider: z.string().optional(),
+  dshProvider: z.string().default('cfrproxy'),
+  dshPreset: z.string().optional(),
+  workspaceId: z.string(),
+  roots: z.array(z.string()).min(1),
+  args: z.array(z.string()).default([]),
+  permissionPresets: z.array(launchPermissionSchema).default([]),
+  modelFlag: z.string().default('--model'),
+  models: z
+    .array(
+      z.object({
+        id: z.string(),
+        name: z.string(),
+        contextWindow: z.number().int().positive().optional(),
+      }),
+    )
+    .default([]),
+  allowCustomModel: z.boolean().default(false),
+  // Map child environment names to gateway environment names; values never leave Fred.
+  environment: z.record(z.string(), z.string()).default({}),
+});
+export type LaunchProfile = z.infer<typeof launchProfileSchema>;
+export const launchRequestSchema = z
+  .object({
+    requestId: z.string().uuid(),
+    profileId: z.string(),
+    cwd: z.string().min(1).max(4096),
+    name: z.string().trim().min(1).max(80),
+    model: z.string().max(160).default(''),
+    permission: z.string().max(160).optional(),
+    permissionConfirmed: z.boolean().optional(),
+    agentPreset: z.string().min(1).max(160).optional(),
+    prompt: z.string().trim().min(1).max(32000),
+  })
+  .strict();
+export type LaunchRequest = z.infer<typeof launchRequestSchema>;
+export type LaunchReceipt = {
+  requestId: string;
+  status: 'starting' | 'started' | 'uncertain';
+  hostId: string;
+  paneId?: string;
+  terminalId?: string;
+  nativeSessionId?: string;
+  diagnostic?: string;
+};
+const within = (root: string, candidate: string) =>
+  candidate === root || candidate.startsWith(root + path.sep);
+
+export const HARNESS_CONTEXT_LIMIT = 256_000;
+
+// A host can have hundreds of CPUs and dozens of agent/MCP processes. Libraries
+// otherwise allocate a CPU-sized pool in every process, exhausting cgroup PIDs.
+// Trusted profile environment mappings below can override these defaults.
+export const HARNESS_THREAD_DEFAULTS: Record<string, string> = {
+  TOKIO_WORKER_THREADS: '2',
+  RAYON_NUM_THREADS: '4',
+  GOMAXPROCS: '4',
+  OMP_NUM_THREADS: '1',
+  OPENBLAS_NUM_THREADS: '1',
+  MKL_NUM_THREADS: '1',
+  NUMEXPR_NUM_THREADS: '1',
+  TOKENIZERS_PARALLELISM: 'false',
+};
+
+export class Launcher {
+  constructor(
+    private store: Store,
+    private profiles: LaunchProfile[],
+    private clients: Map<string, HerdrClient>,
+    private codexSockets = new Map<string, string>(),
+    private dshHosts = new Map<string, DshHost>(),
+  ) {}
+  profile(id: string) {
+    const p = this.profiles.find((p) => p.id === id);
+    if (!p) throw new Error('Launch profile unavailable');
+    return p;
+  }
+  async directory(id: string, candidate?: string) {
+    const profile = this.profile(id);
+    const roots = await Promise.all(profile.roots.map((root) => realpath(root)));
+    const resolved = await realpath(candidate ?? roots[0]);
+    if (!roots.some((root) => within(root, resolved)))
+      throw new Error('Folder is outside permitted project roots');
+    if (!(await stat(resolved)).isDirectory()) throw new Error('Choose a directory');
+    return { resolved, roots };
+  }
+  async folders(id: string, candidate?: string) {
+    const { resolved, roots } = await this.directory(id, candidate);
+    const entries = await readdir(resolved, { withFileTypes: true });
+    const directories = entries
+      .filter((e) => e.isDirectory() && !e.name.startsWith('.'))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    return {
+      path: resolved,
+      roots,
+      parent: roots.some((root) => within(root, path.dirname(resolved)))
+        ? path.dirname(resolved)
+        : null,
+      directories: directories
+        .slice(0, 500)
+        .map((e) => ({ name: e.name, path: path.join(resolved, e.name) })),
+      truncated: directories.length > 500,
+    };
+  }
+  async createFolder(id: string, name: string, device: string) {
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9 _.-]{0,79}$/.test(name) || name.endsWith('.'))
+      throw new Error('Use a project name with letters, numbers, spaces, hyphens or underscores');
+    const { resolved: home } = await this.directory(id);
+    const parent = await open(home, 'r');
+    try {
+      // Hold the resolved parent open so a concurrent symlink replacement cannot redirect mkdir.
+      const anchored = process.platform === 'linux' ? `/proc/self/fd/${parent.fd}` : home;
+      await mkdir(path.join(anchored, name), { mode: 0o700 });
+      const created = await realpath(path.join(home, name));
+      if (created !== path.join(home, name))
+        throw new Error('Project folder changed; refresh folders');
+      this.store.audit(device, 'project.create', null, { profileId: id, path: created });
+      return { path: created };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST')
+        throw new Error(
+          'A folder or file with this name already exists. Choose it with Browse folders.',
+        );
+      throw error;
+    } finally {
+      await parent.close();
+    }
+  }
+  async permissionOptions(p: LaunchProfile) {
+    if (p.harness !== 'dsh')
+      return p.permissionPresets.map(({ id, name, description }) => ({ id, name, description }));
+    const host = this.dshHosts.get(p.hostId);
+    if (!host?.connected) return [];
+    const catalog = z
+      .object({
+        options: z.array(
+          z.object({
+            value: z.string().regex(/^[a-zA-Z0-9_-]+$/),
+            name: z.string(),
+            description: z.string().optional(),
+          }),
+        ),
+      })
+      .parse(await host.native.call('permissionPresets/catalog', {}));
+    return catalog.options.map((o) => ({
+      id: o.value,
+      name: o.name,
+      description: o.description ?? '',
+    }));
+  }
+  async catalog(filter?: { hostId: string; harness: string }) {
+    return Promise.all(
+      this.profiles
+        .filter((p) => !filter || (p.hostId === filter.hostId && p.harness === filter.harness))
+        .map(async (p) => ({
+          id: p.id,
+          hostId: p.hostId,
+          label: p.label,
+          harness: p.harness,
+          provider: p.provider,
+          models: await this.models(p),
+          allowCustomModel: p.allowCustomModel,
+          defaultModel: p.defaultModel,
+          projectHome: p.roots[0],
+          permissions: await this.permissionOptions(p),
+          ...(p.harness === 'dsh' ? await this.presets(p) : {}),
+          connected:
+            this.dshHosts.get(p.hostId)?.connected ??
+            this.clients.get(p.hostId)?.host.connected ??
+            false,
+        })),
+    );
+  }
+  async presets(p: LaunchProfile) {
+    try {
+      const host = this.dshHosts.get(p.hostId);
+      if (!host?.connected) throw new Error('Disconnected');
+      const { presets } = z
+        .object({
+          presets: z.array(
+            z.object({
+              id: z.string(),
+              name: z.string().optional(),
+              description: z.string().optional(),
+              isDefault: z.boolean().optional(),
+              broken: z.string().optional(),
+            }),
+          ),
+        })
+        .parse(await host.native.call('agentPresets/list', {}));
+      return {
+        agentPresets: presets.map((p) => ({
+          id: p.id,
+          name: p.name || p.id,
+          description: p.description,
+          unavailable: !!p.broken,
+        })),
+        defaultAgentPreset: p.dshPreset ?? presets.find((p) => p.isDefault)?.id,
+      };
+    } catch {
+      return {
+        agentPresets: [],
+        presetError: 'DSH agent list is unavailable. Reconnect to DSH and try again.',
+      };
+    }
+  }
+  private modelCache = new Map<
+    string,
+    { at: number; models: { id: string; name: string; contextWindow?: number }[] }
+  >();
+  async models(p: LaunchProfile): Promise<{ id: string; name: string; contextWindow?: number }[]> {
+    return (await this.uncappedModels(p)).map((m) => ({
+      ...m,
+      ...(m.contextWindow
+        ? { contextWindow: Math.min(m.contextWindow, HARNESS_CONTEXT_LIMIT) }
+        : {}),
+    }));
+  }
+  private async uncappedModels(
+    p: LaunchProfile,
+  ): Promise<{ id: string; name: string; contextWindow?: number }[]> {
+    if (p.harness === 'dsh') {
+      const host = this.dshHosts.get(p.hostId);
+      if (!host?.connected) return [];
+      const catalog = z
+        .object({
+          groups: z.array(
+            z.object({
+              id: z.string(),
+              models: z.array(z.object({ id: z.string(), name: z.string() })),
+            }),
+          ),
+        })
+        .parse(await host.native.models());
+      return catalog.groups.find((g) => g.id === p.dshProvider)?.models ?? [];
+    }
+    if (!p.modelsEndpoint) return p.models;
+    const cached = this.modelCache.get(p.id);
+    if (cached && Date.now() - cached.at < 60000) return cached.models;
+    try {
+      const response = await fetch(p.modelsEndpoint, {
+        signal: AbortSignal.timeout(3000),
+        redirect: 'error',
+      });
+      if (!response.ok) return p.models;
+      const body = z
+        .object({
+          data: z
+            .array(
+              z.object({
+                id: z.string().max(160),
+                context_window: z.number().int().positive().max(10_000_000).optional(),
+                context_length: z.number().int().positive().max(10_000_000).optional(),
+              }),
+            )
+            .max(2000),
+        })
+        .parse(await response.json());
+      const models = body.data
+        .filter((m) => /^[a-zA-Z0-9][a-zA-Z0-9._:/@+-]*$/.test(m.id))
+        .map((m) => ({
+          id: m.id,
+          name: m.id,
+          contextWindow: m.context_window ?? m.context_length,
+        }));
+      this.modelCache.set(p.id, { at: Date.now(), models });
+      return models;
+    } catch {
+      return p.models;
+    }
+  }
+  async codexConfiguration(p: LaunchProfile, model: string) {
+    if (p.harness !== 'codex') return {};
+    const context =
+      (await this.models(p)).find((m) => m.id === model)?.contextWindow ?? HARNESS_CONTEXT_LIMIT;
+    return {
+      model_context_window: context,
+      model_auto_compact_token_limit: Math.floor(context * 0.85),
+    };
+  }
+  async launchEnvironment(p: LaunchProfile, model: string) {
+    const env: Record<string, string> = { ...HARNESS_THREAD_DEFAULTS };
+    for (const [target, source] of Object.entries(p.environment)) {
+      const value = process.env[source];
+      if (!value) throw new Error('Provider credentials are not configured on this host');
+      env[target] = value;
+    }
+    if (p.harness === 'claude') {
+      const context =
+        (await this.models(p)).find((m) => m.id === model)?.contextWindow ?? HARNESS_CONTEXT_LIMIT;
+      env.CLAUDE_CODE_MAX_CONTEXT_TOKENS = String(context);
+      env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = String(context);
+      env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE = '85';
+      env.CLAUDE_CODE_DISABLE_1M_CONTEXT = '1';
+    }
+    if (p.harness === 'claude' && p.provider.toLowerCase() === 'cfrproxy' && model) {
+      // Match CFRproxy's launcher: --model alone leaves internal/fast requests
+      // on native aliases and unknown model IDs default to a 200k window.
+      env.ANTHROPIC_MODEL = model;
+      // Cached compaction can retain the previous response's native model.
+      // Pin routing at the authenticated proxy boundary as well as in the CLI.
+      env.ANTHROPIC_CUSTOM_HEADERS = [env.ANTHROPIC_CUSTOM_HEADERS, `X-CFR-Model: ${model}`]
+        .filter(Boolean)
+        .join('\n');
+      env.ANTHROPIC_DEFAULT_MODEL = model;
+      env.ANTHROPIC_DEFAULT_FABLE_MODEL = model;
+      env.ANTHROPIC_SMALL_FAST_MODEL = model;
+      env.ANTHROPIC_DEFAULT_OPUS_MODEL = model;
+      env.ANTHROPIC_DEFAULT_SONNET_MODEL = model;
+      env.ANTHROPIC_DEFAULT_HAIKU_MODEL = model;
+    }
+    return env;
+  }
+  receipt(requestId: string): LaunchReceipt | undefined {
+    const row = this.store.db.prepare('SELECT receipt FROM launches WHERE id=?').get(requestId);
+    return row ? JSON.parse(row.receipt as string) : undefined;
+  }
+  async launch(input: LaunchRequest, deviceId: string): Promise<LaunchReceipt> {
+    const fingerprint = JSON.stringify(input);
+    const existing = this.store.db
+      .prepare('SELECT body,receipt FROM launches WHERE id=?')
+      .get(input.requestId);
+    if (existing) {
+      if (existing.body !== fingerprint)
+        throw new Error('This launch request ID was already used for different settings');
+      return JSON.parse(existing.receipt as string);
+    }
+    const p = this.profile(input.profileId);
+    if (
+      input.permission &&
+      (!input.permissionConfirmed ||
+        !(await this.permissionOptions(p)).some((o) => o.id === input.permission))
+    )
+      throw new Error('Choose and confirm an available permission preset');
+    const permission = p.permissionPresets.find((o) => o.id === input.permission);
+    const selectedPreset = input.agentPreset ?? p.dshPreset;
+    if (input.agentPreset && p.harness !== 'dsh') throw new Error('Agent presets require DSH');
+    if (p.harness === 'dsh' && selectedPreset) {
+      const catalog = await this.presets(p);
+      if (
+        !catalog.agentPresets.some((preset) => preset.id === selectedPreset && !preset.unavailable)
+      )
+        throw new Error('Choose an available DSH agent');
+    }
+    const client = this.clients.get(p.hostId);
+    const dsh = this.dshHosts.get(p.hostId);
+    if (!(p.harness === 'dsh' ? dsh?.connected : client?.host.connected))
+      throw new Error('Host is disconnected');
+    const { resolved } = await this.directory(p.id, input.cwd);
+    if (
+      input.model &&
+      (!/^[a-zA-Z0-9][a-zA-Z0-9._:/@+-]*$/.test(input.model) ||
+        (!p.allowCustomModel && !(await this.models(p)).some((m) => m.id === input.model)))
+    )
+      throw new Error('Choose a supported model');
+    const env = await this.launchEnvironment(p, input.model || p.defaultModel || '');
+    const receipt: LaunchReceipt = {
+      requestId: input.requestId,
+      hostId: p.hostId,
+      status: 'starting',
+    };
+    // Claim before either mutation. A lost reply is never automatically retried.
+    const claimed = this.store.db
+      .prepare('INSERT OR IGNORE INTO launches(id,body,receipt,created_at) VALUES(?,?,?,?)')
+      .run(input.requestId, fingerprint, JSON.stringify(receipt), new Date().toISOString());
+    if (!claimed.changes) return this.receipt(input.requestId)!;
+    const save = () =>
+      this.store.db
+        .prepare('UPDATE launches SET receipt=? WHERE id=?')
+        .run(JSON.stringify(receipt), input.requestId);
+    this.store.audit(deviceId, 'session.launch', null, {
+      requestId: input.requestId,
+      profileId: p.id,
+      cwd: resolved,
+      model: input.model,
+      agentPreset: selectedPreset,
+      permission: input.permission,
+    });
+    try {
+      const selectedModel = input.model || p.defaultModel;
+      if (p.harness === 'dsh') {
+        if (!dsh) throw new Error('DSH host unavailable');
+        const nativeId = `session-${input.requestId}`;
+        await dsh.native.call('session/create', {
+          request: {
+            sessionId: nativeId,
+            cwd: resolved,
+            ...(selectedPreset ? { agentPreset: selectedPreset } : {}),
+          },
+        });
+        receipt.nativeSessionId = nativeId;
+        receipt.terminalId = `dsh:${nativeId}`;
+        save();
+        if (selectedModel) await dsh.native.selectModel(nativeId, p.dshProvider, selectedModel);
+        await dsh.native.call('session/rename', {
+          request: { sessionId: nativeId, title: input.name },
+        });
+        if (input.permission) {
+          const result = await dsh.native.call('commands/execute', {
+            agentId: nativeId,
+            line: `/permission ${input.permission}`,
+            submittedAttachments: [],
+          });
+          if ((result as any).result?.kind !== 'success')
+            throw new Error('Permission selection failed');
+          const rows = (await dsh.native.list()) as any;
+          if (
+            rows.items?.find((r: any) => r.sessionId === nativeId)?.projections?.values?.permissions
+              ?.currentValue !== input.permission
+          )
+            throw new Error('Permission selection was not confirmed');
+        }
+        await dsh.native.prompt(nativeId, input.requestId, input.prompt, 'queue');
+        receipt.status = 'started';
+        save();
+        return receipt;
+      }
+      if (!client) throw new Error('Herdr host unavailable');
+      const socket = this.codexSockets.get(p.hostId);
+      if (p.harness === 'codex' && socket) {
+        // Allocate a NEW native thread only. Its first and only interactive CLI is
+        // subsequently launched by Herdr; never resume or replace an existing owner.
+        const native = new CodexDaemon(socket);
+        try {
+          const { thread } = await native.request('thread/start', {
+            cwd: resolved,
+            model: selectedModel,
+            modelProvider: p.codexProvider,
+            config: await this.codexConfiguration(p, selectedModel ?? ''),
+            ephemeral: false,
+            ...(permission?.sandbox ? { sandbox: permission.sandbox } : {}),
+            ...(permission?.approvalPolicy ? { approvalPolicy: permission.approvalPolicy } : {}),
+          });
+          receipt.nativeSessionId = z.string().uuid().parse(thread.id);
+          save();
+          await native.request('thread/name/set', {
+            threadId: receipt.nativeSessionId,
+            name: input.name,
+          });
+        } finally {
+          native.close();
+        }
+      }
+      const tab = await client.request(
+        'tab.create',
+        { workspace_id: p.workspaceId, cwd: resolved, label: input.name, focus: false, env },
+        15000,
+      );
+      receipt.paneId = z.string().parse(tab.root_pane?.pane_id);
+      receipt.terminalId = z.string().parse(tab.root_pane?.terminal_id);
+      save();
+      // New tabs can still be initializing their shell. Herdr's explicit busy rejection
+      // guarantees no input was sent; only this definite rejection is safe to retry.
+      for (let attempt = 0; ; attempt++) {
+        try {
+          await startHarness(client, p.provider, {
+            name: `relay-${input.requestId.replaceAll('-', '').slice(0, 24)}`,
+            kind: p.harness,
+            pane_id: receipt.paneId,
+            args: [
+              ...(receipt.nativeSessionId
+                ? ['resume', receipt.nativeSessionId, '--remote', `unix://${socket}`]
+                : []),
+              ...(receipt.nativeSessionId ? [] : p.args),
+              // Remote threads already received permissions through thread/start.
+              // Codex rejects CLI permission overrides when resuming them.
+              ...(receipt.nativeSessionId ? [] : (permission?.args ?? [])),
+              ...(!receipt.nativeSessionId && selectedModel ? [p.modelFlag, selectedModel] : []),
+            ],
+            timeout_ms: 30000,
+          });
+          break;
+        } catch (error) {
+          if (!(error instanceof HerdrError) || error.code !== 'agent_pane_busy' || attempt >= 20)
+            throw error;
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          const { pane } = await client.request('pane.get', { pane_id: receipt.paneId });
+          if (pane?.terminal_id !== receipt.terminalId) throw new Error('Launch pane changed');
+        }
+      }
+      const target = `relay-${input.requestId.replaceAll('-', '').slice(0, 24)}`;
+      let acceptedTrust = false;
+      // The socket start result acknowledges process launch; CLI readiness is a later event.
+      for (let attempt = 0; ; attempt++) {
+        const { agent } = await client.request('agent.get', { target: receipt.paneId });
+        if (
+          agent.terminal_id !== receipt.terminalId ||
+          agent.name !== target ||
+          (agent.agent && agent.agent !== p.harness)
+        )
+          throw new Error('New session owner changed');
+        if (!acceptedTrust && p.harness === 'claude')
+          acceptedTrust = await acceptClaudeResumeTrust(
+            client,
+            receipt.paneId,
+            receipt.terminalId,
+            target,
+            resolved,
+          );
+        if (agent.agent === p.harness && (await harnessReady(client, agent))) {
+          if (acceptedTrust && !agent.agent_session) {
+            if (attempt >= 100) throw new Error('Claude startup identity not confirmed');
+          } else if (
+            receipt.nativeSessionId &&
+            agent.agent_session?.value !== receipt.nativeSessionId
+          ) {
+            if (attempt >= 100) throw new Error('Native launch identity not confirmed');
+          } else break;
+        }
+        if (attempt >= 100) throw new Error('Agent did not become ready');
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+      if (receipt.nativeSessionId && socket && permission?.sandbox) {
+        // Attaching the CLI can restore its local defaults over thread/start settings.
+        // Apply the chosen policy only after the verified owner is ready, then read it back.
+        const native = new CodexDaemon(socket);
+        try {
+          const profiles = {
+            'read-only': ':read-only',
+            'workspace-write': ':workspace',
+            'danger-full-access': ':danger-full-access',
+          };
+          const sandboxTypes = {
+            'read-only': 'readOnly',
+            'workspace-write': 'workspaceWrite',
+            'danger-full-access': 'dangerFullAccess',
+          };
+          await native.request('thread/settings/update', {
+            threadId: receipt.nativeSessionId,
+            permissions: profiles[permission.sandbox],
+            approvalPolicy: permission.approvalPolicy,
+          });
+          const state = await native.request('thread/resume', {
+            threadId: receipt.nativeSessionId,
+            excludeTurns: true,
+          });
+          if (
+            state.thread?.id !== receipt.nativeSessionId ||
+            state.sandbox?.type !== sandboxTypes[permission.sandbox] ||
+            (permission.approvalPolicy && state.approvalPolicy !== permission.approvalPolicy)
+          )
+            throw new Error('Launch permissions were not confirmed');
+        } finally {
+          native.close();
+        }
+      }
+      if (receipt.nativeSessionId && socket) {
+        const { agent } = await client.request('agent.get', { target: receipt.paneId });
+        if (
+          agent.terminal_id !== receipt.terminalId ||
+          agent.name !== target ||
+          agent.agent_session?.value !== receipt.nativeSessionId
+        )
+          throw new Error('Native launch owner changed before first instruction');
+        const native = new CodexDaemon(socket);
+        try {
+          const state = await native.request('thread/resume', {
+            threadId: receipt.nativeSessionId,
+            excludeTurns: true,
+          });
+          if (
+            state.thread?.id !== receipt.nativeSessionId ||
+            (selectedModel && state.model !== selectedModel) ||
+            state.modelProvider !== (p.codexProvider ?? 'openai')
+          )
+            throw new Error('Native launch provider/model was not confirmed');
+          const result = await native.request('turn/start', {
+            threadId: receipt.nativeSessionId,
+            clientUserMessageId: input.requestId,
+            input: [{ type: 'text', text: input.prompt }],
+          });
+          if (!result.turn?.id) throw new Error('Native first turn was not confirmed');
+        } finally {
+          native.close();
+        }
+      } else await client.request('agent.prompt', { target, text: input.prompt }, 15000);
+      receipt.status = 'started';
+    } catch {
+      // Native errors can contain command environments. Return a fixed, non-secret diagnostic.
+      receipt.status = 'uncertain';
+      receipt.diagnostic =
+        'Startup was not confirmed. Check the session list before starting another session.';
+    }
+    save();
+    return receipt;
+  }
+  recover() {
+    for (const row of this.store.db.prepare('SELECT id,receipt FROM launches').all()) {
+      const receipt: LaunchReceipt = JSON.parse(row.receipt as string);
+      if (receipt.status !== 'starting') continue;
+      receipt.status = 'uncertain';
+      receipt.diagnostic =
+        'Gateway restarted during launch. Check the session list before starting another session.';
+      this.store.db
+        .prepare('UPDATE launches SET receipt=? WHERE id=?')
+        .run(JSON.stringify(receipt), row.id);
+    }
+  }
+}

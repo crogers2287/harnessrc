@@ -33,7 +33,7 @@ Configure Tailscale Serve to proxy HTTPS to `http://127.0.0.1:4080` using the in
 
 Existing native-ID sessions appear automatically. Merge `deploy/claude-hooks.example.json` into the appropriate Claude settings file, preserving existing hooks. Replace `YOUR_USER` and Node path; check that the absolute tsx loader exists. The hook uses the private `hooks.sock` under the configured data directory. Start a new Claude process under Herdr after changing settings; existing processes may require reloading settings according to the installed Claude documentation.
 
-The hook handles PermissionRequest for the listed tools only. It waits for an exact mobile allow/deny decision and returns Claude's documented structured output. Offline/unavailable gateway returns `{}`, leaving Claude's original permission flow. Existing bound Claude CLI sessions support messages and queued follow-ups through Herdr. General Claude questions and steering still need native response transports. File/image attachments require `hosts[].localFiles: true` on a shared-filesystem host; include Read/Glob/Grep in the permission-hook matcher and load the updated settings in the native CLI. The native `/rc` command is never overridden.
+The hook handles PermissionRequest for all tools when installed with `scripts/install-claude-steering.py` (the manual example also uses all tools). It waits for an exact mobile allow/deny decision and returns Claude's documented structured output. Offline/unavailable gateway returns `{}`, leaving Claude's original permission flow. Existing bound Claude CLI sessions support messages and queued follow-ups through Herdr. Claude questions and steering use the documented bridges described in [Claude hook behavior](claude-steering.md). File/image attachments require `hosts[].localFiles: true` on a shared-filesystem host; include Read/Glob/Grep in the permission-hook matcher and load the updated settings in the native CLI. The native `/rc` command is never overridden.
 
 ## Codex: sole-writer bridge launched inside Herdr
 
@@ -58,6 +58,10 @@ systemctl --user restart relay.service
 The gateway can restart or phones disconnect while the bridge and agent continue under Herdr. The bridge's pane provides lifecycle/log access; it is not an interactive Codex CLI. Existing CLI panes are separately observable and unchanged. Native bridge process restart can leave execution uncertain: inspect the native thread before deciding how to proceed. Do not resend uncertain work blindly.
 
 ## Troubleshooting / backup
+
+For thread/PID exhaustion or an active Herdr unit with a dead API socket, see
+[Herdr resource recovery](HERDR_RESOURCE_RECOVERY.md). Use Herdr 0.9.5 or newer
+and review the optional thread-pool service drop-in before starting many agents.
 
 ```sh
 systemctl --user status relay.service

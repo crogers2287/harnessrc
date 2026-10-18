@@ -1,0 +1,12 @@
+CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY);
+INSERT OR IGNORE INTO schema_migrations VALUES (1);
+CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, body TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS events (sequence INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT UNIQUE NOT NULL, session_id TEXT NOT NULL, source_id TEXT NOT NULL, body TEXT NOT NULL, UNIQUE(session_id, source_id));
+CREATE INDEX IF NOT EXISTS events_session_sequence ON events(session_id, sequence);
+CREATE TABLE IF NOT EXISTS interactions (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, native_request_id TEXT NOT NULL, status TEXT NOT NULL, body TEXT NOT NULL, UNIQUE(session_id,native_request_id));
+CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, status TEXT NOT NULL, position INTEGER NOT NULL, idempotency_key TEXT NOT NULL, body TEXT NOT NULL, UNIQUE(session_id,idempotency_key));
+CREATE INDEX IF NOT EXISTS tasks_session_status ON tasks(session_id,status,position);
+CREATE TABLE IF NOT EXISTS devices (id TEXT PRIMARY KEY, name TEXT NOT NULL, secret_hash TEXT NOT NULL, admin INTEGER NOT NULL DEFAULT 0, revoked INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS grants (device_id TEXT NOT NULL, session_id TEXT NOT NULL, control INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(device_id,session_id));
+CREATE TABLE IF NOT EXISTS tokens (hash TEXT PRIMARY KEY, device_id TEXT NOT NULL, expires INTEGER NOT NULL, kind TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS audit (sequence INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT NOT NULL, device_id TEXT NOT NULL, action TEXT NOT NULL, session_id TEXT, details TEXT NOT NULL);

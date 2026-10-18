@@ -1,0 +1,7 @@
+heading = CardHeader("Rich responses", "Example controls generated inside the conversation")
+chart = BarChart(["Preview", "Final"], [Series("Example seconds", [25, 236])])
+table = Table([Col("Output", ["Preview", "Final"]), Col("Example steps", [8, 40], "number")])
+steps = Steps([StepsItem("Generate", "Your harness runs your existing image or video pipeline."), StepsItem("Publish", "The completed output is attached to this exact Relay session."), StepsItem("Review", "Play, preview and save it directly from chat.")])
+views = Tabs([TabItem("results", "Example results", [chart, table]), TabItem("workflow", "Workflow", [steps])])
+form = Form("artifactRequest", Buttons([Button("Add request to draft", Action([@ToAssistant("Please deliver the generated output as a downloadable Relay artifact.")]))]), [FormControl("Direction", Input("direction", "Describe the image or video you want", "text"))])
+root = Stack([heading, views, form])

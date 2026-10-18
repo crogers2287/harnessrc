@@ -1,15 +1,64 @@
-# Relay — agent installation entry point
+# Relay — conversational remote over Herdr
 
-**Start with [docs/AGENT_INSTALL.md](docs/AGENT_INSTALL.md).** It tells a Codex or Claude Code agent how to install Relay, CFRproxy, Herdr and Hermes Telegram on your own server, with Tailscale on all devices and valid HTTPS/custom-domain TLS.
+A self-hosted React PWA, native Android app, and Fastify gateway for persistent coding agents. Herdr owns processes, panes, workspaces, and lifecycle; Relay stores structured conversations, exact native interactions, and queued work. Original terminal sessions remain usable.
 
-The implementation currently lives on **`feat/universal-agent-remote`**, tracked by [PR #1](https://github.com/crogers2287/harnessrc/pull/1). This default branch holds the setup entry point and reference documentation; clone the implementation branch to build/run the software.
+**Phase 1 implementation with mock-backed validation.** Existing Claude/Codex CLI sessions are discovered automatically and accept chat messages and durable queued follow-ups through Herdr. The inbox groups by agent and shows session titles and full CWDs. Claude's documented hooks resolve native AskUserQuestion replies and PermissionRequest decisions. A separate sole-writer Codex bridge, launched under Herdr, supports native turns, questions, approvals, steering, and durable queued work. It never attaches a second writer to an existing CLI thread. Live Fred CLI chat and serial queue dispatch have been verified. Key-free tailnet HTTP/WebSocket access is implemented; outside the tailnet, pairing remains required. Full native CLI question parity and physical Android/iOS verification remain outstanding. See the [capability matrix](docs/CAPABILITIES.md).
 
-```bash
-git clone --branch feat/universal-agent-remote https://github.com/crogers2287/harnessrc.git "$HOME/harnessrc"
+## Install on your own server with an agent
+
+Start with the [complete agent installation guide](docs/AGENT_INSTALL.md): required Herdr ownership, Tailscale on every client/server, valid HTTPS/custom subdomains, CFRproxy provider routing, every Hermes Telegram profile’s model picker, host-neutral configuration generation, verification and issue reporting. Clone `feat/universal-agent-remote` explicitly while the implementation PR remains unmerged.
+
+## Native Android app
+
+Hold a session → **Swap provider** to resume supported Claude Code/Codex conversations in the same directory with another configured provider/model, including CFRproxy. See [provider-swap support and recovery](docs/PROVIDER_SWAP.md).
+
+Relay now has a Kotlin / Jetpack Compose Android client with a real Android editor, keyboard image paste, native file sharing and microphone recording. Download the signed APK from **Settings → Download Android APK** in the web app while connected to Tailscale. This is separate from the PWA. See [Android installation, build and verification](docs/ANDROID.md) and the [web/Android parity matrix and release contract](docs/CLIENT_PARITY.md).
+
+## Run the credential-free demo
+
+Requires Node 22.20+ and npm.
+
+```sh
+npm ci
+npm run dev
 ```
 
-Give your installation agent the guide above. It must discover your actual hostname, Unix account, private Herdr socket, workspaces, Tailscale DNS name and provider models. A machine named Fred is not required. All agent processes must start in Herdr panes; CFRproxy must appear in every Hermes Telegram profile's model selector. The guide includes verification, safe adaptation, configuration generation, and installation issue reporting.
+Open http://localhost:4080. Enter the pairing key from `.data/demo/pairing-key` locally. Send “review the API, ask a question” or “make a change requiring approval”, then queue more work. Disconnect/reconnect the browser or restart the gateway while the separate mock harness remains running.
 
-CFRproxy source is [crogers2287/cfrproxy](https://github.com/crogers2287/cfrproxy), a private repository requiring an accepted invitation. Use your own inference-provider and Telegram credentials. Repository access does not grant the original operator's servers, tailnet or API accounts.
+```sh
+npm run check
+npx playwright install chromium
+npm run test:e2e
+python3 scripts/verify-design-skills.py
+npm run package
+```
 
-[Report an installation problem](https://github.com/crogers2287/harnessrc/issues/new?template=installation.yml). Review reports for secrets before submitting them. Issues are asynchronous maintainer support; this repository has no unattended privileged installation/fix bot.
+`npm run dev` builds missing assets; after UI edits run `npm run build`. It is a persistent demo runner, not a hot-reloading development server. Packaging produces `artifacts/relay-0.1.0.tar.gz`, including built browser assets and migration files. Install with `npm ci --omit=dev`; Node's SQLite API is currently experimental.
+
+## What is included
+
+- Live session discovery, native transcript imports, ordered durable replay, reconnects, and process replacement checks.
+- Exact interaction responses, validation, expiry, duplicate submission protection, and fail-closed uncertain delivery.
+- Per-session SQLite queues with edit, reorder, cancel, pause, restart recovery, serial dispatch and task idempotency.
+- Device pairing/revocation, short-lived cookies, read/control grants, authorization, audit records, redaction and private local sockets.
+- Mobile inbox, virtualized chat, tool/diff cards, interaction cards, queue, host/device settings, light/dark themes, installable PWA and foreground browser notifications.
+
+[Ubuntu/Fred installation](docs/DEPLOYMENT.md) · [Architecture and protocol](docs/ARCHITECTURE.md) · [Security](docs/SECURITY.md) · [Integration validation](docs/VALIDATION.md) · [Research and licenses](docs/RESEARCH.md) · [UI design workflow](docs/UI_DESIGN.md)
+
+![Mobile permission review](docs/screenshots/approval-mobile.png)
+
+Monorepo: `apps/web`, `apps/android`, `apps/gateway`, `packages/{protocol,herdr,adapters,interaction-broker,task-queue,client-sdk,ui,storage,testing}`. No terminal emulator, terminal scraping, private Claude Remote Control API, external broker, or duplicated Herdr supervision.
+
+## Mobile chat and attachments
+
+The mobile-first composer supports files, photos/camera selection, upload progress, retries, removable previews and draft recovery. Sent images can be inspected and downloaded; messages can be copied. Tool activity is collapsed into readable groups. Set `hosts[].localFiles: true` for Fred or another host sharing the gateway filesystem. [Attachment setup](docs/ATTACHMENTS.md), [UI audit](docs/UI_AUDIT.md), and [live validation evidence](docs/VALIDATION.md) distinguish working features from outstanding native interaction gaps.
+
+Create sessions from your phone: [host folders, agents, models, and CFRproxy profiles](docs/SESSION_CREATION.md).
+
+Voice dictation with local transcription/cleanup: [setup and privacy](docs/VOICE.md). Mobile session long-press actions include shared Relay names, pinning, Close to History, and capability-gated Stop Turn. DSH native questions use the existing host event stream; see [DSH](docs/DSH.md).
+
+Rich responses now use the real OpenUI renderer on web and in an isolated, bundled Android artifact surface. Cards, charts, tables, forms and tabs can appear inside assistant replies; video/audio play inline and exact DSH file links download securely. See [OpenUI output format](docs/OPENUI.md), [artifact publishing](docs/ARTIFACTS.md), and [example](docs/examples/relay-rich-demo.openui). Generated form actions add a draft for review; they do not execute harness tools or approve commands.
+
+## Agent control plane
+
+Agents can use Relay through its standard stdio MCP server to discover/attach to existing Herdr-owned sessions, read plans and sub-agent conversations, send/steer, answer authorized interactions, change supported models/permissions, launch sessions, and publish artifacts. [Setup and tool reference](docs/AGENT_CONTROL.md) · [Use Relay skill](skills/use-relay/SKILL.md).
