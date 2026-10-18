@@ -71,6 +71,20 @@ const within = (root: string, candidate: string) =>
 
 export const HARNESS_CONTEXT_LIMIT = 256_000;
 
+// A host can have hundreds of CPUs and dozens of agent/MCP processes. Libraries
+// otherwise allocate a CPU-sized pool in every process, exhausting cgroup PIDs.
+// Trusted profile environment mappings below can override these defaults.
+export const HARNESS_THREAD_DEFAULTS: Record<string, string> = {
+  TOKIO_WORKER_THREADS: '2',
+  RAYON_NUM_THREADS: '4',
+  GOMAXPROCS: '4',
+  OMP_NUM_THREADS: '1',
+  OPENBLAS_NUM_THREADS: '1',
+  MKL_NUM_THREADS: '1',
+  NUMEXPR_NUM_THREADS: '1',
+  TOKENIZERS_PARALLELISM: 'false',
+};
+
 export class Launcher {
   constructor(
     private store: Store,
@@ -288,7 +302,7 @@ export class Launcher {
     };
   }
   async launchEnvironment(p: LaunchProfile, model: string) {
-    const env: Record<string, string> = {};
+    const env: Record<string, string> = { ...HARNESS_THREAD_DEFAULTS };
     for (const [target, source] of Object.entries(p.environment)) {
       const value = process.env[source];
       if (!value) throw new Error('Provider credentials are not configured on this host');

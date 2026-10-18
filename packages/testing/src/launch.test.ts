@@ -7,7 +7,11 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Store } from '@harnessrc/storage';
 import { HerdrClient } from '@harnessrc/herdr';
-import { Launcher, launchProfileSchema } from '../../../apps/gateway/src/launch.ts';
+import {
+  Launcher,
+  launchProfileSchema,
+  HARNESS_THREAD_DEFAULTS,
+} from '../../../apps/gateway/src/launch.ts';
 
 test('launch passes verified CWD/model to Herdr, claims atomically, and replays across restarts', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'launch-'));
@@ -592,6 +596,7 @@ test('Claude CFR launches pin internal model aliases and the advertised context 
     assert.deepEqual(
       await launcher.launchEnvironment({ ...profile, provider: 'Harness default' }, 'native'),
       {
+        ...HARNESS_THREAD_DEFAULTS,
         CLAUDE_CODE_MAX_CONTEXT_TOKENS: '256000',
         CLAUDE_CODE_AUTO_COMPACT_WINDOW: '256000',
         CLAUDE_AUTOCOMPACT_PCT_OVERRIDE: '85',
@@ -600,11 +605,45 @@ test('Claude CFR launches pin internal model aliases and the advertised context 
     );
     assert.deepEqual(
       await launcher.launchEnvironment({ ...profile, harness: 'codex' }, 'native'),
-      {},
+      HARNESS_THREAD_DEFAULTS,
     );
   } finally {
     store.close();
     await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
+test('agent thread pools are bounded for new launches and trusted profiles can override them', async () => {
+  const store = new Store(':memory:');
+  const profile = launchProfileSchema.parse({
+    id: 'resource-check',
+    hostId: 'host',
+    label: 'Test',
+    harness: 'codex',
+    workspaceId: 'w1',
+    roots: [tmpdir()],
+  });
+  const launcher = new Launcher(store, [profile], new Map());
+  process.env.RELAY_TEST_TOKIO_THREADS = '6';
+  try {
+    for (const harness of ['codex', 'claude', 'hermes', 'pi', 'omp', 'opencode', 'dsh'] as const) {
+      const env = await launcher.launchEnvironment({ ...profile, harness }, '');
+      assert.equal(env.TOKIO_WORKER_THREADS, '2');
+      assert.equal(env.GOMAXPROCS, '4');
+      assert.equal(env.OPENBLAS_NUM_THREADS, '1');
+    }
+    const env = await launcher.launchEnvironment(
+      {
+        ...profile,
+        environment: { TOKIO_WORKER_THREADS: 'RELAY_TEST_TOKIO_THREADS' },
+      },
+      '',
+    );
+    assert.equal(env.TOKIO_WORKER_THREADS, '6');
+    assert.equal(env.RAYON_NUM_THREADS, '4');
+  } finally {
+    delete process.env.RELAY_TEST_TOKIO_THREADS;
+    store.close();
   }
 });
 

@@ -59,6 +59,10 @@ The gateway can restart or phones disconnect while the bridge and agent continue
 
 ## Troubleshooting / backup
 
+For thread/PID exhaustion or an active Herdr unit with a dead API socket, see
+[Herdr resource recovery](HERDR_RESOURCE_RECOVERY.md). Use Herdr 0.9.5 or newer
+and review the optional thread-pool service drop-in before starting many agents.
+
 ```sh
 systemctl --user status relay.service
 journalctl --user -u relay.service -n 50
