@@ -81,6 +81,20 @@ export function normalizeClaude(record: any): SourceEvent[] {
     events.push(source(record, `${id}:completed`, 'turn.completed', { turnId: id }));
   return events;
 }
+/** Provider errors arrive as nested JSON strings; surface the innermost message. */
+function codexError(error: any): string {
+  let message: any = error?.message ?? error;
+  for (let i = 0; i < 3 && typeof message === 'string'; i++) {
+    try {
+      const inner = JSON.parse(message);
+      message = inner?.error?.message ?? inner?.message ?? message;
+      if (typeof message !== 'string' || message === inner) break;
+    } catch {
+      break;
+    }
+  }
+  return String(typeof message === 'string' ? message : JSON.stringify(message)).slice(0, 500);
+}
 export function normalizeCodex(record: any, index: number): SourceEvent[] {
   const p = record.payload ?? {};
   const prefix =
@@ -153,6 +167,14 @@ export function normalizeCodex(record: any, index: number): SourceEvent[] {
   if (record.type === 'event_msg') {
     if (p.type === 'task_started')
       return [source(record, prefix, 'turn.started', { turnId: p.turn_id })];
+    // A turn the provider rejected still ends in task_complete, but carries the error.
+    if (p.type === 'task_complete' && p.error)
+      return [
+        source(record, prefix, 'turn.failed', {
+          turnId: p.turn_id,
+          text: `Turn failed: ${codexError(p.error)}`,
+        }),
+      ];
     if (p.type === 'task_complete')
       return [
         source(record, prefix, 'turn.completed', { turnId: p.turn_id }),

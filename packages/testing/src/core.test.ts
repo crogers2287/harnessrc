@@ -122,6 +122,27 @@ test('Codex canonical rollout avoids duplicate event_msg conversation entries', 
     'assistant.delta',
   );
 });
+test('Codex provider rejection surfaces as a failed turn, not a silent completion', () => {
+  const failed = normalizeCodex(
+    {
+      type: 'event_msg',
+      payload: {
+        type: 'task_complete',
+        turn_id: 't1',
+        last_agent_message: null,
+        error: { message: '{"error":{"message":"out of quota","type":"api_error"}}' },
+      },
+    },
+    0,
+  );
+  assert.equal(failed[0].kind, 'turn.failed');
+  assert.equal(failed[0].data.text, 'Turn failed: out of quota');
+  assert.equal(
+    normalizeCodex({ type: 'event_msg', payload: { type: 'task_complete', turn_id: 't2' } }, 1)[0]
+      .kind,
+    'turn.completed',
+  );
+});
 test('OMP branch history retains parent identity and native tool ids', () => {
   const events = normalizeOmp({
     type: 'message',
@@ -206,7 +227,10 @@ test('JSONL tailer keeps valid conversation events around one malformed record',
     const file = path.join(f.dir, 'damaged.jsonl');
     const record = (uuid: string, text: string) =>
       JSON.stringify({ uuid, type: 'assistant', message: { content: [{ type: 'text', text }] } });
-    await writeFile(file, `${record('before', 'first reply')}\n{not-json}\n${record('after', 'second reply')}\n`);
+    await writeFile(
+      file,
+      `${record('before', 'first reply')}\n{not-json}\n${record('after', 'second reply')}\n`,
+    );
 
     const adapter = new JsonlAdapter(f.dir, 'claude');
     assert.deepEqual(
@@ -223,9 +247,12 @@ test('JSONL histories larger than 128 MiB replay in bounded chunks after restart
   try {
     const session = { ...f.session, harness: 'claude', nativeSessionId: 'large' };
     const file = path.join(f.dir, 'large.jsonl');
-    const record = (uuid: string) => JSON.stringify({
-      uuid, type: 'user', message: { content: uuid },
-    }) + '\n';
+    const record = (uuid: string) =>
+      JSON.stringify({
+        uuid,
+        type: 'user',
+        message: { content: uuid },
+      }) + '\n';
     await writeFile(file, record('first'));
     // Ignored records pad the history without allocating hundreds of MiB of events.
     const padding = JSON.stringify({ padding: ' '.repeat(1024 * 1024) }) + '\n';
@@ -234,10 +261,13 @@ test('JSONL histories larger than 128 MiB replay in bounded chunks after restart
     for (let restart = 0; restart < 2; restart++) {
       const adapter = new JsonlAdapter(f.dir, 'claude');
       const first = await adapter.read(session);
-      assert.deepEqual(first.map(e => e.sourceId), ['first']);
-      const ids = first.map(e => e.sourceId);
+      assert.deepEqual(
+        first.map((e) => e.sourceId),
+        ['first'],
+      );
+      const ids = first.map((e) => e.sourceId);
       for (let chunk = 0; chunk < 35; chunk++)
-        ids.push(...(await adapter.read(session)).map(e => e.sourceId));
+        ids.push(...(await adapter.read(session)).map((e) => e.sourceId));
       assert.deepEqual(ids, ['first', 'last']);
       assert.deepEqual(await adapter.read(session), []);
     }
