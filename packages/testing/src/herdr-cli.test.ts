@@ -31,6 +31,7 @@ async function cliFixture() {
     f.gateway.store,
     (s) => f.gateway.runtime.assertBinding(s),
   );
+  adapter.stuckPromptDelayMs = 0;
   const queue = new TaskQueue(f.gateway.store, () => adapter);
   return { ...f, session, adapter, queue };
 }
@@ -223,6 +224,38 @@ test('discovery refreshes native controls after linking without resetting conver
     assert.equal(session().capabilities.answerQuestion, false);
     assert.equal(runtime.adapters.get(id).reader, reader);
     assert.match(session().diagnostic!, /Connecting live controls/);
+  } finally {
+    await f.close();
+  }
+});
+
+test('CLI dispatch presses Enter when a multi-line prompt is left sitting in the input box', async () => {
+  const f = await cliFixture();
+  try {
+    const keys: string[][] = [];
+    let screen = '❯ look at this\n  [Image: source: /tmp/a.png]\n───';
+    const inner = f.mock.herdr;
+    (f.mock as any).herdr = (request: any) => {
+      if (request.method === 'pane.read') return { read: { text: screen } };
+      if (request.method === 'agent.send_keys') {
+        keys.push(request.params.keys);
+        return { type: 'ok' };
+      }
+      return inner(request);
+    };
+    f.queue.add(f.session.id, {
+      prompt: 'look at this\n[Image: source: /tmp/a.png]',
+      idempotencyKey: randomUUID(),
+    });
+    await f.queue.tick(f.session.id);
+    assert.deepEqual(keys, [['enter']]);
+    screen = '❯ earlier message\n⏺ reply\n───\n❯ \n───';
+    f.queue.add(f.session.id, { prompt: 'second', idempotencyKey: randomUUID() });
+    await f.adapter.send(f.session, {
+      ...f.gateway.store.tasks(f.session.id).at(-1)!,
+      prompt: 'second',
+    });
+    assert.deepEqual(keys, [['enter']]); // An empty input box is left alone.
   } finally {
     await f.close();
   }

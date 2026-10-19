@@ -17,6 +17,7 @@ export class HerdrCliAdapter implements Adapter {
     'sendMessage',
     'queueTask',
   ]);
+  stuckPromptDelayMs = 1500;
   constructor(
     readonly reader: Adapter,
     private herdr: HerdrClient,
@@ -107,7 +108,28 @@ export class HerdrCliAdapter implements Adapter {
     )
       throw new Error('Submission owner changed; delivery requires reconciliation');
     await this.assertOwner(session);
+    await this.submitStuckPrompt(session, prompt);
     return { correlation };
+  }
+  // A multi-line prompt can swallow its Enter, leaving the text in the input box until the next send.
+  private async submitStuckPrompt(session: Session, prompt: string) {
+    const head = prompt.trimStart().split('\n')[0].slice(0, 24).trimEnd();
+    if (!head) return;
+    await new Promise((resolve) => setTimeout(resolve, this.stuckPromptDelayMs));
+    try {
+      const agent = await this.herdr.assertBinding(session);
+      if (!['idle', 'done'].includes(agent.agent_status)) return;
+      const { read } = await this.herdr.request('pane.read', {
+        pane_id: session.paneId,
+        source: 'visible',
+        lines: 30,
+      });
+      const input = [...String(read?.text ?? '').matchAll(/^\s*[❯›]\s?(.*)$/gm)].at(-1)?.[1];
+      if (input?.trimStart().startsWith(head))
+        await this.herdr.request('agent.send_keys', { target: session.paneId, keys: ['enter'] });
+    } catch {
+      // Best effort: reconciliation still owns the task's final state.
+    }
   }
   async steer(
     session: Session,
