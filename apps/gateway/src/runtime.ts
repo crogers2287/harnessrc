@@ -37,7 +37,7 @@ export class Runtime extends EventEmitter {
   private refreshing = new Set<string>();
   private tickBusy = false;
   /** Read/delivery failures from tick(); refresh() rebuilds sessions and must keep them. */
-  private tickErrors = new Map<string, string>();
+  private tickErrors = new Map<string, { message: string; at: number }>();
   constructor(
     public store: Store,
     public config: Config,
@@ -188,7 +188,7 @@ export class Runtime extends EventEmitter {
           s.model = old.model;
           s.modelUpdatedAt = old.modelUpdatedAt;
         }
-        s.diagnostic ??= this.tickErrors.get(s.id);
+        s.diagnostic ??= this.tickErrors.get(s.id)?.message;
         const nativeModel = this.codexLinks.get(hostId)?.model(s.terminalId);
         if (
           nativeModel?.model &&
@@ -463,11 +463,12 @@ export class Runtime extends EventEmitter {
             this.store.event(s, e);
           }
           await this.queue.tick(s.id);
+          // Intermittent native errors alternate with successes; clear only once stable.
           const cleared = this.tickErrors.get(s.id);
-          if (cleared !== undefined) {
+          if (cleared && Date.now() - cleared.at > 30000) {
             this.tickErrors.delete(s.id);
             const current = this.store.session(s.id);
-            if (current.diagnostic === cleared) {
+            if (current.diagnostic === cleared.message) {
               current.diagnostic = undefined;
               this.store.saveSession(current);
             }
@@ -475,7 +476,7 @@ export class Runtime extends EventEmitter {
         } catch (e) {
           const current = this.store.session(s.id);
           const diagnostic = (e as Error).message;
-          this.tickErrors.set(s.id, diagnostic);
+          this.tickErrors.set(s.id, { message: diagnostic, at: Date.now() });
           if (current.diagnostic !== diagnostic) {
             current.diagnostic = diagnostic;
             this.store.saveSession(current);
