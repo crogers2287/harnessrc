@@ -265,7 +265,7 @@ export class Runtime extends EventEmitter {
               );
             }
           }
-          if (adapter && s.processIdentity && ['claude', 'codex'].includes(s.harness)) {
+          if (adapter && s.processIdentity && ['claude', 'codex', 'omp'].includes(s.harness)) {
             // Refresh native callbacks as links appear/disappear, preserving the reader cursor.
             adapter = new HerdrCliAdapter(
               adapter instanceof HerdrCliAdapter ? adapter.reader : adapter,
