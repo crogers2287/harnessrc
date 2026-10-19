@@ -22,6 +22,7 @@ import {
 import { TaskQueue } from '@harnessrc/task-queue';
 import { InteractionBroker } from '@harnessrc/interaction-broker';
 import type { Config } from './config.ts';
+import { prune } from './prune.ts';
 export class Runtime extends EventEmitter {
   subagents: SubagentReader;
   claudeQuestions = new ClaudeQuestions(this);
@@ -34,6 +35,7 @@ export class Runtime extends EventEmitter {
   attachments: Attachments;
   broker: InteractionBroker;
   private interval?: NodeJS.Timeout;
+  private pruneTimer?: NodeJS.Timeout;
   private refreshing = new Set<string>();
   private tickBusy = false;
   /** Read/delivery failures from tick(); refresh() rebuilds sessions and must keep them. */
@@ -114,6 +116,15 @@ export class Runtime extends EventEmitter {
   start() {
     for (const c of this.clients.values()) c.start();
     this.interval = setInterval(() => void this.tick(), 700);
+    this.pruneTimer = setInterval(() => void this.prune(), 3_600_000);
+  }
+  async prune() {
+    try {
+      const result = await prune(this.store, this.clients);
+      if (result.archived.length || result.closed.length) this.emit('change');
+    } catch (error) {
+      console.warn(`prune failed: ${(error as Error).message}`);
+    }
   }
   async refresh(hostId: string) {
     if (this.refreshing.has(hostId)) return;
@@ -504,6 +515,7 @@ export class Runtime extends EventEmitter {
   async stop() {
     for (const host of this.dshHosts.values()) host.close();
     clearInterval(this.interval);
+    clearInterval(this.pruneTimer);
     for (const c of this.clients.values()) c.stop();
     while (this.tickBusy || this.refreshing.size) await new Promise((r) => setTimeout(r, 10));
     for (const linker of this.codexLinks.values()) linker.close();
