@@ -36,6 +36,8 @@ export class Runtime extends EventEmitter {
   private interval?: NodeJS.Timeout;
   private refreshing = new Set<string>();
   private tickBusy = false;
+  /** Read/delivery failures from tick(); refresh() rebuilds sessions and must keep them. */
+  private tickErrors = new Map<string, string>();
   constructor(
     public store: Store,
     public config: Config,
@@ -186,6 +188,7 @@ export class Runtime extends EventEmitter {
           s.model = old.model;
           s.modelUpdatedAt = old.modelUpdatedAt;
         }
+        s.diagnostic ??= this.tickErrors.get(s.id);
         const nativeModel = this.codexLinks.get(hostId)?.model(s.terminalId);
         if (
           nativeModel?.model &&
@@ -460,9 +463,19 @@ export class Runtime extends EventEmitter {
             this.store.event(s, e);
           }
           await this.queue.tick(s.id);
+          const cleared = this.tickErrors.get(s.id);
+          if (cleared !== undefined) {
+            this.tickErrors.delete(s.id);
+            const current = this.store.session(s.id);
+            if (current.diagnostic === cleared) {
+              current.diagnostic = undefined;
+              this.store.saveSession(current);
+            }
+          }
         } catch (e) {
           const current = this.store.session(s.id);
           const diagnostic = (e as Error).message;
+          this.tickErrors.set(s.id, diagnostic);
           if (current.diagnostic !== diagnostic) {
             current.diagnostic = diagnostic;
             this.store.saveSession(current);

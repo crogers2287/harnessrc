@@ -847,19 +847,27 @@ export async function createGateway(
     const notificationsOnly = (req.query as { notifications?: string }).notifications === '1';
     const token = req.cookies.rc_access;
     let timer: NodeJS.Timeout | undefined;
-    const push = () => {
+    let lastSent = '';
+    const push = (heartbeat = false) => {
       try {
         const device = req.tailnetNode
           ? auth.tailnetDevice(req.tailnetNode)
           : auth.authenticate(token);
-        if (socket.readyState === 1)
-          socket.send(
-            JSON.stringify(
-              notificationsOnly
-                ? { type: 'notifications' }
-                : { type: 'invalidate', sessions: sessionViews(device) },
-            ),
-          );
+        if (socket.readyState !== 1) return;
+        if (notificationsOnly) {
+          socket.send(JSON.stringify({ type: 'notifications' }));
+          return;
+        }
+        // Most store changes leave every view identical; resending ~300 KB of
+        // session rows several times a second drowns phones on cellular links.
+        const message = JSON.stringify({ type: 'invalidate', sessions: sessionViews(device) });
+        if (message === lastSent) {
+          // Clients treat ~25s of silence as a dead socket.
+          if (heartbeat) socket.send(JSON.stringify({ type: 'heartbeat' }));
+          return;
+        }
+        lastSent = message;
+        socket.send(message);
       } catch {
         socket.close(4001, 'Authentication expired');
       }
@@ -871,10 +879,10 @@ export async function createGateway(
           timer = undefined;
           push();
         },
-        notificationsOnly ? 1000 : 100,
+        notificationsOnly ? 1000 : 500,
       );
     };
-    const authCheck = setInterval(push, notificationsOnly ? 30000 : 10000);
+    const authCheck = setInterval(() => push(true), notificationsOnly ? 30000 : 10000);
     const event = (value: { sessionId: string }) => {
       try {
         const device = req.tailnetNode
