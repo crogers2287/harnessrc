@@ -214,6 +214,16 @@ export function normalizeOmp(record: any): SourceEvent[] {
           parentId: record.parentId,
         }),
       );
+  // Tool calls continue the turn; provider errors are retried by OMP, so only stop/abort end it.
+  if (m.role === 'assistant' && ['stop', 'length'].includes(m.stopReason))
+    events.push(source(record, `${record.id}:completed`, 'turn.completed', { turnId: record.id }));
+  if (m.role === 'assistant' && m.stopReason === 'aborted')
+    events.push(
+      source(record, `${record.id}:failed`, 'turn.failed', {
+        turnId: record.id,
+        text: 'Turn aborted',
+      }),
+    );
   return events;
 }
 async function files(root: string, depth = 0): Promise<string[]> {

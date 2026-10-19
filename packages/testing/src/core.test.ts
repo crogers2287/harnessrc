@@ -93,6 +93,17 @@ test('Claude transcript parses text and tools without inventing reasoning', () =
     ['assistant.message', 'tool.invocation'],
   );
   assert.equal(events[1].data.toolId, 'tool');
+  assert.equal(events.length, 2); // No stopReason: the turn is still running.
+  const done = (stopReason: string) =>
+    normalizeOmp({
+      type: 'message',
+      id: 'c',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'Ok' }], stopReason },
+    }).map((e) => e.kind);
+  assert.deepEqual(done('stop'), ['assistant.message', 'turn.completed']);
+  assert.deepEqual(done('toolUse'), ['assistant.message']);
+  assert.deepEqual(done('error'), ['assistant.message']);
+  assert.deepEqual(done('aborted'), ['assistant.message', 'turn.failed']);
 });
 test('Codex canonical rollout avoids duplicate event_msg conversation entries', () => {
   const events = normalizeCodex(
