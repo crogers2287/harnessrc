@@ -133,6 +133,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
 
     private val uploadSlots = kotlinx.coroutines.sync.Semaphore(2)
     private var socket: WebSocket? = null
+    @Volatile private var lastMessage = 0L
     private var foreground = false
     private var retry: Job? = null
     private var refresh: Job? = null
@@ -163,6 +164,8 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
             while (foreground) {
                 delay(3000)
                 if (connected && session?.harness == "dsh" && session?.status == "working") detail(selected)
+                // The gateway pushes at least every 10s; prolonged silence means a dead socket.
+                if (connected && System.currentTimeMillis() - lastMessage > 25000) socket?.cancel()
             }
         }
         viewModelScope.launch {
@@ -187,6 +190,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
             api.websocket(
                 object : WebSocketListener() {
                     override fun onOpen(ws: WebSocket, response: Response) {
+                        lastMessage = System.currentTimeMillis()
                         viewModelScope.launch {
                             if (socket !== ws) return@launch
                             connected = true
@@ -196,6 +200,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
                     }
 
                     override fun onMessage(ws: WebSocket, text: String) {
+                        lastMessage = System.currentTimeMillis()
                         viewModelScope.launch {
                             if (socket !== ws) return@launch
                             runCatching {

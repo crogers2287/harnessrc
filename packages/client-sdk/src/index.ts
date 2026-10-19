@@ -54,7 +54,9 @@ export class Connection {
   socket?: WebSocket;
   stopped = false;
   private timer?: ReturnType<typeof setTimeout>;
+  private watchdog?: ReturnType<typeof setInterval>;
   private attempt = 0;
+  private lastMessage = 0;
   constructor(
     private update: (sessions: SessionView[]) => void,
     private state: (state: 'connected' | 'reconnecting') => void,
@@ -64,14 +66,37 @@ export class Connection {
     this.state('reconnecting');
     this.socket?.close();
   };
-  private online = () => {
-    clearTimeout(this.timer);
-    this.connect();
+  private online = () => this.restart();
+  // Mobile sleep and idle proxies leave half-open sockets that never fire onclose.
+  // The gateway pushes at least every 10s, so prolonged silence means a dead socket.
+  private stale = () => Date.now() - this.lastMessage > 25000;
+  private check = () => {
+    if (this.socket?.readyState === WebSocket.OPEN && this.stale()) this.restart();
   };
+  private visible = () => {
+    if (document.visibilityState !== 'visible') return;
+    if (this.socket?.readyState !== WebSocket.OPEN || Date.now() - this.lastMessage > 12000)
+      this.restart();
+  };
+  /** Drop the current socket without waiting for a close handshake a dead link never completes. */
+  private restart() {
+    if (this.stopped) return;
+    clearTimeout(this.timer);
+    const old = this.socket;
+    this.socket = undefined;
+    if (old) {
+      old.onopen = old.onmessage = old.onclose = null;
+      old.close();
+    }
+    this.attempt = 0;
+    this.connect();
+  }
   start() {
     this.stopped = false;
     window.addEventListener('offline', this.offline);
     window.addEventListener('online', this.online);
+    document.addEventListener('visibilitychange', this.visible);
+    this.watchdog = setInterval(this.check, 5000);
     this.connect();
   }
   private connect() {
@@ -85,9 +110,11 @@ export class Connection {
     );
     this.socket.onopen = () => {
       this.attempt = 0;
+      this.lastMessage = Date.now();
       this.state('connected');
     };
     this.socket.onmessage = (e) => {
+      this.lastMessage = Date.now();
       try {
         const message = JSON.parse(e.data);
         if (message.type === 'invalidate') this.update(message.sessions);
@@ -116,6 +143,8 @@ export class Connection {
     this.stopped = true;
     window.removeEventListener('offline', this.offline);
     window.removeEventListener('online', this.online);
+    document.removeEventListener('visibilitychange', this.visible);
+    clearInterval(this.watchdog);
     clearTimeout(this.timer);
     this.socket?.close();
   }

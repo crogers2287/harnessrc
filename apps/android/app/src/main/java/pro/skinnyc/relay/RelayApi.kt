@@ -100,6 +100,8 @@ class RelayApi(var base: String = DEFAULT_ENDPOINT, var tailnetIp: String = "") 
         }
     }
 
+    // Pings fail a half-open socket so the listener reconnects instead of going silently stale.
     fun websocket(listener: WebSocketListener): WebSocket =
-        client.newWebSocket(request("/ws").build(), listener)
+        client.newBuilder().pingInterval(15, TimeUnit.SECONDS).build()
+            .newWebSocket(request("/ws").build(), listener)
 }
