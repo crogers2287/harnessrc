@@ -48,6 +48,12 @@ test('attachment echoes reconcile task IDs and already-saved optimistic cards wi
   );
   assert.equal(hasNativeEcho(item, [{ ...event, timestamp: '2026-10-08T01:00:00Z' }]), false);
   assert.equal(hasNativeEcho(item, [{ ...event, kind: 'assistant.message' }]), false);
+  // A prompt folded into a compaction summary never echoes verbatim; a later finished turn settles it.
+  const later = { ...event, kind: 'turn.completed', timestamp: '2026-10-09T01:05:00Z', data: {} };
+  assert.equal(hasNativeEcho(item, [later as Event]), true);
+  assert.equal(hasNativeEcho({ ...item, state: 'uncertain' }, [later as Event]), false);
+  assert.equal(hasNativeEcho({ ...item, delivery: 'next-step' }, [later as Event]), false);
+  assert.equal(hasNativeEcho(item, [{ ...later, timestamp: at } as Event]), false);
 });
 test('live/history agent filters combine multiword model search, directory, host, and native blocked states', () => {
   const base = {

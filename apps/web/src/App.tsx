@@ -672,6 +672,8 @@ function Conversation({
   }, [route.view]);
   const restored = useRef(false);
   const pinned = useRef(true);
+  // Only a recent user gesture may re-pin at the bottom; layout shifts never do.
+  const userScrolled = useRef(0);
   const transcript = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const pauseForSelection = () => {
@@ -1096,21 +1098,25 @@ function Conversation({
         className="conversation-scroll"
         ref={scroll}
         onPointerDown={() => {
+          userScrolled.current = Date.now();
           pinned.current = false;
           setAtBottom(false);
         }}
         onWheel={(e) => {
           if (e.deltaY !== 0) {
+            userScrolled.current = Date.now();
             pinned.current = false;
             setAtBottom(false);
           }
         }}
         onTouchMove={() => {
+          userScrolled.current = Date.now();
           pinned.current = false;
           setAtBottom(false);
         }}
         onKeyDown={(e) => {
           if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(e.key)) {
+            userScrolled.current = Date.now();
             pinned.current = false;
             setAtBottom(false);
           }
@@ -1118,14 +1124,12 @@ function Conversation({
         onScroll={() => {
           if (scroll.current) {
             scrollPositions.set(session.id, scroll.current.scrollTop);
-            // Layout-induced scroll events must never resume following.
-            if (
-              scroll.current.scrollHeight -
-                scroll.current.scrollTop -
-                scroll.current.clientHeight >=
-              4
-            )
-              pinned.current = false;
+            const gap =
+              scroll.current.scrollHeight - scroll.current.scrollTop - scroll.current.clientHeight;
+            // Layout-induced scroll events must never resume following; the user reaching
+            // the bottom themselves does.
+            if (gap >= 4) pinned.current = false;
+            else if (Date.now() - userScrolled.current < 1500) pinned.current = true;
             setAtBottom(pinned.current);
           }
         }}

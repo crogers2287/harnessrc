@@ -11,6 +11,15 @@ export type Outgoing = {
 /** Display-only reconciliation. Never authorizes a retry or native command. */
 export function hasNativeEcho(item: Outgoing, events: Event[]): boolean {
   return events.some((e) => {
+    // A prompt can be consumed without a verbatim echo (e.g. folded into a compaction
+    // summary). Once the agent finishes a later turn, the bubble has served its purpose.
+    if (
+      (e.kind === 'turn.completed' || e.kind === 'turn.failed') &&
+      item.state === 'confirmed' &&
+      item.delivery !== 'next-step' &&
+      Date.parse(e.timestamp) > Date.parse(item.started) + 2000
+    )
+      return true;
     if (e.kind !== 'user.message') return false;
     const ids = [item.key, item.nativeRequestId].filter(Boolean);
     if (
