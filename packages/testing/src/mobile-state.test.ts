@@ -4,6 +4,7 @@ import { hasNativeEcho, type Outgoing } from '../../../apps/web/src/delivery.ts'
 import {
   filterSessions,
   defaultFilters,
+  groupByCwd,
   sessionRecency,
   successorSession,
 } from '../../../apps/web/src/session-filters.ts';
@@ -167,5 +168,20 @@ test('a restarted harness in the same pane replaces the ended session', () => {
       'old',
     ),
     undefined,
+  );
+});
+
+test('grouping by directory keeps each directory where its most recent session sits', () => {
+  const row = (id: string, cwd?: string) => ({ id, cwd }) as SessionView;
+  assert.deepEqual(
+    groupByCwd([row('a', '/p/api'), row('b', '/p/web'), row('c', '/p/api'), row('d')]).map((g) => [
+      g.cwd,
+      g.sessions.map((s) => s.id),
+    ]),
+    [
+      ['/p/api', ['a', 'c']],
+      ['/p/web', ['b']],
+      ['', ['d']],
+    ],
   );
 });

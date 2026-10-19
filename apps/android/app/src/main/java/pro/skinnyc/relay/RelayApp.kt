@@ -184,6 +184,13 @@ private fun RelayAppContent(vm: RelayModel, shared: Intent?, nativeKeyboardVisib
                             label = { Text(name) },
                         )
                     }
+                    item {
+                        FilterChip(
+                            selected = vm.groupByDir,
+                            onClick = { vm.updateGroupByDir(!vm.groupByDir) },
+                            label = { Text("Group by folder") },
+                        )
+                    }
                 }
                 val rows =
                     vm.sessions
@@ -208,7 +215,32 @@ private fun RelayAppContent(vm: RelayModel, shared: Intent?, nativeKeyboardVisib
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                    items(rows, key = { it.id }) { s ->
+                    (if (vm.groupByDir) groupByCwd(rows) else listOf("" to rows)).forEach { (cwd, members) ->
+                    if (vm.groupByDir)
+                        stickyHeader(key = "dir:$cwd") {
+                            Row(
+                                Modifier.fillMaxWidth()
+                                    .background(MaterialTheme.colorScheme.surfaceContainer)
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    cwd.trimEnd('/').substringAfterLast('/').ifBlank { "No folder" },
+                                    style = MaterialTheme.typography.titleSmall,
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    cwd,
+                                    Modifier.weight(1f),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text("${members.size}", style = MaterialTheme.typography.labelMedium)
+                            }
+                        }
+                    items(members, key = { it.id }) { s ->
                         Column(
                             Modifier.fillMaxWidth()
                                 .padding(horizontal = 8.dp, vertical = 2.dp)
@@ -269,6 +301,7 @@ private fun RelayAppContent(vm: RelayModel, shared: Intent?, nativeKeyboardVisib
                                     )
                             }
                         }
+                    }
                     }
                 }
                 Row(

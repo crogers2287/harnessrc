@@ -2900,6 +2900,40 @@ body,
   min-height: 48px;
   font-size: 16px;
 }
+.session-filter-fields .group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  font-size: 0.9375rem;
+}
+.session-group {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 20px 6px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.875rem;
+}
+.session-group code {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+.session-group .count {
+  color: var(--muted);
+  font-weight: 400;
+}
 .sidebar .session-cwd {
   display: block;
   overflow: hidden;

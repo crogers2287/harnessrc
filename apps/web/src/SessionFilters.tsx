@@ -12,11 +12,15 @@ export function SessionFilters({
   value,
   onChange,
   count,
+  groupByDir,
+  onGroupByDir,
 }: {
   sessions: SessionView[];
   value: Filters;
   onChange: (value: Filters) => void;
   count: number;
+  groupByDir: boolean;
+  onGroupByDir: (value: boolean) => void;
 }) {
   const update = (patch: Partial<Filters>) => onChange({ ...value, ...patch });
   const scoped = sessions.filter((s) => (value.scope === 'history') === isSaved(s));
@@ -124,6 +128,14 @@ export function SessionFilters({
                     <option key={c}>{c}</option>
                   ))}
               </select>
+            </label>
+            <label className="group-toggle">
+              <input
+                type="checkbox"
+                checked={groupByDir}
+                onChange={(e) => onGroupByDir(e.target.checked)}
+              />
+              Group by directory
             </label>
           </div>
         </details>

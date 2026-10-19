@@ -2,7 +2,7 @@ import { ProviderSwap } from './ProviderSwap.tsx';
 import { ReadingPreferences, usePreferences, feedback } from './preferences.tsx';
 import { Subagents } from './Subagents.tsx';
 import { RichActionContext } from './rich-context.ts';
-import { lazy, Suspense } from 'react';
+import { Fragment, lazy, Suspense } from 'react';
 const LazyRichResponse = lazy(() => import('./RichResponse.tsx'));
 function RichResponse(props: import('./RichResponse.tsx').RichProps) {
   return (
@@ -24,6 +24,7 @@ import {
   agentLabel,
   defaultFilters,
   filterSessions,
+  groupByCwd,
   isSaved,
   sessionRecency,
   successorSession,
@@ -150,6 +151,20 @@ export function App() {
       /* Optional storage. */
     }
   }, [filters]);
+  const [groupByDir, setGroupByDir] = useState(() => {
+    try {
+      return localStorage.getItem('relay-group-by-cwd') === '1';
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem('relay-group-by-cwd', groupByDir ? '1' : '0');
+    } catch {
+      /* Optional storage. */
+    }
+  }, [groupByDir]);
   const [drawerOpen, setDrawerOpen] = useState(() => !!history.state?.relayDrawer);
   const [mobile, setMobile] = useState(() => matchMedia('(max-width: 767px)').matches);
   useEffect(() => {
@@ -385,74 +400,90 @@ export function App() {
           value={filters}
           onChange={setFilters}
           count={shown.length}
+          groupByDir={groupByDir}
+          onGroupByDir={setGroupByDir}
         />
         <div className="session-list">
-          {shown.map((s) => {
-            const recent = sessionRecency(s, lastOpened);
-            return (
-              <SessionRow
-                session={s}
-                selected={selected?.id === s.id}
-                key={s.id}
-                open={() => navigate({ session: s.id })}
-              >
-                <div className={`harness-mark ${s.harness}`} aria-hidden="true">
-                  {s.harness === 'claude'
-                    ? 'C'
-                    : s.harness === 'codex'
-                      ? '⌘'
-                      : s.harness.slice(0, 1).toUpperCase()}
-                </div>
-                <div className="session-summary">
-                  <div className="row-title">
-                    <strong>
-                      {s.pinned ? '★ ' : ''}
-                      {sessionLabel(s)}
-                    </strong>
-                  </div>
-                  <div className="session-meta compact-session-meta">
-                    <span>
-                      {s.agentPreset ? `${s.agentPreset} · ` : ''}
-                      {s.model || agentLabel(s.harness)}
-                    </span>
-                    <span>{s.hostId}</span>
-                  </div>
-                  <div className="session-cwd" title={s.cwd}>
-                    <span>CWD</span> <code>{s.cwd || 'Not reported'}</code>
-                  </div>
+          {(groupByDir ? groupByCwd(shown) : [{ cwd: undefined, sessions: shown }]).map((group) => (
+            <Fragment key={group.cwd ?? ''}>
+              {group.cwd !== undefined && (
+                <h3 className="session-group" title={group.cwd || undefined}>
+                  <span>{group.cwd.split('/').filter(Boolean).at(-1) ?? 'No directory'}</span>
+                  <code>{group.cwd}</code>
+                  <span className="count">{group.sessions.length}</span>
+                </h3>
+              )}
+              {group.sessions.map((s) => {
+                const recent = sessionRecency(s, lastOpened);
+                return (
+                  <SessionRow
+                    session={s}
+                    selected={selected?.id === s.id}
+                    key={s.id}
+                    open={() => navigate({ session: s.id })}
+                  >
+                    <div className={`harness-mark ${s.harness}`} aria-hidden="true">
+                      {s.harness === 'claude'
+                        ? 'C'
+                        : s.harness === 'codex'
+                          ? '⌘'
+                          : s.harness.slice(0, 1).toUpperCase()}
+                    </div>
+                    <div className="session-summary">
+                      <div className="row-title">
+                        <strong>
+                          {s.pinned ? '★ ' : ''}
+                          {sessionLabel(s)}
+                        </strong>
+                      </div>
+                      <div className="session-meta compact-session-meta">
+                        <span>
+                          {s.agentPreset ? `${s.agentPreset} · ` : ''}
+                          {s.model || agentLabel(s.harness)}
+                        </span>
+                        <span>{s.hostId}</span>
+                      </div>
+                      <div className="session-cwd" title={s.cwd}>
+                        <span>CWD</span> <code>{s.cwd || 'Not reported'}</code>
+                      </div>
 
-                  <p>
-                    {previewText(s.preview) ||
-                      (s.capabilities.sendMessage
-                        ? 'Start a conversation'
-                        : 'Chat connection needs attention')}
-                  </p>
-                  <div className="row-bottom">
-                    {isSaved(s) ? (
-                      <span className="saved-session-label">Saved session</span>
-                    ) : (
-                      <Status status={s.status} />
+                      <p>
+                        {previewText(s.preview) ||
+                          (s.capabilities.sendMessage
+                            ? 'Start a conversation'
+                            : 'Chat connection needs attention')}
+                      </p>
+                      <div className="row-bottom">
+                        {isSaved(s) ? (
+                          <span className="saved-session-label">Saved session</span>
+                        ) : (
+                          <Status status={s.status} />
+                        )}
+                        <time
+                          dateTime={recent.timestamp}
+                          title={`Last ${recent.source.toLowerCase()}`}
+                        >
+                          {recent.source} {when(recent.timestamp).toLowerCase()}
+                        </time>
+                        {s.pendingCount > 0 && (
+                          <span className="attention-count">
+                            <CircleHelp size={14} aria-hidden="true" />
+                            {s.pendingCount} waiting
+                          </span>
+                        )}
+                        {s.queuedCount > 0 && (
+                          <span className="queued-count">{s.queuedCount} queued</span>
+                        )}
+                      </div>
+                    </div>
+                    {!isSaved(s) && read[s.id] !== s.lastActivity && (
+                      <span className="unread" aria-label="Unread activity" />
                     )}
-                    <time dateTime={recent.timestamp} title={`Last ${recent.source.toLowerCase()}`}>
-                      {recent.source} {when(recent.timestamp).toLowerCase()}
-                    </time>
-                    {s.pendingCount > 0 && (
-                      <span className="attention-count">
-                        <CircleHelp size={14} aria-hidden="true" />
-                        {s.pendingCount} waiting
-                      </span>
-                    )}
-                    {s.queuedCount > 0 && (
-                      <span className="queued-count">{s.queuedCount} queued</span>
-                    )}
-                  </div>
-                </div>
-                {!isSaved(s) && read[s.id] !== s.lastActivity && (
-                  <span className="unread" aria-label="Unread activity" />
-                )}
-              </SessionRow>
-            );
-          })}
+                  </SessionRow>
+                );
+              })}
+            </Fragment>
+          ))}
           {shown.length === 0 && (
             <Empty title={sessions.length ? 'No matching sessions' : 'No sessions yet'}>
               {sessions.length

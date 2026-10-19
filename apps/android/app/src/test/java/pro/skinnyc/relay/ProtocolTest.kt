@@ -110,6 +110,16 @@ class ProtocolTest {
         assertEquals(sortedSessions(rows), sortedSessions(rows.reversed()))
     }
 
+    @Test
+    fun groupingByFolderKeepsEachFolderWhereItsNewestSessionSits() {
+        fun session(id: String, cwd: String) = Session(json("id" to id, "cwd" to cwd))
+        val rows = listOf(session("a", "/p/api"), session("b", "/p/web"), session("c", "/p/api"))
+        assertEquals(
+            listOf("/p/api" to listOf("a", "c"), "/p/web" to listOf("b")),
+            groupByCwd(rows).map { (cwd, members) -> cwd to members.map { it.id } },
+        )
+    }
+
     private fun event(id: String, seq: Int, kind: String, text: String, item: String = "a") =
         ChatEvent(
             json(

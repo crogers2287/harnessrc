@@ -29,6 +29,12 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
         private set
     var haptics by mutableStateOf(prefs.getBoolean("haptics", true))
         private set
+    var groupByDir by mutableStateOf(prefs.getBoolean("groupByDir", false))
+        private set
+    fun updateGroupByDir(value: Boolean) {
+        groupByDir = value
+        prefs.edit().putBoolean("groupByDir", value).apply()
+    }
     fun updateReading(scale: Float = textScale, compact: Boolean = compactSpacing, activity: String = activityDetail, tactile: Boolean = haptics) {
         textScale = scale.coerceIn(1f, 1.3f)
         compactSpacing = compact

@@ -77,6 +77,13 @@ export function filterSessions(
     );
 }
 
+/** Groups keep the list's order: a directory sits where its most recent session would. */
+export function groupByCwd(sessions: SessionView[]) {
+  const groups = new Map<string, SessionView[]>();
+  for (const s of sessions) groups.set(s.cwd ?? '', [...(groups.get(s.cwd ?? '') ?? []), s]);
+  return [...groups].map(([cwd, members]) => ({ cwd, sessions: members }));
+}
+
 /** A restarted harness gets a new session in the same pane; follow it instead of the ended one. */
 export function successorSession(sessions: SessionView[], id: string | undefined) {
   const current = sessions.find((s) => s.id === id);

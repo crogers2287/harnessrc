@@ -52,6 +52,10 @@ data class Session(val data: JSONObject) {
     }
 }
 
+/** Groups keep the list's order: a folder sits where its most recent session would. */
+fun groupByCwd(sessions: List<Session>): List<Pair<String, List<Session>>> =
+    sessions.groupBy { it.cwd }.toList()
+
 /** Pinned sessions stay on top; the rest sort by the latest open or agent event. */
 fun sortedSessions(
     sessions: List<Session>,
