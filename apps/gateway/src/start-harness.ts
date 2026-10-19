@@ -55,7 +55,8 @@ export async function harnessReady(client: HerdrClient, agent: any) {
     source: 'visible',
     lines: 12,
   });
-  if (!/^\s*❯\s*$/m.test(read?.text ?? '')) return false;
+  // Newer Claude builds fill the empty prompt with a dimmed `Try "…"` suggestion.
+  if (!/^\s*❯\s*(?:Try "[^"\n]*")?\s*$/m.test(read?.text ?? '')) return false;
   const { agent: fresh } = await client.request('agent.get', { target: agent.pane_id });
   return (
     fresh.terminal_id === agent.terminal_id &&

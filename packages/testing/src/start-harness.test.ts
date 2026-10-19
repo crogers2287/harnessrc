@@ -75,6 +75,8 @@ test('narrow Claude panes require an empty prompt and stable native identity', a
       method === 'pane.read' ? { read: { text: screen } } : { agent: fresh },
   };
   assert.equal(await harnessReady(c as any, agent), true);
+  screen = '────\n❯ Try "fix lint errors"\n────';
+  assert.equal(await harnessReady(c as any, agent), true);
   screen = '❯ No, exit\nYes, trust this folder';
   assert.equal(await harnessReady(c as any, agent), false);
   screen = '❯';
