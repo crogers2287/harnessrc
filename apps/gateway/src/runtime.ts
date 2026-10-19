@@ -188,7 +188,6 @@ export class Runtime extends EventEmitter {
           s.model = old.model;
           s.modelUpdatedAt = old.modelUpdatedAt;
         }
-        s.diagnostic ??= this.tickErrors.get(s.id)?.message;
         const nativeModel = this.codexLinks.get(hostId)?.model(s.terminalId);
         if (
           nativeModel?.model &&
@@ -332,6 +331,7 @@ export class Runtime extends EventEmitter {
             };
           }
         } else s.diagnostic = 'Herdr has not reported a native session identity yet.';
+        s.diagnostic ??= this.tickErrors.get(s.id)?.message;
         if (counts.get(s.id)! > 1) {
           s.connected = false;
           s.capabilities = capabilities(['readConversation']);
