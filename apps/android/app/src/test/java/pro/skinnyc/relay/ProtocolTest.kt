@@ -60,6 +60,24 @@ class ProtocolTest {
     }
 
     @Test
+    fun restartedHarnessInSamePaneReplacesEndedSession() {
+        fun session(id: String, status: String, time: String, pane: String = "w1:p1") =
+            Session(
+                json(
+                    "id" to id,
+                    "status" to status,
+                    "lastActivity" to time,
+                    "paneId" to pane,
+                    "hostId" to "fred",
+                )
+            )
+        val ended = session("old", "ended", "2026-10-19T16:00:00Z")
+        assertEquals("new", successorSession(listOf(ended, session("new", "working", "2026-10-19T17:00:00Z")), "old"))
+        assertNull(successorSession(listOf(ended, session("other", "working", "2026-10-19T17:00:00Z", "w1:p2")), "old"))
+        assertNull(successorSession(listOf(ended, session("older", "idle", "2026-10-19T15:00:00Z")), "old"))
+    }
+
+    @Test
     fun sessionsSortPinnedFirstThenByNewestActivityRegardlessOfStatus() {
         fun session(id: String, status: String, time: String, pinned: Boolean = false) =
             Session(

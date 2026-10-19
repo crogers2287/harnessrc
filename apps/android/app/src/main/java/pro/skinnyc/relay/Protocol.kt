@@ -70,6 +70,24 @@ fun sessionRecencyMillis(session: Session, lastOpened: Map<String, Long>): Long 
     return maxOf(activity, lastOpened[session.id] ?: 0L)
 }
 
+/** A restarted harness gets a new session in the same pane; follow it instead of the ended one. */
+fun successorSession(sessions: List<Session>, id: String): String? {
+    val current = sessions.firstOrNull { it.id == id } ?: return null
+    val pane = current.data.str("paneId")
+    if (current.status != "ended" || pane.isBlank()) return null
+    val since = sessionRecencyMillis(current, emptyMap())
+    return sessions
+        .filter {
+            it.id != id &&
+                it.data.str("paneId") == pane &&
+                it.data.str("hostId") == current.data.str("hostId") &&
+                it.status != "ended" &&
+                sessionRecencyMillis(it, emptyMap()) >= since
+        }
+        .maxByOrNull { sessionRecencyMillis(it, emptyMap()) }
+        ?.id
+}
+
 fun sessionRecencyLabel(
     session: Session,
     lastOpened: Map<String, Long>,

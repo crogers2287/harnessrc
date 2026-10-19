@@ -208,41 +208,61 @@ export async function createGateway(
       return result;
     },
   );
-  const sessionViews = (device: Device): SessionView[] =>
-    store
+  // One query per table per call: this runs for every session on every socket push.
+  const sessionViews = (device: Device): SessionView[] => {
+    const now = Date.now();
+    const blocked = new Set<string>();
+    const pending = new Map<string, number>();
+    for (const r of store.db
+      .prepare(
+        "SELECT session_id,status,body FROM interactions WHERE status IN ('pending','answered','responding','uncertain')",
+      )
+      .all()) {
+      const id = r.session_id as string;
+      blocked.add(id);
+      if (r.status === 'pending' && Date.parse(JSON.parse(r.body as string).expiresAt) > now)
+        pending.set(id, (pending.get(id) ?? 0) + 1);
+    }
+    const queued = new Map(
+      store.db
+        .prepare(
+          "SELECT session_id,count(*) n FROM tasks WHERE status='pending' GROUP BY session_id",
+        )
+        .all()
+        .map((r) => [r.session_id as string, Number(r.n)]),
+    );
+    const preferences = new Map(
+      store.db
+        .prepare('SELECT session_id,name,pinned,archived FROM session_preferences')
+        .all()
+        .map((r) => [r.session_id as string, r]),
+    );
+    return store
       .sessions()
       .filter((s) => auth.allowed(device, s.id))
-      .map((s) => ({
-        ...s,
-        status: store
-          .interactions(s.id)
-          .some((i) => ['pending', 'answered', 'responding', 'uncertain'].includes(i.status))
-          ? ('blocked' as const)
-          : s.status,
-        ...(() => {
-          const preference = store.db
-            .prepare('SELECT name,pinned,archived FROM session_preferences WHERE session_id=?')
-            .get(s.id);
-          return {
-            relayName: preference?.name as string | undefined,
-            pinned: !!preference?.pinned,
-            archived: !!preference?.archived,
-            canManage: auth.allowed(device, s.id, true),
-          };
-        })(),
-        capabilities: auth.allowed(device, s.id, true)
-          ? s.capabilities
-          : Object.fromEntries(
-              Object.entries(s.capabilities).map(([k, v]) => [
-                k,
-                k.startsWith('read') || k === 'streamConversation' ? v : false,
-              ]),
-            ),
-        pendingCount: store
-          .interactions(s.id)
-          .filter((i) => i.status === 'pending' && Date.parse(i.expiresAt) > Date.now()).length,
-        queuedCount: store.tasks(s.id).filter((t) => t.status === 'pending').length,
-      }));
+      .map((s) => {
+        const preference = preferences.get(s.id);
+        const canManage = auth.allowed(device, s.id, true);
+        return {
+          ...s,
+          status: blocked.has(s.id) ? ('blocked' as const) : s.status,
+          relayName: preference?.name as string | undefined,
+          pinned: !!preference?.pinned,
+          archived: !!preference?.archived,
+          canManage,
+          capabilities: canManage
+            ? s.capabilities
+            : Object.fromEntries(
+                Object.entries(s.capabilities).map(([k, v]) => [
+                  k,
+                  k.startsWith('read') || k === 'streamConversation' ? v : false,
+                ]),
+              ),
+          pendingCount: pending.get(s.id) ?? 0,
+          queuedCount: queued.get(s.id) ?? 0,
+        };
+      });
+  };
   app.get('/api/connection', async () => ({ tailnetEndpoint: config.tailnet?.endpoint ?? null }));
   app.get('/health', async () => ({ ok: true }));
   // APKs are operator-published artifacts, never arbitrary client-supplied paths.

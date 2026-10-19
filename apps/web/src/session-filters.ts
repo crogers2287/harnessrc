@@ -76,3 +76,19 @@ export function filterSessions(
         a.id.localeCompare(b.id),
     );
 }
+
+/** A restarted harness gets a new session in the same pane; follow it instead of the ended one. */
+export function successorSession(sessions: SessionView[], id: string | undefined) {
+  const current = sessions.find((s) => s.id === id);
+  if (!current || current.status !== 'ended' || !current.paneId) return undefined;
+  return sessions
+    .filter(
+      (s) =>
+        s.id !== current.id &&
+        s.paneId === current.paneId &&
+        s.hostId === current.hostId &&
+        s.status !== 'ended' &&
+        Date.parse(s.lastActivity) >= Date.parse(current.lastActivity),
+    )
+    .sort((a, b) => Date.parse(b.lastActivity) - Date.parse(a.lastActivity))[0]?.id;
+}

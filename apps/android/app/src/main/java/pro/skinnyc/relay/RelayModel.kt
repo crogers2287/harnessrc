@@ -207,6 +207,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
                                 val value = JSONObject(text)
                                 if (value.str("type") == "invalidate") {
                                     sessions = value.rows("sessions").map(::Session)
+                                    successorSession(sessions, selected)?.let(::choose)
                                     refresh?.cancel()
                                     refresh =
                                         viewModelScope.launch {
@@ -254,6 +255,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
     suspend fun refreshSessions() {
         try {
             sessions = api.api("/api/sessions").rows("sessions").map(::Session)
+            successorSession(sessions, selected)?.let(::choose)
             voiceEnabled = api.api("/api/voice").optBoolean("enabled")
             val previousSelection = selected
             if (sessions.none { it.id == selected })

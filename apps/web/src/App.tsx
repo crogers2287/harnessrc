@@ -26,6 +26,7 @@ import {
   filterSessions,
   isSaved,
   sessionRecency,
+  successorSession,
   type SessionFilters as FilterState,
 } from './session-filters.ts';
 import { InstallApp } from './InstallApp.tsx';
@@ -208,6 +209,16 @@ export function App() {
       return recent;
     });
   }, [route.session]);
+  const successor = successorSession(sessions, route.session);
+  useEffect(() => {
+    if (!successor) return;
+    // Swap in place so Back does not return to the ended run.
+    const params = new URLSearchParams(location.search);
+    params.set('session', successor);
+    history.replaceState(history.state, '', `/?${params}`);
+    setRoute((r) => ({ ...r, session: successor }));
+    localStorage.setItem('relay-last-session', successor);
+  }, [successor]);
   const navigate = (next: Route) => {
     const params = new URLSearchParams(
       Object.entries(next).filter(([, v]) => v !== undefined) as [string, string][],

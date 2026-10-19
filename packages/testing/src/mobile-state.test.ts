@@ -5,6 +5,7 @@ import {
   filterSessions,
   defaultFilters,
   sessionRecency,
+  successorSession,
 } from '../../../apps/web/src/session-filters.ts';
 import type { Event, SessionView } from '@harnessrc/protocol';
 const at = '2026-10-09T01:00:00Z';
@@ -139,4 +140,32 @@ test('native slash-command echoes remove their optimistic copy with timestamp sa
   assert.equal(hasNativeEcho(item, [event]), true);
   assert.equal(hasNativeEcho({ ...item, prompt: '/help' }, [event]), false);
   assert.equal(hasNativeEcho(item, [{ ...event, timestamp: '2026-10-08T00:00:00Z' }]), false);
+});
+
+test('a restarted harness in the same pane replaces the ended session', () => {
+  const ended = {
+    id: 'old',
+    harness: 'claude',
+    status: 'ended',
+    paneId: 'w1:p1',
+    hostId: 'fred',
+    lastActivity: '2026-10-19T16:00:00Z',
+  } as SessionView;
+  const next = { ...ended, id: 'new', status: 'working', lastActivity: '2026-10-19T17:00:00Z' };
+  assert.equal(successorSession([ended, next as SessionView], 'old'), 'new');
+  assert.equal(
+    successorSession([{ ...ended, status: 'idle' }, next as SessionView], 'old'),
+    undefined,
+  );
+  assert.equal(
+    successorSession([ended, { ...next, paneId: 'w1:p2' } as SessionView], 'old'),
+    undefined,
+  );
+  assert.equal(
+    successorSession(
+      [ended, { ...next, lastActivity: '2026-10-19T15:00:00Z' } as SessionView],
+      'old',
+    ),
+    undefined,
+  );
 });
