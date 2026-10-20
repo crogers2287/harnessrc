@@ -1,9 +1,14 @@
 package pro.skinnyc.relay
 
 import android.content.Context
+import android.content.Intent
 import android.media.MediaRecorder
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
@@ -170,5 +175,146 @@ class NativeRecorder(private val context: Context) {
 
     fun cancel() {
         finish()?.delete()
+    }
+}
+
+/** Streams words into the composer while you talk, using the phone's own recognizer (on-device
+ * when available). Android ends a recognition at each pause, so it restarts until finished. */
+class LiveDictation(private val context: Context) {
+    var recording by mutableStateOf(false)
+        private set
+
+    var seconds by mutableStateOf(0)
+        private set
+
+    var level by mutableStateOf(0f)
+        private set
+
+    val available = SpeechRecognizer.isRecognitionAvailable(context)
+    var onText: (String) -> Unit = {}
+    var onError: (String) -> Unit = {}
+    private var recognizer: SpeechRecognizer? = null
+    private var onDevice =
+        Build.VERSION.SDK_INT >= 31 && SpeechRecognizer.isOnDeviceRecognitionAvailable(context)
+    private var committed = ""
+    private var started = 0L
+
+    fun start() {
+        cancel()
+        committed = ""
+        started = System.currentTimeMillis()
+        seconds = 0
+        recording = true
+        listen()
+    }
+
+    private fun listen() {
+        val r =
+            if (onDevice && Build.VERSION.SDK_INT >= 31)
+                SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
+            else SpeechRecognizer.createSpeechRecognizer(context)
+        recognizer = r
+        r.setRecognitionListener(
+            object : RecognitionListener {
+                override fun onPartialResults(results: Bundle) {
+                    best(results)?.let { onText(join(committed, it)) }
+                }
+
+                override fun onResults(results: Bundle) {
+                    best(results)?.let { committed = join(committed, it) }
+                    onText(committed)
+                    release(r)
+                    if (recording) listen()
+                }
+
+                override fun onError(error: Int) {
+                    release(r)
+                    if (!recording) return
+                    when (error) {
+                        SpeechRecognizer.ERROR_NO_MATCH,
+                        SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> listen()
+                        SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED,
+                        SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE ->
+                            if (onDevice) {
+                                onDevice = false
+                                listen()
+                            } else stopWith("Speech recognition is not available for your language.")
+                        SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS ->
+                            stopWith("Microphone permission is needed for dictation.")
+                        SpeechRecognizer.ERROR_NETWORK,
+                        SpeechRecognizer.ERROR_NETWORK_TIMEOUT,
+                        SpeechRecognizer.ERROR_SERVER ->
+                            stopWith("Speech recognition needs a connection on this phone.")
+                        else -> stopWith("Dictation stopped (error $error).")
+                    }
+                }
+
+                override fun onRmsChanged(rmsdB: Float) {
+                    level = ((rmsdB + 2f) / 12f).coerceIn(0f, 1f)
+                }
+
+                override fun onReadyForSpeech(params: Bundle?) {}
+
+                override fun onBeginningOfSpeech() {}
+
+                override fun onBufferReceived(buffer: ByteArray?) {}
+
+                override fun onEndOfSpeech() {}
+
+                override fun onEvent(eventType: Int, params: Bundle?) {}
+            }
+        )
+        r.startListening(
+            Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(
+                    RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                    RecognizerIntent.LANGUAGE_MODEL_FREE_FORM,
+                )
+                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+                putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+                if (Build.VERSION.SDK_INT >= 33)
+                    putExtra(
+                        RecognizerIntent.EXTRA_ENABLE_FORMATTING,
+                        RecognizerIntent.FORMATTING_OPTIMIZE_QUALITY,
+                    )
+            }
+        )
+    }
+
+    private fun best(results: Bundle) =
+        results
+            .getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+            ?.firstOrNull()
+            ?.takeIf { it.isNotBlank() }
+
+    private fun join(a: String, b: String) = listOf(a, b).filter { it.isNotBlank() }.joinToString(" ")
+
+    private fun release(r: SpeechRecognizer) {
+        r.destroy()
+        if (recognizer === r) recognizer = null
+    }
+
+    private fun stopWith(message: String) {
+        recording = false
+        level = 0f
+        onError(message)
+    }
+
+    fun tick() {
+        seconds = ((System.currentTimeMillis() - started) / 1000).toInt()
+    }
+
+    /** Stops listening; the recognizer still delivers the last words through onText. */
+    fun finish() {
+        if (!recording) return
+        recording = false
+        level = 0f
+        recognizer?.stopListening()
+    }
+
+    fun cancel() {
+        recording = false
+        level = 0f
+        recognizer?.let(::release)
     }
 }

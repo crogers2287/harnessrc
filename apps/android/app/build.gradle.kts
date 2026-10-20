@@ -6,8 +6,8 @@ android {
         applicationId = "pro.skinnyc.relay"
         minSdk = 28
         targetSdk = 36
-        versionCode = 31
-        versionName = "0.1.30"
+        versionCode = 32
+        versionName = "0.1.31"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {

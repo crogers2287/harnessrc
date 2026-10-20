@@ -901,6 +901,20 @@ fun Composer(vm: RelayModel) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current
     val recorder = remember { NativeRecorder(context.applicationContext) }
+    val live = remember { LiveDictation(context.applicationContext) }
+    // Live text lands after whatever was already in the box; Cancel puts that back.
+    var liveBase by remember { mutableStateOf("") }
+    live.onText = { text -> vm.edit(listOf(liveBase.trimEnd(), text).filter { it.isNotBlank() }.joinToString("\n")) }
+    live.onError = { vm.error = it }
+    val listening = recorder.recording || live.recording
+    fun startDictation() {
+        if (live.available) {
+            liveBase = vm.draft
+            live.start()
+        } else
+            runCatching { recorder.start() }
+                .onFailure { vm.error = it.message ?: "Microphone unavailable" }
+    }
     val scope = rememberCoroutineScope()
     var menu by remember { mutableStateOf(false) }
     var modeMenu by remember { mutableStateOf(false) }
@@ -924,15 +938,14 @@ fun Composer(vm: RelayModel) {
         }
     val permission =
         rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-            if (granted)
-                runCatching { recorder.start() }
-                    .onFailure { vm.error = it.message ?: "Microphone unavailable" }
+            if (granted) startDictation()
             else {
                 vm.error =
                     "Microphone permission is needed for dictation. You can enable it in Android app settings."
             }
         }
     fun finish() {
+        live.finish()
         recorder.finish()?.let(vm::transcribe)
     }
     DisposableEffect(lifecycle, vm.selected) {
@@ -943,6 +956,7 @@ fun Composer(vm: RelayModel) {
         onDispose {
             lifecycle.lifecycle.removeObserver(observer)
             recorder.cancel()
+            live.cancel()
         }
     }
     LaunchedEffect(recorder.recording) {
@@ -950,6 +964,12 @@ fun Composer(vm: RelayModel) {
             delay(100)
             recorder.tick()
             if (recorder.seconds >= 180) finish()
+        }
+    }
+    LaunchedEffect(live.recording) {
+        while (live.recording) {
+            delay(250)
+            live.tick()
         }
     }
     Surface(
@@ -1000,7 +1020,7 @@ fun Composer(vm: RelayModel) {
                     style = MaterialTheme.typography.labelSmall,
                 )
             }
-            if (recorder.recording || vm.transcribing) {
+            if (listening || vm.transcribing) {
                 Row(
                     Modifier.heightIn(min = 64.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -1016,7 +1036,7 @@ fun Composer(vm: RelayModel) {
                             repeat(10) { index ->
                                 Box(
                                     Modifier.width(4.dp)
-                                        .height((4 + recorder.level * (14 + (index % 4) * 5)).dp)
+                                        .height((4 + (if (live.recording) live.level else recorder.level) * (14 + (index % 4) * 5)).dp)
                                         .clip(RoundedCornerShape(2.dp))
                                         .background(MaterialTheme.colorScheme.primary)
                                 )
@@ -1025,16 +1045,22 @@ fun Composer(vm: RelayModel) {
                     Text(
                         if (vm.transcribing) "Transcribing and cleaning…"
                         else
-                            "Listening · ${recorder.seconds / 60}:${(recorder.seconds % 60).toString().padStart(2, '0')}",
+                            (if (live.recording) live.seconds else recorder.seconds).let {
+                            "Listening · ${it / 60}:${(it % 60).toString().padStart(2, '0')}"
+                        },
                         Modifier.weight(1f).padding(horizontal = 10.dp),
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     ActionIcon(Icons.Outlined.Close, "Cancel dictation") {
                         recorder.cancel()
+                        if (live.recording) {
+                            live.cancel()
+                            vm.edit(liveBase)
+                        }
                         vm.cancelVoice()
                     }
                 }
-                if (recorder.recording)
+                if (listening)
                     FilledTonalButton(onClick = { finish() }, modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Outlined.Check, null)
                         Text("Finish dictation", Modifier.padding(start = 8.dp))
@@ -1157,11 +1183,11 @@ fun Composer(vm: RelayModel) {
                         }
                     }
                 }
-                if (vm.voiceEnabled)
+                if (vm.voiceEnabled || live.available)
                     ActionIcon(
                         Icons.Outlined.Mic,
                         "Dictate message",
-                        !recorder.recording && !vm.transcribing,
+                        !listening && !vm.transcribing,
                     ) {
                         if (
                             ContextCompat.checkSelfPermission(
@@ -1169,8 +1195,7 @@ fun Composer(vm: RelayModel) {
                                 Manifest.permission.RECORD_AUDIO,
                             ) == PackageManager.PERMISSION_GRANTED
                         )
-                            runCatching { recorder.start() }
-                                .onFailure { vm.error = it.message ?: "Microphone unavailable" }
+                            startDictation()
                         else permission.launch(Manifest.permission.RECORD_AUDIO)
                     }
                 FilledIconButton(
@@ -1180,7 +1205,7 @@ fun Composer(vm: RelayModel) {
                             !vm.working &&
                             !vm.sending &&
                             !vm.transcribing &&
-                            !recorder.recording &&
+                            !listening &&
                             vm.uploading == 0 &&
                             (vm.draft.isNotBlank() || vm.attachments.isNotEmpty()) &&
                             vm.outgoing?.str("state") != "uncertain",
