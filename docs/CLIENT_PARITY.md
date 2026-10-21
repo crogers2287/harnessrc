@@ -317,3 +317,25 @@ three browser checks (390px/1280px current command, exact Stop route, retained
 draft, matching completion, reading-position regression) pass. Android unit tests,
 lint, debug/test APK builds pass. The additional native UI regression is compiled;
 emulator execution remains blocked by the missing disposable system image.
+
+
+### Conversation recovery and symlinked projects, Android 0.1.32
+
+Gateway transcript ingestion runs every 700ms independently of discovery, native
+interaction lookup and queued delivery. Reads for the same session coalesce;
+a stalled session cannot hold up another reader. Transcript import and native
+questions recover independently, including unloaded Codex daemon threads and
+missing/damaged transcript files. Both clients retain streamed updates and replay
+history every ten seconds while visible. Web history responses preserve frames
+that arrived during the request; drafts and reading position stay under user control.
+Both clients also recover stalled socket handshakes using the silence watchdog.
+
+Trusted launch profiles may set `allowRootSymlinks: true` to treat visible directory
+symlinks directly inside their configured roots as project aliases. The default
+remains false. Folder responses preserve `/home/user/project` for browsing and Back;
+launch uses the verified canonical target. Broken links are skipped and nested
+links outside permitted targets remain rejected. Fred's home-root profiles opt in,
+including `~/questguardian` pointing to `/mnt/storage/questguardian/repo`.
+
+Validation details and deployment are recorded in ANDROID.md. Android needs APK
+0.1.32 for periodic replay; the gateway fixes also benefit earlier installed APKs.

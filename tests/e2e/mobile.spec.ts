@@ -3070,3 +3070,115 @@ for (const width of [390, 1280])
     );
     await expect(activity).toHaveCount(0);
   });
+
+test('missed conversation frames recover on a healthy socket without refresh or lost drafts', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await pair(page);
+  const session = await page.request
+    .get('/api/sessions')
+    .then((r) => r.json())
+    .then((r) => r.sessions[0]);
+  const initial = {
+    id: 'replay-initial',
+    sourceId: 'replay-initial',
+    sequence: 1,
+    sessionId: session.id,
+    nativeSessionId: session.nativeSessionId,
+    source: 'mock',
+    kind: 'assistant.message',
+    timestamp: new Date().toISOString(),
+    data: { text: 'Initial replay history' },
+  };
+  const recovered = {
+    ...initial,
+    id: 'replay-missed',
+    sourceId: 'replay-missed',
+    sequence: 2,
+    data: { text: 'Recovered without refreshing the page' },
+  };
+  let history = [initial];
+  let reads = 0;
+  let stream: any;
+  await page.route('**/events?*', (route) => {
+    reads++;
+    return route.fulfill({ json: { events: history } });
+  });
+  await page.routeWebSocket('**/ws', (socket) => {
+    stream = socket;
+    socket.send(JSON.stringify({ type: 'invalidate', sessions: [session] }));
+  });
+  await page.goto(`/?session=${session.id}`);
+  await expect(page.getByText('Initial replay history', { exact: true })).toBeVisible();
+  const composer = page.getByLabel('Instruction', { exact: true });
+  await composer.fill('Preserve this draft while recovering');
+  const before = reads;
+  history = [initial, recovered];
+  stream.send(JSON.stringify({ type: 'heartbeat' }));
+  await expect(
+    page.getByText('Recovered without refreshing the page', { exact: true }),
+  ).toBeVisible({ timeout: 15000 });
+  expect(reads).toBeGreaterThan(before);
+  await expect(composer).toHaveText('Preserve this draft while recovering');
+  await page.screenshot({ path: '/tmp/relay-replay-mobile.png' });
+});
+
+test('history recovery retains a stream frame received during the HTTP snapshot', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await pair(page);
+  const session = await page.request
+    .get('/api/sessions')
+    .then((r) => r.json())
+    .then((r) => r.sessions[0]);
+  const initial = {
+    id: 'race-initial',
+    sourceId: 'race-initial',
+    sequence: 1,
+    sessionId: session.id,
+    nativeSessionId: session.nativeSessionId,
+    source: 'mock',
+    kind: 'assistant.message',
+    timestamp: new Date().toISOString(),
+    data: { text: 'Before snapshot race' },
+  };
+  let reads = 0;
+  let stream: any;
+  let release: (() => void) | undefined;
+  await page.route('**/events?*', async (route) => {
+    reads++;
+    if (reads > 1)
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    await route.fulfill({ json: { events: [initial] } });
+  });
+  await page.routeWebSocket('**/ws', (socket) => {
+    stream = socket;
+    socket.send(JSON.stringify({ type: 'invalidate', sessions: [session] }));
+  });
+  await page.goto(`/?session=${session.id}`);
+  await expect(page.getByText('Before snapshot race', { exact: true })).toBeVisible();
+  await expect.poll(() => !!release, { timeout: 15000 }).toBe(true);
+  stream.send(
+    JSON.stringify({
+      type: 'event',
+      event: {
+        ...initial,
+        id: 'race-live',
+        sequence: 2,
+        data: { text: 'Live frame survives snapshot recovery' },
+      },
+    }),
+  );
+  await expect(
+    page.getByText('Live frame survives snapshot recovery', { exact: true }),
+  ).toBeVisible();
+  release!();
+  await page.waitForResponse((r) => r.url().includes('/events?'));
+  await expect(
+    page.getByText('Live frame survives snapshot recovery', { exact: true }),
+  ).toBeVisible();
+});

@@ -654,10 +654,19 @@ function Conversation({
   });
   const events = useQuery<{ events: Event[] }>({
     queryKey: ['events', session.id],
-    queryFn: () =>
-      api(
+    // Recover missed frames even when the socket remains healthy.
+    refetchInterval: 10000,
+    queryFn: async () => {
+      const snapshot = await api<{ events: Event[] }>(
         `/api/sessions/${session.id}/events?before=${Number.MAX_SAFE_INTEGER}&limit=100&conversation=1`,
-      ),
+      );
+      // A streamed frame can arrive while the history request is in flight.
+      const latest = snapshot.events.at(-1)?.sequence ?? 0;
+      const live = query.getQueryData<{ events: Event[] }>(['events', session.id]);
+      return {
+        events: [...snapshot.events, ...(live?.events.filter((e) => e.sequence > latest) ?? [])],
+      };
+    },
   });
   const [history, setHistory] = useState<Event[]>([]);
   const [hasMore, setHasMore] = useState(true);
@@ -714,8 +723,7 @@ function Conversation({
   }, [route.view]);
   const restored = useRef(false);
   const pinned = useRef(true);
-  // Only a recent user gesture may re-pin at the bottom; layout shifts never do.
-  const userScrolled = useRef(0);
+  // Latest messages explicitly resumes following after the reader pauses it.
   const transcript = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const pauseForSelection = () => {
@@ -1140,25 +1148,21 @@ function Conversation({
         className="conversation-scroll"
         ref={scroll}
         onPointerDown={() => {
-          userScrolled.current = Date.now();
           pinned.current = false;
           setAtBottom(false);
         }}
         onWheel={(e) => {
           if (e.deltaY !== 0) {
-            userScrolled.current = Date.now();
             pinned.current = false;
             setAtBottom(false);
           }
         }}
         onTouchMove={() => {
-          userScrolled.current = Date.now();
           pinned.current = false;
           setAtBottom(false);
         }}
         onKeyDown={(e) => {
           if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(e.key)) {
-            userScrolled.current = Date.now();
             pinned.current = false;
             setAtBottom(false);
           }
@@ -1168,10 +1172,9 @@ function Conversation({
             scrollPositions.set(session.id, scroll.current.scrollTop);
             const gap =
               scroll.current.scrollHeight - scroll.current.scrollTop - scroll.current.clientHeight;
-            // Layout-induced scroll events must never resume following; the user reaching
-            // the bottom themselves does.
+            // Scroll events can also come from layout shifts during history recovery.
+            // Only Latest messages may resume following.
             if (gap >= 4) pinned.current = false;
-            else if (Date.now() - userScrolled.current < 1500) pinned.current = true;
             setAtBottom(pinned.current);
           }
         }}

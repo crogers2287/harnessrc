@@ -46,6 +46,7 @@ class NativeChatTest {
     @Volatile private var dictationOriginal = "please uh check the image and fix the layout"
     @Volatile private var receiptConfirmed = false
     @Volatile private var liveSocket: okhttp3.WebSocket? = null
+    @Volatile private var recoveredHistory = false
     private val ctx
         get() = ApplicationProvider.getApplicationContext<Context>()
 
@@ -112,7 +113,7 @@ class NativeChatTest {
                             path == "/api/sessions/test-session" ->
                                 "{\"session\":$session,\"interactions\":[${pendingQuestion?.toString() ?: ""}],\"tasks\":[]}"
                             path.contains("/events?") ->
-                                """{"events":[{"id":"greeting","sequence":1,"kind":"assistant.message","data":{"text":"Your agents, wherever you are.\n\nPaste a screenshot from your keyboard, attach a file, or dictate your next instruction. I’ll keep working on Fred."}}]}"""
+                                """{"events":[{"id":"greeting","sequence":1,"kind":"assistant.message","data":{"text":"Your agents, wherever you are.\n\nPaste a screenshot from your keyboard, attach a file, or dictate your next instruction. I’ll keep working on Fred."}}${if (recoveredHistory) "," + json("id" to "recovered-reply", "sequence" to 2, "kind" to "assistant.message", "data" to json("text" to "Recovered without reopening the app")) else ""}]}"""
                             path.contains("/attachments?") ->
                                 """{"attachment":{"id":"11111111-1111-4111-8111-111111111111","name":"Screenshot.png","mime":"image/png","size":128}}"""
                             path.contains("/dictation?") ->
@@ -152,6 +153,35 @@ class NativeChatTest {
         server.shutdown()
     }
 
+
+    @Test
+    fun missedConversationFrameRecoversWithoutReopeningOrLosingDraft() {
+        compose.waitUntil(10000) { liveSocket != null }
+        scenario.onActivity { it.model.edit("Keep this draft during recovery") }
+        // Let initial open/reconnect reads settle before making a history-only reply available.
+        Thread.sleep(1000)
+        recoveredHistory = true
+        // No event frame or reconnect: the periodic history read must recover this reply.
+        liveSocket!!.send("""{"type":"heartbeat"}""")
+        compose.waitUntil(15000) {
+            var recovered = false
+            scenario.onActivity { activity ->
+                recovered = activity.model.events.any { it.id == "recovered-reply" }
+            }
+            recovered
+        }
+        compose.onNodeWithTag("conversation").performScrollToIndex(1)
+        // Markdown is an Android TextView, outside Compose's text semantics.
+        androidx.test.espresso.Espresso.onView(
+            androidx.test.espresso.matcher.ViewMatchers.withText("Recovered without reopening the app")
+        ).check(
+            androidx.test.espresso.assertion.ViewAssertions.matches(
+                androidx.test.espresso.matcher.ViewMatchers.isDisplayed()
+            )
+        )
+        scenario.onActivity { assertEquals("Keep this draft during recovery", it.model.draft) }
+        assertFalse(requests.any { it.path?.endsWith("/messages") == true })
+    }
 
     @Test
     fun activeCommandShowsWaitAndStopsWithoutSendingDraft() {

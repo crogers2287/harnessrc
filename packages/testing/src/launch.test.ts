@@ -13,6 +13,53 @@ import {
   HARNESS_THREAD_DEFAULTS,
 } from '../../../apps/gateway/src/launch.ts';
 
+test('opted-in project aliases list external symlink folders and preserve home navigation', async () => {
+  const base = await mkdtemp(path.join(tmpdir(), 'launch-alias-'));
+  const home = path.join(base, 'home');
+  const repo = path.join(base, 'storage', 'questguardian', 'repo');
+  const store = new Store(':memory:');
+  try {
+    await mkdir(home);
+    await mkdir(path.join(repo, 'src'), { recursive: true });
+    const alias = path.join(home, 'questguardian');
+    await symlink(repo, alias);
+    await symlink(path.join(base, 'missing'), path.join(home, 'broken'));
+    await symlink('/etc', path.join(repo, 'escape'));
+    const profile = launchProfileSchema.parse({
+      id: 'codex',
+      hostId: 'fred',
+      label: 'Codex',
+      harness: 'codex',
+      workspaceId: 'w1',
+      roots: [home],
+      allowRootSymlinks: true,
+    });
+    const launcher = new Launcher(store, [profile], new Map());
+    const listing = await launcher.folders('codex');
+    assert.deepEqual(listing.directories, [{ name: 'questguardian', path: alias }]);
+    const inside = await launcher.folders('codex', alias);
+    assert.equal(inside.path, alias);
+    assert.equal(inside.parent, home);
+    assert.deepEqual(inside.directories, [{ name: 'src', path: path.join(alias, 'src') }]);
+    assert.equal((await launcher.directory('codex', alias)).resolved, repo);
+    assert.equal((await launcher.folders('codex', path.join(alias, 'src'))).parent, alias);
+    await assert.rejects(
+      () => launcher.directory('codex', path.join(alias, 'escape')),
+      /outside permitted/,
+    );
+    await assert.rejects(
+      () => launcher.directory('codex', path.join(repo, '..')),
+      /outside permitted/,
+    );
+    const restricted = new Launcher(store, [{ ...profile, allowRootSymlinks: false }], new Map());
+    assert.deepEqual((await restricted.folders('codex')).directories, []);
+    await assert.rejects(() => restricted.directory('codex', alias), /outside permitted/);
+  } finally {
+    store.close();
+    await rm(base, { recursive: true, force: true });
+  }
+});
+
 test('launch passes verified CWD/model to Herdr, claims atomically, and replays across restarts', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'launch-'));
   const store = new Store(':memory:');

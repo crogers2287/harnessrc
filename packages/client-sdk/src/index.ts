@@ -71,7 +71,7 @@ export class Connection {
   // The gateway pushes at least every 10s, so prolonged silence means a dead socket.
   private stale = () => Date.now() - this.lastMessage > 25000;
   private check = () => {
-    if (this.socket?.readyState === WebSocket.OPEN && this.stale()) this.restart();
+    if (this.socket && this.stale()) this.restart();
   };
   private visible = () => {
     if (document.visibilityState !== 'visible') return;
@@ -103,6 +103,7 @@ export class Connection {
     if (this.stopped) return;
     this.state('reconnecting');
     if (!navigator.onLine) return;
+    this.lastMessage = Date.now();
     this.socket = new WebSocket(
       transportOrigin
         ? transportOrigin.replace('https:', 'wss:') + '/ws'

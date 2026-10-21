@@ -144,6 +144,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
     private var retry: Job? = null
     private var refresh: Job? = null
     private var terminalPoll: Job? = null
+    private var conversationPoll: Job? = null
     private var voiceJob: Job? = null
     private var retryAudio: File? = null
     private var retrySession = ""
@@ -169,9 +170,16 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
         terminalPoll = viewModelScope.launch {
             while (foreground) {
                 delay(3000)
-                if (connected && session?.harness == "dsh" && session?.status == "working") detail(selected)
                 // The gateway pushes at least every 10s; prolonged silence means a dead socket.
-                if (connected && System.currentTimeMillis() - lastMessage > 25000) socket?.cancel()
+                if (socket != null && System.currentTimeMillis() - lastMessage > 25000) socket?.cancel()
+                if (connected && session?.harness == "dsh" && session?.status == "working") detail(selected)
+            }
+        }
+        conversationPoll?.cancel()
+        conversationPoll = viewModelScope.launch {
+            while (foreground) {
+                delay(10000)
+                loadCurrent()
             }
         }
         viewModelScope.launch {
@@ -183,6 +191,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
     fun stop() {
         foreground = false
         terminalPoll?.cancel()
+        conversationPoll?.cancel()
         RelayNotifications.visibleSession = null
         retry?.cancel()
         socket?.close(1000, "Background")
@@ -192,6 +201,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
 
     private fun connect() {
         if (!foreground || socket != null) return
+        lastMessage = System.currentTimeMillis()
         socket =
             api.websocket(
                 object : WebSocketListener() {

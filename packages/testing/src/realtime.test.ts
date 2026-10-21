@@ -3,6 +3,119 @@ import assert from 'node:assert/strict';
 import WebSocket from 'ws';
 import { fixture, eventually } from './helpers.ts';
 
+test('unavailable native controls do not prevent transcript ingestion', async () => {
+  const f = await fixture({ startRuntime: false });
+  try {
+    const { runtime, store } = f.gateway;
+    runtime.refresh = async () => {};
+    const adapter = runtime.adapters.get(f.session.id)!;
+    adapter.interactions = async () => {
+      throw new Error('Codex thread is not loaded');
+    };
+    adapter.read = async () => [
+      {
+        sourceId: 'read-despite-controls',
+        kind: 'assistant.message',
+        timestamp: new Date().toISOString(),
+        data: { text: 'Transcript remains live' },
+      },
+    ];
+    await runtime.tick();
+    assert.equal(store.events(f.session.id).at(-1)?.data.text, 'Transcript remains live');
+    assert.equal(store.session(f.session.id).diagnostic, 'Codex thread is not loaded');
+  } finally {
+    await f.close();
+  }
+});
+
+test('conversation ingestion continues during slow discovery and coalesces overlapping reads', async () => {
+  const f = await fixture({ startRuntime: false });
+  let releaseDiscovery!: () => void;
+  let releaseRead!: () => void;
+  const blockedDiscovery = new Promise<void>((resolve) => {
+    releaseDiscovery = resolve;
+  });
+  const blockedRead = new Promise<void>((resolve) => {
+    releaseRead = resolve;
+  });
+  let discoveryStarted = false;
+  let reads = 0;
+  const { runtime, store } = f.gateway;
+  const refresh = runtime.refresh.bind(runtime);
+  let tick: Promise<void> | undefined;
+  try {
+    runtime.refresh = async () => {
+      discoveryStarted = true;
+      await blockedDiscovery;
+    };
+    const adapter = runtime.adapters.get(f.session.id)!;
+    adapter.read = async () => {
+      reads++;
+      await blockedRead;
+      return [
+        {
+          sourceId: 'independent-read',
+          kind: 'assistant.message',
+          timestamp: new Date().toISOString(),
+          data: { text: 'Live while discovery waits' },
+        },
+      ];
+    };
+    tick = runtime.tick();
+    await eventually(() => discoveryStarted);
+    const first = runtime.readConversations();
+    await eventually(() => reads === 1);
+    const second = runtime.readConversations();
+    releaseRead();
+    await Promise.all([first, second]);
+    assert.equal(reads, 1);
+    assert.equal(store.events(f.session.id).at(-1)?.data.text, 'Live while discovery waits');
+  } finally {
+    releaseRead();
+    releaseDiscovery();
+    await tick;
+    runtime.refresh = refresh;
+    await f.close();
+  }
+});
+
+test('a stalled transcript reader does not block another live conversation', async () => {
+  const f = await fixture({ startRuntime: false });
+  let release!: () => void;
+  const blocked = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let polling: Promise<void> | undefined;
+  try {
+    const { runtime, store } = f.gateway;
+    const first = f.session;
+    const adapter = runtime.adapters.get(first.id)!;
+    adapter.read = async () => {
+      await blocked;
+      return [];
+    };
+    const other = { ...first, id: 'second-live-session' };
+    store.saveSession(other);
+    runtime.adapters.set(other.id, {
+      capabilities: adapter.capabilities,
+      read: async () => [
+        {
+          sourceId: 'fast-session-read',
+          kind: 'assistant.message',
+          timestamp: new Date().toISOString(),
+          data: { text: 'Another conversation keeps moving' },
+        },
+      ],
+    });
+    polling = runtime.readConversations();
+    await eventually(() => store.events(other.id).length === 1);
+  } finally {
+    release();
+    await polling;
+    await f.close();
+  }
+});
+
 test('incremental WebSocket conversation events enforce session grants and device revocation', async () => {
   const f = await fixture({ startRuntime: false });
   let socket: WebSocket | undefined;

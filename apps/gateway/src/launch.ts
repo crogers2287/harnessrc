@@ -26,6 +26,8 @@ export const launchProfileSchema = z.object({
   dshPreset: z.string().optional(),
   workspaceId: z.string(),
   roots: z.array(z.string()).min(1),
+  // Trusted host opt-in: direct visible directory links in a root are project aliases.
+  allowRootSymlinks: z.boolean().default(false),
   args: z.array(z.string()).default([]),
   permissionPresets: z.array(launchPermissionSchema).default([]),
   modelFlag: z.string().default('--model'),
@@ -101,27 +103,73 @@ export class Launcher {
   async directory(id: string, candidate?: string) {
     const profile = this.profile(id);
     const roots = await Promise.all(profile.roots.map((root) => realpath(root)));
-    const resolved = await realpath(candidate ?? roots[0]);
-    if (!roots.some((root) => within(root, resolved)))
+    const permitted = [...roots];
+    if (profile.allowRootSymlinks) {
+      for (const root of roots) {
+        const links = (await readdir(root, { withFileTypes: true })).filter(
+          (e) => e.isSymbolicLink() && !e.name.startsWith('.'),
+        );
+        await Promise.all(
+          links.map(async (entry) => {
+            try {
+              const target = await realpath(path.join(root, entry.name));
+              if ((await stat(target)).isDirectory()) permitted.push(target);
+            } catch {
+              // Broken and inaccessible aliases do not hide the other projects.
+            }
+          }),
+        );
+      }
+    }
+    const browsePath = path.resolve(candidate ?? roots[0]);
+    const resolved = await realpath(browsePath);
+    if (!permitted.some((root) => within(root, resolved)))
       throw new Error('Folder is outside permitted project roots');
     if (!(await stat(resolved)).isDirectory()) throw new Error('Choose a directory');
-    return { resolved, roots };
+    return { resolved, roots, browsePath, permitted };
   }
   async folders(id: string, candidate?: string) {
-    const { resolved, roots } = await this.directory(id, candidate);
-    const entries = await readdir(resolved, { withFileTypes: true });
-    const directories = entries
-      .filter((e) => e.isDirectory() && !e.name.startsWith('.'))
+    const { roots, browsePath, permitted } = await this.directory(id, candidate);
+    const entries = await readdir(browsePath, { withFileTypes: true });
+    const checked = await Promise.all(
+      entries
+        .filter((e) => !e.name.startsWith('.'))
+        .map(async (e) => {
+          if (e.isDirectory()) return e;
+          if (!e.isSymbolicLink()) return undefined;
+          try {
+            const target = await realpath(path.join(browsePath, e.name));
+            return permitted.some((root) => within(root, target)) &&
+              (await stat(target)).isDirectory()
+              ? e
+              : undefined;
+          } catch {
+            return undefined;
+          }
+        }),
+    );
+    const directories = checked
+      .filter((e) => e !== undefined)
       .sort((a, b) => a.name.localeCompare(b.name));
+    const parent = path.dirname(browsePath);
+    let allowedParent: string | null = null;
+    if (parent !== browsePath) {
+      try {
+        if (permitted.some((root) => within(root, parent))) {
+          const canonicalParent = await realpath(parent);
+          if (permitted.some((root) => within(root, canonicalParent))) allowedParent = parent;
+        }
+      } catch {
+        /* Parent may have disappeared while browsing. */
+      }
+    }
     return {
-      path: resolved,
+      path: browsePath,
       roots,
-      parent: roots.some((root) => within(root, path.dirname(resolved)))
-        ? path.dirname(resolved)
-        : null,
+      parent: allowedParent,
       directories: directories
         .slice(0, 500)
-        .map((e) => ({ name: e.name, path: path.join(resolved, e.name) })),
+        .map((e) => ({ name: e.name, path: path.join(browsePath, e.name) })),
       truncated: directories.length > 500,
     };
   }

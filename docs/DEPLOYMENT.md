@@ -118,3 +118,19 @@ BindReadOnlyPaths=/tmp/codex-daemon-1000
 ```
 
 Then run `systemctl --user daemon-reload` and restart `relay.service`. Adjust the UID/path to the real daemon socket directory. Keep the socket private (0600); never expose it through the public reverse proxy.
+
+
+#### Home project aliases
+
+Set `allowRootSymlinks: true` on trusted launch profiles to include visible
+symlinks to directories directly inside each configured project root. This is a
+host-side opt-in (default false). Alias paths remain in folder responses while
+launch validates their canonical targets. Nested links that escape all configured
+roots/approved targets are rejected. Fred enables this on the home-root profiles.
+
+Fred's service runs from `~/.local/share/relay/current`, a symlink to an immutable
+`releases/<commit>` directory. Updating the checkout or restarting the service
+alone does not deploy code. Each release includes the committed source, matching
+`apps/web/dist`, and dependencies with workspace links resolving inside that
+release. Switch `current` atomically, restart the user service, and verify health,
+folder browsing and live events. Preserve the previous release for rollback.

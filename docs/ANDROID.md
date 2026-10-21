@@ -222,3 +222,28 @@ Stop current turn without discarding a draft. With the native observer enabled,
 the app shows retained DSH terminal output while a command runs; the bridge is
 read-only. See DSH_TERMINAL.md for activation and limitations. Native unit tests/lint/builds pass; the new UI test is compiled
 but has not run on an emulator or physical phone.
+
+
+### 0.1.32 — conversation recovery and home symlink folders (2026-10-20)
+
+Foreground conversation history replays every ten seconds independently of the
+live socket and DSH terminal-detail refresh. Replay merges native event IDs and
+preserves drafts and outgoing request identity. The silence watchdog also covers
+stalled connection handshakes. Gateway ingestion is independent of native-control
+failures and slow discovery; both clients receive the resulting live events.
+Home-folder aliases use the shared launch API, preserving `~/questguardian` when
+browsing and validating `/mnt/storage/questguardian/repo` before launch.
+
+Validation: 193 backend tests, TypeScript, ESLint, production web build, Android
+unit tests/lint/debug/test/release builds pass. Three targeted browser checks pass
+for live appends/reading position, missed-frame recovery, and an HTTP/stream race;
+seven additional browser flows cover Send/Steer/Queue and native questions. All 29 native instrumentation tests pass on a disposable Android 15 emulator,
+including the new missed-frame replay regression, draft preservation, native
+questions/approvals, clipboard/IME input, recording and delivery recovery. Native keyboard-open
+and keyboard-closed screenshots were inspected. Initial broader native checks
+hit null screenshot captures with the shared ADB server; an isolated ADB server
+resolved that harness failure. Physical-phone network/sleep behavior remains a
+separate user check.
+
+Signed APK 0.1.32 (versionCode 33) is published in the gateway data directory.
+SHA-256: `b913730269017236794d741a194ec74d3e174e80e13161887684b8ab0717551f`.

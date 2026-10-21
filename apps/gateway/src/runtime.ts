@@ -36,6 +36,8 @@ export class Runtime extends EventEmitter {
   broker: InteractionBroker;
   private interval?: NodeJS.Timeout;
   private pruneTimer?: NodeJS.Timeout;
+  private conversationTimer?: NodeJS.Timeout;
+  private reading = new Map<string, Promise<void>>();
   private refreshing = new Set<string>();
   private tickBusy = false;
   /** Read/delivery failures from tick(); refresh() rebuilds sessions and must keep them. */
@@ -116,6 +118,8 @@ export class Runtime extends EventEmitter {
   start() {
     for (const c of this.clients.values()) c.start();
     this.interval = setInterval(() => void this.tick(), 700);
+    // Transcript ingestion must progress even while discovery or native controls wait.
+    this.conversationTimer = setInterval(() => void this.readConversations(), 700);
     this.pruneTimer = setInterval(() => void this.prune(), 3_600_000);
   }
   async prune() {
@@ -377,6 +381,88 @@ export class Runtime extends EventEmitter {
       this.refreshing.delete(hostId);
     }
   }
+  async readConversations() {
+    await Promise.allSettled(
+      this.store
+        .sessions()
+        .filter((s) => s.connected)
+        .map(async (s) => {
+          const adapter = this.adapters.get(s.id);
+          if (adapter) await this.readConversation(s, adapter);
+        }),
+    );
+  }
+  private readConversation(s: Session, adapter: Adapter): Promise<void> {
+    const pending = this.reading.get(s.id);
+    if (pending) return pending;
+    const read = (async () => {
+      for (const e of await adapter.read(s)) {
+        if (e.kind === 'artifact.created' && typeof e.data.nativeImageDataUrl === 'string') {
+          importNativeImage(this.store, this.attachments, s, e);
+          continue;
+        }
+        if (e.kind === 'user.message') {
+          let task: { id: string; prompt: string; attachments: string[] } | undefined = this.store
+            .tasks(s.id)
+            .find(
+              (t) =>
+                (t.attachments.length ||
+                  String(e.data.text ?? '').includes(`[Relay request ${t.id}]`)) &&
+                t.generation === s.generation &&
+                Date.parse(e.timestamp) >= Date.parse(t.createdAt) &&
+                matchesTaskReceipt(
+                  e.data.text,
+                  t.id,
+                  this.attachments.prompt(s, t) +
+                    (t.attachments.length ? '' : `\n\n[Relay request ${t.id}]`),
+                ),
+            );
+          if (!task) {
+            const match = String(e.data.text ?? '').match(/\[Relay request ([a-f0-9-]{36})\]/);
+            if (match) {
+              const refs = this.store.db
+                .prepare(
+                  `SELECT m.attachment_id, m.prompt, r.created_at
+                FROM message_attachments m JOIN message_receipts r ON r.request_id=m.request_id
+                WHERE m.request_id=? AND r.session_id=?`,
+                )
+                .all(match[1], s.id);
+              if (refs.length) {
+                const candidate = {
+                  id: match[1],
+                  prompt: String(refs[0].prompt),
+                  attachments: refs.map((r) => String(r.attachment_id)),
+                };
+                if (
+                  matchesTaskReceipt(
+                    e.data.text,
+                    candidate.id,
+                    this.attachments.prompt(s, candidate),
+                  )
+                )
+                  task = candidate;
+              }
+            }
+          }
+          if (task)
+            e.data = {
+              ...e.data,
+              text: task.prompt,
+              attachments: task.attachments.map((id) => {
+                const a = this.attachments.get(s, id);
+                return { id, name: a.name, mime: a.mime, size: a.size };
+              }),
+              taskId: task.id,
+            };
+        }
+        this.store.event(s, e);
+      }
+    })();
+    this.reading.set(s.id, read);
+    return read.finally(() => {
+      if (this.reading.get(s.id) === read) this.reading.delete(s.id);
+    });
+  }
   async tick() {
     if (this.tickBusy) return;
     this.tickBusy = true;
@@ -390,6 +476,11 @@ export class Runtime extends EventEmitter {
         const adapter = this.adapters.get(s.id);
         if (!adapter) continue;
         try {
+          // Read and controls recover independently: either side may be unavailable.
+          const conversation = this.readConversation(s, adapter).then(
+            () => ({ ok: true as const }),
+            (error: unknown) => ({ ok: false as const, error }),
+          );
           if (adapter.interactions) {
             const native = await adapter.interactions(s);
             const ids = new Set(native.map((i) => i.nativeRequestId));
@@ -411,68 +502,8 @@ export class Runtime extends EventEmitter {
               this.store.saveInteraction(old);
             }
           }
-          for (const e of await adapter.read(s)) {
-            if (e.kind === 'artifact.created' && typeof e.data.nativeImageDataUrl === 'string') {
-              importNativeImage(this.store, this.attachments, s, e);
-              continue;
-            }
-            if (e.kind === 'user.message') {
-              let task: { id: string; prompt: string; attachments: string[] } | undefined =
-                this.store
-                  .tasks(s.id)
-                  .find(
-                    (t) =>
-                      (t.attachments.length ||
-                        String(e.data.text ?? '').includes(`[Relay request ${t.id}]`)) &&
-                      t.generation === s.generation &&
-                      Date.parse(e.timestamp) >= Date.parse(t.createdAt) &&
-                      matchesTaskReceipt(
-                        e.data.text,
-                        t.id,
-                        this.attachments.prompt(s, t) +
-                          (t.attachments.length ? '' : `\n\n[Relay request ${t.id}]`),
-                      ),
-                  );
-              if (!task) {
-                const match = String(e.data.text ?? '').match(/\[Relay request ([a-f0-9-]{36})\]/);
-                if (match) {
-                  const refs = this.store.db
-                    .prepare(
-                      `SELECT m.attachment_id, m.prompt, r.created_at
-                    FROM message_attachments m JOIN message_receipts r ON r.request_id=m.request_id
-                    WHERE m.request_id=? AND r.session_id=?`,
-                    )
-                    .all(match[1], s.id);
-                  if (refs.length) {
-                    const candidate = {
-                      id: match[1],
-                      prompt: String(refs[0].prompt),
-                      attachments: refs.map((r) => String(r.attachment_id)),
-                    };
-                    if (
-                      matchesTaskReceipt(
-                        e.data.text,
-                        candidate.id,
-                        this.attachments.prompt(s, candidate),
-                      )
-                    )
-                      task = candidate;
-                  }
-                }
-              }
-              if (task)
-                e.data = {
-                  ...e.data,
-                  text: task.prompt,
-                  attachments: task.attachments.map((id) => {
-                    const a = this.attachments.get(s, id);
-                    return { id, name: a.name, mime: a.mime, size: a.size };
-                  }),
-                  taskId: task.id,
-                };
-            }
-            this.store.event(s, e);
-          }
+          const read = await conversation;
+          if (!read.ok) throw read.error;
           await this.queue.tick(s.id);
           // Intermittent native errors alternate with successes; clear only once stable.
           const cleared = this.tickErrors.get(s.id);
@@ -510,13 +541,15 @@ export class Runtime extends EventEmitter {
     if (!adapter) throw new Error('DSH conversation is not available yet. Reopen the session.');
     this.adapters.set(id, adapter);
     adapter.watch(s);
-    for (const e of await adapter.read(s)) this.store.event(s, e);
+    await this.readConversation(s, adapter);
   }
   async stop() {
     for (const host of this.dshHosts.values()) host.close();
     clearInterval(this.interval);
+    clearInterval(this.conversationTimer);
     clearInterval(this.pruneTimer);
     for (const c of this.clients.values()) c.stop();
+    await Promise.allSettled(this.reading.values());
     while (this.tickBusy || this.refreshing.size) await new Promise((r) => setTimeout(r, 10));
     for (const linker of this.codexLinks.values()) linker.close();
   }
