@@ -267,6 +267,70 @@ test('new shell readiness retries only a definite busy rejection and checks the 
   }
 });
 
+test('Claude settings blockers return an actionable receipt and replay never starts or prompts again', async () => {
+  const store = new Store(':memory:');
+  const client = new HerdrClient('fred', '/unused');
+  client.host.connected = true;
+  let name = '';
+  const calls: string[] = [];
+  client.request = async (method, params: any) => {
+    calls.push(method);
+    if (method === 'tab.create') return { root_pane: { pane_id: 'p', terminal_id: 'term' } };
+    if (method === 'agent.start') {
+      name = params.name;
+      return {};
+    }
+    if (method === 'agent.get')
+      return {
+        agent: {
+          name,
+          terminal_id: 'term',
+          pane_id: 'p',
+          agent: 'claude',
+          agent_status: 'blocked',
+          interactive_ready: false,
+        },
+      };
+    if (method === 'pane.read')
+      return {
+        read: {
+          text: 'Settings Warning\nprivate-value\n❯ 1. Continue\n2. Fix with Claude\n3. Exit and fix manually\nEnter to confirm',
+        },
+      };
+    throw new Error(`Unexpected mutation: ${method}`);
+  };
+  const profile = launchProfileSchema.parse({
+    id: 'claude',
+    hostId: 'fred',
+    label: 'Claude',
+    harness: 'claude',
+    workspaceId: 'w',
+    roots: [tmpdir()],
+  });
+  const launcher = new Launcher(store, [profile], new Map([['fred', client]]));
+  const request = {
+    requestId: randomUUID(),
+    profileId: 'claude',
+    cwd: tmpdir(),
+    name: 'Settings check',
+    model: '',
+    prompt: 'Never submit while settings are blocked',
+  };
+  try {
+    const receipt = await launcher.launch(request, 'device');
+    assert.equal(receipt.status, 'uncertain');
+    assert.match(receipt.diagnostic!, /Settings Warning/);
+    assert.doesNotMatch(receipt.diagnostic!, /private-value/);
+    assert.ok(!calls.includes('agent.prompt'));
+    assert.ok(!calls.includes('agent.send_keys'));
+    const count = calls.length;
+    assert.deepEqual(await launcher.launch(request, 'device'), receipt);
+    assert.equal(calls.length, count);
+  } finally {
+    store.close();
+  }
+});
+
 test('new Codex threads are named before their first Herdr CLI owner starts; replay never creates another thread', async () => {
   const { CodexDaemon } = await import('../../../packages/adapters/src/codex-daemon.ts');
   const original = CodexDaemon.prototype.request;

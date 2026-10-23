@@ -4,6 +4,25 @@ import { HerdrError } from '@harnessrc/herdr';
 type Start = { name: string; kind: string; pane_id: string; args: string[]; timeout_ms: number };
 const quote = (s: string) => `'${s.replaceAll("'", "'\\''")}'`;
 
+export class HarnessStartupBlocked extends Error {
+  constructor() {
+    super(
+      "Claude is waiting at a Settings Warning. Fix invalid rules in the project's .claude settings, then continue or close that startup in Herdr before launching again.",
+    );
+  }
+}
+
+export function isClaudeSettingsWarning(screen: string) {
+  const compact = screen.replace(/\s/g, '');
+  return (
+    compact.includes('SettingsWarning') &&
+    compact.includes('1.Continue') &&
+    compact.includes('2.FixwithClaude') &&
+    compact.includes('3.Exitandfixmanually') &&
+    compact.includes('Entertoconfirm')
+  );
+}
+
 // Herdr agent.start only accepts canonical executables. CFR launches instead
 // use the new pane's shell, then verify detection before assigning the name.
 export async function startHarness(client: HerdrClient, provider: string, start: Start) {
@@ -43,6 +62,14 @@ export async function startHarness(client: HerdrClient, provider: string, start:
 // Claude has rendered its empty input prompt. Require both native identity
 // and idle state, then check the actual bottom-of-screen prompt.
 export async function harnessReady(client: HerdrClient, agent: any) {
+  if (agent.agent === 'claude' && !agent.agent_session && agent.agent_status === 'blocked') {
+    const { read } = await client.request('pane.read', {
+      pane_id: agent.pane_id,
+      source: 'visible',
+    });
+    // Report the bootstrap blocker without accepting settings, permissions or tool prompts.
+    if (isClaudeSettingsWarning(read?.text ?? '')) throw new HarnessStartupBlocked();
+  }
   if (agent.interactive_ready !== undefined) return agent.interactive_ready === true;
   if (
     agent.agent !== 'claude' ||

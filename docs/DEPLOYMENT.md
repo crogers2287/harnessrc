@@ -72,6 +72,19 @@ RC_CONFIG=~/.config/relay/config.json npm exec -- tsx scripts/rc.ts status
 
 Offline host: verify socket path, owner and permissions. No transcript: verify native ID and matching allowlisted root. Control disabled: check adapter capabilities, live process identity, bridge registration and device grant. Pending interaction expired: answer via the original harness; never reuse a stale card. Repeated authentication failure: match browser origin/HTTPS and Secure cookie configuration. Blank assets after an upgrade: rebuild and reload the PWA. Uncertain queue entry: inspect native correlation; it intentionally blocks subsequent dispatch.
 
+Claude can stop before creating its native session at a **Settings Warning**.
+For example, current Claude rejects a bare `"*"` in `permissions.allow` and waits
+for terminal confirmation. Remove that invalid rule from the relevant project
+settings while preserving the other entries; it was already ignored by Claude.
+Relay detects this startup menu and returns a specific diagnostic without sending
+the first instruction or accepting the menu. A repeated launch request ID returns
+the same receipt. An older paused process must be continued or closed in Herdr;
+fixing the file does not dismiss a menu already on screen. On Fred, the October 22
+incident affected `~/agentstuff/.claude/settings.local.json`; removing that one
+invalid rule restored a Claude/CFRproxy launch with `fred/qwen38-flash-next-strata`,
+and the test session completed its requested acknowledgement. This repair needs
+no Android update.
+
 Back up SQLite with its supported online backup mechanism or stop the gateway first and preserve the database/WAL consistently. Include bridge state separately. Protect backups with private permissions. Stop only the gateway for upgrades; Herdr agents stay running. Retain config and state, replace code/assets, run diagnostics, then restart the service.
 
 ## Key-free access from the tailnet

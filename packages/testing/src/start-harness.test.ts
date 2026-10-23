@@ -1,6 +1,49 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { startHarness } from '../../../apps/gateway/src/start-harness.ts';
+import {
+  startHarness,
+  harnessReady,
+  isClaudeSettingsWarning,
+  HarnessStartupBlocked,
+} from '../../../apps/gateway/src/start-harness.ts';
+
+const settingsWarning =
+  'Settings Warn\ning\nInvalid rule: *\n❯ 1. Continue\n2. Fix with Claude\n3. Exit and fix manually\nEnter to confirm';
+
+test('Claude settings warnings stop startup without accepting a menu or leaking native output', async () => {
+  assert.equal(isClaudeSettingsWarning(settingsWarning), true);
+  assert.equal(isClaudeSettingsWarning('Allow Bash?\n❯ 1. Continue\nEnter to confirm'), false);
+  const calls: string[] = [];
+  const client = {
+    request: async (method: string) => {
+      calls.push(method);
+      assert.equal(method, 'pane.read');
+      return { read: { text: settingsWarning + '\nprivate-environment-value' } };
+    },
+  };
+  await assert.rejects(
+    harnessReady(client as any, {
+      agent: 'claude',
+      agent_status: 'blocked',
+      interactive_ready: false,
+      pane_id: 'pane',
+    }),
+    (error: unknown) =>
+      error instanceof HarnessStartupBlocked && !error.message.includes('private-environment'),
+  );
+  assert.deepEqual(calls, ['pane.read']);
+  calls.length = 0;
+  assert.equal(
+    await harnessReady(client as any, {
+      agent: 'claude',
+      agent_status: 'blocked',
+      agent_session: { value: 'existing' },
+      interactive_ready: false,
+    }),
+    false,
+  );
+  assert.deepEqual(calls, []);
+});
 
 test('CFR launch quotes all arguments and waits for harness detection before naming', async () => {
   const calls: any[] = [];

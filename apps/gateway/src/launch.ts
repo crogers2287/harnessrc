@@ -1,4 +1,4 @@
-import { startHarness, harnessReady } from './start-harness.ts';
+import { startHarness, harnessReady, HarnessStartupBlocked } from './start-harness.ts';
 import { launchPermissionSchema } from './launch-permissions.ts';
 import { acceptClaudeResumeTrust } from './claude-resume-trust.ts';
 import type { DshHost } from './dsh-host.ts';
@@ -646,11 +646,13 @@ export class Launcher {
         }
       } else await client.request('agent.prompt', { target, text: input.prompt }, 15000);
       receipt.status = 'started';
-    } catch {
+    } catch (error) {
       // Native errors can contain command environments. Return a fixed, non-secret diagnostic.
       receipt.status = 'uncertain';
       receipt.diagnostic =
-        'Startup was not confirmed. Check the session list before starting another session.';
+        error instanceof HarnessStartupBlocked
+          ? error.message
+          : 'Startup was not confirmed. Check the session list before starting another session.';
     }
     save();
     return receipt;
