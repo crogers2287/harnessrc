@@ -5,6 +5,14 @@ includes Stop (Ctrl+C), Escape, Yes, Continue, No and common slash commands.
 Typing `/` also displays command suggestions. Browser Ctrl+C itself continues
 to copy selected text; stopping the agent requires choosing the explicit shortcut.
 
+Web and Android 0.1.33 send with Enter. Ctrl+Enter (also Shift+Enter) inserts a
+newline. Android's software keyboard Send action submits the draft; composition
+does not submit. With an empty composer, no attachments and an active turn,
+the primary button becomes **Stop turn**. Browser Escape and Android hardware
+Escape preserve the draft and use the same `/esc` control route. Browser Escape
+closes an open dialog before controlling the session. These controls require a
+connected, writable session with Escape or native interruption capability.
+
 - `/help` opens Relay's quick shortcuts. `/model` and `/permissions` open the
   existing session settings. `/tasks` opens task progress; `/agents` opens the
   child-conversation viewer where supported.
@@ -19,10 +27,11 @@ to copy selected text; stopping the agent requires choosing the explicit shortcu
   CLI acknowledgement means submitted, not that every command has finished.
   Sessions without a verified interactive CLI cannot use that fallback.
 - Stop, `/stop`, `/cancel`, and `/ctrl-c` use the native interruption API and
-  retain the harness session. Escape uses the verified CLI's `esc` key when
-  there is no pending structured interaction; other connections and pending
-  interactions use native turn cancellation. There is no unrestricted key or
-  shell-command injection endpoint.
+  retain the harness session. Escape sends the literal `esc` key to a verified
+  Herdr-owned CLI, including while a question is pending. It does not submit an
+  answer or approve anything. Connections without a terminal use their native
+  turn cancellation API. There is no unrestricted key or shell-command injection
+  endpoint.
 - Yes, Continue, and No are ordinary messages/steering, never approval replies.
   Their buttons are disabled while waiting for an answer; use the exact native
   question card instead. Quick replies preserve a different draft, attachments,

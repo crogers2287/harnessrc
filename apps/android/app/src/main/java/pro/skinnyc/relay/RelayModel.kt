@@ -525,7 +525,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
 
     var commandNotice by mutableStateOf("")
     var commandAction by mutableStateOf("")
-    fun command(line: String) {
+    fun command(line: String, preserveDraft: Boolean = false) {
         val s = session ?: return
         if (sending || working) return
         if (!s.can("sendMessage") && !s.can("steerActiveTurn")) { error = "This conversation is read-only"; return }
@@ -540,7 +540,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
         operation("/api/sessions/$id/commands", payload, failure = { commandNotice = "" }) { result ->
             prefs.edit().remove(key).commit()
             if (selected == id) {
-                if (draft.trim() == line) { draft = ""; voiceOriginal = ""; saveDraft() }
+                if (!preserveDraft && draft.trim() == line) { draft = ""; voiceOriginal = ""; saveDraft() }
                 notice = result.str("message")
                 commandNotice = result.str("message")
                 commandAction = result.str("action")

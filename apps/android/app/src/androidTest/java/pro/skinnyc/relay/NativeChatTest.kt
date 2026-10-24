@@ -4,6 +4,7 @@ import android.content.*
 import android.graphics.Bitmap
 import android.view.View
 import android.view.ViewGroup
+import android.view.KeyEvent
 import android.view.inputmethod.EditorInfo
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.unit.dp
@@ -181,6 +182,65 @@ class NativeChatTest {
         )
         scenario.onActivity { assertEquals("Keep this draft during recovery", it.model.draft) }
         assertFalse(requests.any { it.path?.endsWith("/messages") == true })
+    }
+
+    @Test
+    fun composerStopAndHardwareEscapeUseControlRouteAndKeepDraft() {
+        compose.onNodeWithContentDescription("Stop turn").assertIsEnabled().performClick()
+        compose.waitUntil(10000) { requests.any { it.path?.endsWith("/commands") == true } }
+        assertEquals("/esc", JSONObject(requests.last { it.path?.endsWith("/commands") == true }.body.clone().readUtf8()).str("line"))
+        compose.waitUntil(10000) {
+            var done = false
+            scenario.onActivity { done = !it.model.working }
+            done
+        }
+        scenario.onActivity { activity ->
+            val field = find(activity.window.decorView)!!
+            field.setText("Keep my draft")
+        }
+        compose.onNodeWithContentDescription("Stop turn").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Steer instruction").assertIsEnabled()
+        scenario.onActivity { activity ->
+            val field = find(activity.window.decorView)!!
+            field.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ESCAPE))
+            field.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ESCAPE))
+        }
+        compose.waitUntil(10000) { requests.count { it.path?.endsWith("/commands") == true } == 2 }
+        scenario.onActivity { assertEquals("Keep my draft", it.model.draft) }
+        assertFalse(requests.any { it.path?.endsWith("/messages") == true || it.path?.endsWith("/interrupt") == true })
+    }
+
+    @Test
+    fun composerEnterSendsAndControlEnterInsertsNewline() {
+        scenario.onActivity { activity ->
+            val field = find(activity.window.decorView)!!
+            field.setText("First")
+            field.setSelection(field.length())
+            field.dispatchKeyEvent(KeyEvent(0, 0, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER, 0, KeyEvent.META_CTRL_ON))
+            field.dispatchKeyEvent(KeyEvent(0, 0, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER, 0, KeyEvent.META_CTRL_ON))
+            field.append("Second")
+            assertEquals("First\nSecond", activity.model.draft)
+        }
+        assertFalse(requests.any { it.path?.endsWith("/messages") == true })
+        scenario.onActivity { activity ->
+            val field = find(activity.window.decorView)!!
+            field.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
+            field.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
+        }
+        compose.waitUntil(10000) { requests.any { it.path?.endsWith("/messages") == true } }
+        assertEquals("First\nSecond", JSONObject(requests.last { it.path?.endsWith("/messages") == true }.body.clone().readUtf8()).str("prompt"))
+        compose.waitUntil(10000) {
+            var done = false
+            scenario.onActivity { done = !it.model.sending }
+            done
+        }
+        scenario.onActivity { activity ->
+            val field = find(activity.window.decorView)!!
+            field.setText("IME send")
+            field.onEditorAction(EditorInfo.IME_ACTION_SEND)
+        }
+        compose.waitUntil(10000) { requests.count { it.path?.endsWith("/messages") == true } == 2 }
+        assertEquals("IME send", JSONObject(requests.last { it.path?.endsWith("/messages") == true }.body.clone().readUtf8()).str("prompt"))
     }
 
     @Test

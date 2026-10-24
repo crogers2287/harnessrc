@@ -51,10 +51,16 @@ export class SessionCommands {
     if (!args.length && screens[name])
       return { mode: 'command', action: screens[name], message: 'Opened session controls.' };
     const adapter = runtime.adapters.get(id);
-    const state = await adapter?.turnState?.(s);
+    const client = runtime.clients.get(s.hostId);
+    const terminalEscape = name === 'esc' && client && s.ownership === 'herdr-cli';
+    const state = terminalEscape ? undefined : await adapter?.turnState?.(s);
     const cancel = ['stop', 'cancel', 'esc', 'ctrl-c'].includes(name);
     if (cancel && args.length) throw new Error('Control shortcuts do not accept arguments.');
-    if (cancel && (!s.capabilities.interruptTurn || !adapter?.interrupt))
+    if (
+      cancel &&
+      !(terminalEscape && s.capabilities.sendEscape) &&
+      (!s.capabilities.interruptTurn || !adapter?.interrupt)
+    )
       throw new Error('This session does not support native interruption.');
     if (
       !cancel &&
@@ -68,7 +74,6 @@ export class SessionCommands {
       throw new Error('Stop the current turn before running a native slash command.');
     const plan = name === 'plan' && !args.length ? await adapter?.mode?.(s) : undefined;
     const host = runtime.dshHosts.get(s.hostId);
-    const client = runtime.clients.get(s.hostId);
     const socket = runtime.config.codexDaemons.find((d) => d.hostId === s.hostId)?.socket;
     if (!cancel && !host && !client) throw new Error('Native command transport unavailable.');
     if (
@@ -94,14 +99,7 @@ export class SessionCommands {
       .run(value.requestId, id, deviceId, hash, s.generation);
     let message = 'Command submitted to the native harness.';
     if (cancel) {
-      if (
-        name === 'esc' &&
-        client &&
-        s.ownership === 'herdr-cli' &&
-        !runtime.store
-          .interactions(id)
-          .some((i) => ['pending', 'responding', 'answered', 'uncertain'].includes(i.status))
-      ) {
+      if (terminalEscape) {
         await client.request('agent.send_keys', { target: s.paneId, keys: ['esc'] });
         message = 'Escape sent to the native harness.';
       } else {

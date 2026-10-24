@@ -16,6 +16,7 @@ export class HerdrCliAdapter implements Adapter {
     'streamConversation',
     'sendMessage',
     'queueTask',
+    'sendEscape',
   ]);
   stuckPromptDelayMs = 1500;
   constructor(

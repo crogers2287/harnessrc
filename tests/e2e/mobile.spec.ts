@@ -1911,7 +1911,7 @@ test('composer keeps pasted text plain, supports multiline caret edits and Undo'
   await page.keyboard.press('Control+Shift+z');
   await expect(editor).toHaveText('Before first\nsecond after', { useInnerText: true });
   await page.keyboard.press('Control+End');
-  await page.keyboard.press('Enter');
+  await page.keyboard.press('Control+Enter');
   await page.keyboard.type('Third line');
   await expect.poll(() => editor.innerText()).toBe('Before first\nsecond after\nThird line');
   await page.reload();
@@ -2936,6 +2936,96 @@ for (const width of [1280, 390]) {
   });
 }
 
+test('composer Enter sends, Ctrl+Enter inserts a newline, and Escape and Stop use control routes', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await pair(page);
+  const { sessions } = await page.evaluate(async () => (await fetch('/api/sessions')).json());
+  const session = {
+    ...sessions[0],
+    status: 'working',
+    capabilities: { ...sessions[0].capabilities, sendEscape: true, interruptTurn: false },
+  };
+  await page.route('**/api/sessions', (route) => route.fulfill({ json: { sessions: [session] } }));
+  await page.route(`**/api/sessions/${session.id}`, (route) =>
+    route.fulfill({ json: { session, interactions: [], tasks: [] } }),
+  );
+  await page.route('**/events?*', (route) => route.fulfill({ json: { events: [] } }));
+  await page.routeWebSocket('**/ws', (socket) =>
+    socket.send(JSON.stringify({ type: 'invalidate', sessions: [session] })),
+  );
+  const controls: any[] = [];
+  const messages: any[] = [];
+  await page.route('**/commands', async (route) => {
+    controls.push(route.request().postDataJSON());
+    await route.fulfill({
+      json: { mode: 'command', message: 'Escape sent to the native harness.' },
+    });
+  });
+  await page.route('**/messages', async (route) => {
+    messages.push(route.request().postDataJSON());
+    await route.fulfill({ json: { mode: 'steer' } });
+  });
+  await page.goto(`/?session=${session.id}`);
+  const editor = page.getByRole('textbox', { name: 'Instruction', exact: true });
+  const stop = page.getByRole('button', { name: 'Stop turn', exact: true });
+  await expect(stop).toBeEnabled();
+  await page.screenshot({ path: 'test-results/composer-stop-mobile.png' });
+  await stop.click();
+  await expect.poll(() => controls.length).toBe(1);
+  await editor.fill('First');
+  await editor.press('Control+End');
+  await editor.press('Control+Enter');
+  await page.keyboard.type('Second');
+  await expect(editor).toHaveText('First\nSecond', { useInnerText: true });
+  expect(messages).toHaveLength(0);
+  await expect(stop).toHaveCount(0);
+  await editor.press('Escape');
+  await expect.poll(() => controls.length).toBe(2);
+  await expect(editor).toHaveText('First\nSecond', { useInnerText: true });
+  await page.getByRole('button', { name: 'Quick shortcuts', exact: true }).click();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog', { name: 'Quick shortcuts', exact: true })).toHaveCount(0);
+  expect(controls).toHaveLength(2);
+  await editor.press('Enter');
+  await expect.poll(() => messages.length).toBe(1);
+  expect(messages[0].prompt).toBe('First\nSecond');
+  await expect(editor).toHaveText('');
+  await expect(stop).toBeEnabled();
+  await editor.fill('Software keyboard send');
+  await editor.evaluate((node) => node.dispatchEvent(new InputEvent('beforeinput', {
+    bubbles: true, cancelable: true, inputType: 'insertParagraph',
+  })));
+  await expect.poll(() => messages.length).toBe(2);
+  expect(messages[1].prompt).toBe('Software keyboard send');
+  await expect(editor).toHaveText('');
+  await expect(stop).toBeEnabled();
+  expect(controls.map((c) => c.line)).toEqual(['/esc', '/esc']);
+  expect(controls.every((c) => c.generation === session.generation && c.requestId)).toBe(true);
+  expect(controls[0].requestId).not.toBe(controls[1].requestId);
+  for (const [width, height, theme] of [
+    [375, 812, 'light'],
+    [430, 932, 'dark'],
+    [812, 375, 'light'],
+    [768, 1024, 'dark'],
+    [1440, 1000, 'light'],
+  ] as const) {
+    await page.setViewportSize({ width, height });
+    await page.evaluate((theme) => {
+      document.documentElement.dataset.theme = theme;
+    }, theme);
+    await expect(stop).toBeVisible();
+    const bounds = await stop.boundingBox();
+    expect(bounds!.width).toBeGreaterThanOrEqual(48);
+    expect(bounds!.height).toBeGreaterThanOrEqual(48);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await page.screenshot({ path: `test-results/composer-stop-${width}-${theme}.png` });
+  }
+});
+
 test('slash commands and quick shortcuts use control routes and preserve a separate draft', async ({
   page,
 }) => {
@@ -2957,7 +3047,7 @@ test('slash commands and quick shortcuts use control routes and preserve a separ
   });
   const input = page.getByLabel('Instruction', { exact: true });
   await input.fill('/compact');
-  await input.press('Control+Enter');
+  await input.press('Enter');
   await expect.poll(() => commands).toEqual(['/compact']);
   await expect(input).toHaveText('');
   expect(messages).toHaveLength(0);

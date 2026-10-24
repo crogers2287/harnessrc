@@ -925,6 +925,8 @@ fun Composer(vm: RelayModel) {
             ?: modes.firstOrNull { it != "queue" }
             ?: if (vm.session?.busy == true) "steer" else "send"
     val canAttach = vm.session?.can("attachFiles") == true
+    val canEscape = vm.session?.let { it.data.optBoolean("connected") && (it.can("sendEscape") || it.can("interruptTurn")) && (it.can("sendMessage") || it.can("steerActiveTurn")) } == true
+    val showStop = canEscape && vm.session?.busy == true && vm.draft.isBlank() && vm.attachments.isEmpty()
     var cameraUri by remember { mutableStateOf<Uri?>(null) }
     val camera =
         rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
@@ -1076,6 +1078,8 @@ fun Composer(vm: RelayModel) {
                 vm::edit,
                 { uri, lease -> vm.addUri(uri, lease) },
                 Modifier.fillMaxWidth().heightIn(min = 48.dp, max = 164.dp),
+                onSubmit = { if (!listening && !vm.working) vm.send(mode) },
+                onEscape = { if (canEscape) vm.command("/esc", preserveDraft = true) },
             )
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 ActionIcon(Icons.Outlined.Keyboard, "Quick shortcuts", !vm.working && !vm.sending && (vm.session?.can("sendMessage") == true || vm.session?.can("steerActiveTurn") == true)) { vm.commandAction = "help" }
@@ -1199,8 +1203,9 @@ fun Composer(vm: RelayModel) {
                         else permission.launch(Manifest.permission.RECORD_AUDIO)
                     }
                 FilledIconButton(
-                    onClick = { vm.send(mode) },
+                    onClick = { if (showStop) vm.command("/esc", preserveDraft = true) else vm.send(mode) },
                     enabled =
+                        if (showStop) !vm.working && !vm.sending else
                         (mode in modes || (isSlashCommand(vm.draft) && vm.session?.can("sendMessage") == true)) &&
                             !vm.working &&
                             !vm.sending &&
@@ -1215,8 +1220,8 @@ fun Composer(vm: RelayModel) {
                         CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                     else
                         Icon(
-                            Icons.Outlined.ArrowUpward,
-                            "${mode.replaceFirstChar { it.uppercase() }} instruction",
+                            if (showStop) Icons.Outlined.Stop else Icons.Outlined.ArrowUpward,
+                            if (showStop) "Stop turn" else "${mode.replaceFirstChar { it.uppercase() }} instruction",
                         )
                 }
             }

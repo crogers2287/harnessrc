@@ -1,5 +1,26 @@
 # Web and Android feature parity
 
+### Enter, Escape and contextual Stop, 2026-10-24
+
+Web and Android 0.1.33 use Enter to send and Ctrl+Enter/Shift+Enter for a newline.
+Android exposes the software keyboard Send action. Both clients change the
+primary button to Stop when a turn is active and the composer has neither text
+nor attachments. Escape preserves drafts and uses the control route, with literal
+terminal Escape for Herdr-owned CLI sessions and native cancellation for sessions
+without a terminal. Browser dialogs retain their own Escape behavior. Empty Enter
+does not stop a turn. IME composition, attachments and explicit queue selection
+retain their existing paths.
+
+Validation: 199 backend tests pass, including literal Escape without a native
+interrupt bridge, pending-question preservation, generation fences and duplicate
+request protection. Seven browser flows pass for shortcuts, multiline/Undo, IME,
+questions, approvals, queue and reconnect. Light/dark screenshots at mobile,
+tablet, landscape and desktop sizes were inspected. Native validation is recorded
+with the APK release in [ANDROID.md](ANDROID.md).
+
+Reviewed screenshots: [light mobile](screenshots/composer-stop-375-light.png),
+[dark mobile](screenshots/composer-stop-430-dark.png).
+
 ### Zcode native host, 2026-10-24
 
 The gateway publishes Zcode as a server-defined launch profile for both existing

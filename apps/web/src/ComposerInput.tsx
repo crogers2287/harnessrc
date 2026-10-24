@@ -1,11 +1,4 @@
-import {
-  forwardRef,
-  useImperativeHandle,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type KeyboardEvent,
-} from 'react';
+import { forwardRef, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
 
 /** Rich-editable for Android IME image admission; its message value stays plain text. */
 export const ComposerInput = forwardRef<
@@ -16,10 +9,10 @@ export const ComposerInput = forwardRef<
     onChange: (text: string) => void;
     onFiles: (files: File[]) => void;
     allowFiles: boolean;
-    onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void;
+    onSubmit: () => void;
   }
 >(function ComposerInput(
-  { value, placeholder, onChange, onFiles, allowFiles, onKeyDown },
+  { value, placeholder, onChange, onFiles, allowFiles, onSubmit },
   forwarded,
 ) {
   const input = useRef<HTMLDivElement>(null);
@@ -28,6 +21,17 @@ export const ComposerInput = forwardRef<
   const deferred = useRef('');
   const [error, setError] = useState('');
   useImperativeHandle(forwarded, () => input.current!, []);
+  useLayoutEffect(() => {
+    const node = input.current!;
+    // Mobile keyboards can emit beforeinput without a usable Enter keydown.
+    const enter = (event: InputEvent) => {
+      if (event.inputType !== 'insertParagraph' || event.isComposing || composing.current) return;
+      event.preventDefault();
+      onSubmit();
+    };
+    node.addEventListener('beforeinput', enter);
+    return () => node.removeEventListener('beforeinput', enter);
+  }, [onSubmit]);
   const read = () => {
     const text = input.current?.innerText.replaceAll('\r\n', '\n') ?? '';
     return !input.current?.textContent && text === '\n' ? '' : text;
@@ -105,6 +109,8 @@ export const ComposerInput = forwardRef<
         role="textbox"
         aria-label="Instruction"
         aria-multiline="true"
+        aria-description="Enter to send. Ctrl+Enter or Shift+Enter for a new line."
+        enterKeyHint="send"
         contentEditable={true}
         suppressContentEditableWarning
         data-placeholder={placeholder}
@@ -151,7 +157,16 @@ export const ComposerInput = forwardRef<
             event.preventDefault();
             return;
           }
-          if (!composing.current && !event.nativeEvent.isComposing) onKeyDown(event);
+          if (composing.current || event.nativeEvent.isComposing || event.keyCode === 229) return;
+          if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+            event.preventDefault();
+            insertText('\n');
+            return;
+          }
+          if (event.key === 'Enter' && !event.shiftKey && !event.altKey) {
+            event.preventDefault();
+            if (!event.repeat) onSubmit();
+          }
         }}
       />
       {error && (

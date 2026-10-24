@@ -53,6 +53,7 @@ import {
   ListTodo,
   MessageSquare,
   SquarePen,
+  Square,
   Menu,
   MoreHorizontal,
   Search,
@@ -864,7 +865,8 @@ function Conversation({
     },
   });
   const command = useMutation({
-    mutationFn: async (line: string) => {
+    mutationFn: async (input: string | { line: string; preserveDraft: true }) => {
+      const line = typeof input === 'string' ? input : input.line;
       const key = `relay-command:${session.id}`;
       const prior = JSON.parse(sessionStorage.getItem(key) || 'null');
       const value =
@@ -879,8 +881,9 @@ function Conversation({
       sessionStorage.removeItem(key);
       return result;
     },
-    onSuccess: (result, line) => {
-      setDraft((current) => (current.trim() === line ? '' : current));
+    onSuccess: (result, input) => {
+      if (typeof input === 'string')
+        setDraft((current) => (current.trim() === input ? '' : current));
       setNotice(result.message);
       setShortcutsOpen(result.action === 'help');
       if (result.action && result.action !== 'help')
@@ -891,6 +894,38 @@ function Conversation({
       void query.invalidateQueries({ queryKey: ['detail', session.id] });
     },
   });
+  const canEscape =
+    session.connected &&
+    (session.capabilities.sendEscape || session.capabilities.interruptTurn) &&
+    (session.capabilities.sendMessage || session.capabilities.steerActiveTurn);
+  const showStop =
+    canEscape &&
+    ['working', 'blocked'].includes(session.status) &&
+    !draft.trim() &&
+    !attachments.files.length;
+  useEffect(() => {
+    if (route.view || !canEscape) return;
+    const escape = (event: KeyboardEvent) => {
+      if (
+        event.key !== 'Escape' ||
+        event.defaultPrevented ||
+        event.repeat ||
+        event.isComposing ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.altKey ||
+        event.shiftKey ||
+        document.querySelector('dialog[open], [role="dialog"][aria-modal="true"]') ||
+        (event.target instanceof Element && event.target.closest('select'))
+      )
+        return;
+      event.preventDefault();
+      if (!command.isPending && !send.isPending)
+        command.mutate({ line: '/esc', preserveDraft: true });
+    };
+    window.addEventListener('keydown', escape);
+    return () => window.removeEventListener('keydown', escape);
+  }, [route.view, canEscape, command.isPending, command.mutate, send.isPending]);
   const quickReply = (text: string) => {
     const key = crypto.randomUUID();
     if (!outgoing.begin(key, text, [])) {
@@ -900,8 +935,9 @@ function Conversation({
     setShortcutsOpen(false);
     send.mutate({ prompt: text, key, attachments: [], mode: 'send' });
   };
-  const submit = (e: FormEvent) => {
-    e.preventDefault();
+  const submit = (e?: FormEvent) => {
+    e?.preventDefault();
+    if (!session.connected || command.isPending) return;
     if (/^\/[a-zA-Z][\w:-]*(?: |$)/.test(draft.trim())) {
       if (mode === 'queue') {
         setNotice('Slash commands cannot be queued. Choose Send to run the command.');
@@ -1375,9 +1411,7 @@ function Conversation({
               }
               value={draft}
               onChange={setDraft}
-              onKeyDown={(e) => {
-                if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') submit(e);
-              }}
+              onSubmit={submit}
             />
             <div className="composer-controls">
               {session.capabilities.attachFiles && (
@@ -1406,35 +1440,50 @@ function Conversation({
               {voice.button}
               <button
                 className="send-button"
-                type="submit"
+                type={showStop ? 'button' : 'submit'}
+                onClick={
+                  showStop ? () => command.mutate({ line: '/esc', preserveDraft: true }) : undefined
+                }
                 disabled={
-                  (!draft.trim() && !attachments.files.length) ||
-                  voice.busy ||
-                  attachments.busy ||
-                  attachments.invalid ||
-                  (busyWithoutSteering && !draft.startsWith('/')) ||
-                  command.isPending ||
-                  send.isPending ||
-                  !session.connected
+                  showStop
+                    ? command.isPending || send.isPending
+                    : (!draft.trim() && !attachments.files.length) ||
+                      voice.busy ||
+                      attachments.busy ||
+                      attachments.invalid ||
+                      (busyWithoutSteering && !draft.startsWith('/')) ||
+                      command.isPending ||
+                      send.isPending ||
+                      !session.connected
                 }
                 aria-label={
-                  mode === 'steer'
-                    ? 'Steer active turn'
-                    : mode === 'queue'
-                      ? 'Queue instruction'
-                      : 'Send message'
+                  showStop
+                    ? 'Stop turn'
+                    : mode === 'steer'
+                      ? 'Steer active turn'
+                      : mode === 'queue'
+                        ? 'Queue instruction'
+                        : 'Send message'
                 }
               >
                 <span className="sr-only">
-                  {send.isPending
-                    ? 'Sending…'
-                    : mode === 'steer'
-                      ? 'Steer'
-                      : mode === 'queue'
-                        ? 'Queue'
-                        : 'Send'}
+                  {showStop
+                    ? command.isPending
+                      ? 'Stopping…'
+                      : 'Stop'
+                    : send.isPending
+                      ? 'Sending…'
+                      : mode === 'steer'
+                        ? 'Steer'
+                        : mode === 'queue'
+                          ? 'Queue'
+                          : 'Send'}
                 </span>
-                <ArrowUp size={22} aria-hidden="true" />
+                {showStop ? (
+                  <Square size={20} fill="currentColor" aria-hidden="true" />
+                ) : (
+                  <ArrowUp size={22} aria-hidden="true" />
+                )}
               </button>
             </div>
           </form>

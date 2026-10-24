@@ -188,3 +188,61 @@ test('plan mode and Escape use native settings and the verified CLI key channel'
     await f.close();
   }
 });
+
+test('terminal Escape works without a native interrupt bridge and never answers a pending approval', async () => {
+  const f = await fixture({ startRuntime: false });
+  try {
+    const s = {
+      ...f.session,
+      ownership: 'herdr-cli' as const,
+      capabilities: { ...f.session.capabilities, interruptTurn: false, sendEscape: true },
+    };
+    f.gateway.store.saveSession(s);
+    f.gateway.runtime.assertBinding = async () => {};
+    f.gateway.runtime.adapters.set(s.id, {
+      turnState: async () => assert.fail('Literal Escape waited for native turn state'),
+      interrupt: async () => assert.fail('Literal Escape used generic interruption'),
+    } as any);
+    f.gateway.runtime.broker.open(s.id, {
+      nativeRequestId: 'pending-cli-approval',
+      route: 'claude-hook',
+      type: 'command-approval',
+      prompt: 'Run a command?',
+      choices: [],
+      responseSchema: {},
+      expiresAt: '2099-01-01T00:00:00.000Z',
+      metadata: {},
+    });
+    let keys = 0;
+    f.gateway.runtime.clients.get(s.hostId)!.request = (async (method: string, args: unknown) => {
+      assert.equal(method, 'agent.send_keys');
+      assert.deepEqual(args, { target: s.paneId, keys: ['esc'] });
+      keys++;
+      return {};
+    }) as any;
+    const payload = { line: '/esc', generation: s.generation, requestId: randomUUID() };
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const r = await f.gateway.app.inject({
+        method: 'POST',
+        url: `/api/sessions/${s.id}/commands`,
+        headers: f.headers,
+        payload,
+      });
+      assert.equal(r.statusCode, 200, r.body);
+    }
+    assert.equal(keys, 1);
+    assert.equal(f.gateway.store.interactions(s.id)[0].status, 'pending');
+    const stale = await f.gateway.app.inject({
+      method: 'POST',
+      url: `/api/sessions/${s.id}/commands`,
+      headers: f.headers,
+      payload: { ...payload, requestId: randomUUID(), generation: 'stale-owner' },
+    });
+    assert.notEqual(stale.statusCode, 200);
+    assert.equal(keys, 1);
+    assert.deepEqual(f.mock.prompts, []);
+    assert.deepEqual(f.gateway.store.tasks(s.id), []);
+  } finally {
+    await f.close();
+  }
+});

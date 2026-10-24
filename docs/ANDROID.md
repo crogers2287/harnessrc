@@ -247,3 +247,26 @@ separate user check.
 
 Signed APK 0.1.32 (versionCode 33) is published in the gateway data directory.
 SHA-256: `b913730269017236794d741a194ec74d3e174e80e13161887684b8ab0717551f`.
+
+### 0.1.33 — Enter to send and Escape/Stop (2026-10-24)
+
+Enter sends the current draft; Ctrl+Enter or Shift+Enter inserts a newline.
+Android's software keyboard shows Send. Hardware Escape preserves the draft and
+uses `/esc`. When a turn is active and the composer has neither text nor files,
+the send button becomes Stop. Herdr-owned terminal sessions receive a literal
+Escape key; terminal-free connections use native cancellation. Pending questions
+are never automatically answered or approved. See [session commands](SESSION_COMMANDS.md).
+
+Validation: 199 backend tests, TypeScript, ESLint, production web build and seven
+browser flows pass. Android unit tests, lint, debug/test builds and the signed
+release build pass. The disposable Android 15 emulator completed 26 of 31 checks
+on the initial isolated run; a System UI ANR obscured five focus/keyboard checks.
+After dismissing that system dialog and enabling its software keyboard, all five
+passed in a seven-test rerun alongside both new Enter/Escape/Stop regressions.
+Native coverage includes Back, recording, clipboard images, IME commitContent,
+questions/approvals, uncertain delivery and missed-frame recovery. Keyboard-open
+and keyboard-closed screenshots were inspected. Physical-phone keyboard behavior
+remains unverified.
+
+Signed APK 0.1.33 (versionCode 34) is published in the gateway data directory.
+SHA-256: `7d8c2a3f038ea61294bd674b8c6e5eaea3fbfa6f6331d8e3e6ab3ce15f0745af`.

@@ -13,7 +13,10 @@ import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
 import android.view.Gravity
+import android.view.KeyEvent
+import android.view.inputmethod.BaseInputConnection
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputConnection
 import androidx.appcompat.widget.AppCompatEditText
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -27,6 +30,8 @@ import java.io.File
 class RichComposer(context: Context) : AppCompatEditText(context) {
     var changed: (String) -> Unit = {}
     var receiveFile: (Uri, Any?) -> Unit = { _, _ -> }
+    var submit: () -> Unit = {}
+    var escape: () -> Unit = {}
     private var updating = false
 
     init {
@@ -39,9 +44,15 @@ class RichComposer(context: Context) : AppCompatEditText(context) {
             InputType.TYPE_CLASS_TEXT or
                 InputType.TYPE_TEXT_FLAG_MULTI_LINE or
                 InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
-        imeOptions = EditorInfo.IME_FLAG_NO_EXTRACT_UI
+        imeOptions = EditorInfo.IME_ACTION_SEND or EditorInfo.IME_FLAG_NO_EXTRACT_UI
         minLines = 1
         maxLines = 6
+        setOnEditorActionListener { _, action, _ ->
+            if (action == EditorInfo.IME_ACTION_SEND && !composingText()) {
+                submit()
+                true
+            } else false
+        }
         addTextChangedListener(
             object : TextWatcher {
                 override fun beforeTextChanged(
@@ -70,6 +81,37 @@ class RichComposer(context: Context) : AppCompatEditText(context) {
         }
     }
 
+    override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? {
+        val connection = super.onCreateInputConnection(outAttrs)
+        outAttrs.imeOptions = outAttrs.imeOptions and EditorInfo.IME_FLAG_NO_ENTER_ACTION.inv()
+        return connection
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_ESCAPE && !composingText() && !event.isCtrlPressed && !event.isAltPressed && !event.isMetaPressed && !event.isShiftPressed) {
+            if (event.repeatCount == 0) escape()
+            return true
+        }
+        if (keyCode == KeyEvent.KEYCODE_ENTER && !composingText() && !event.isAltPressed) {
+            if (event.repeatCount == 0) {
+                if (event.isCtrlPressed || event.isMetaPressed || event.isShiftPressed) {
+                    val start = selectionStart.coerceAtLeast(0)
+                    val end = selectionEnd.coerceAtLeast(0)
+                    text?.replace(minOf(start, end), maxOf(start, end), "\n")
+                } else submit()
+            }
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
+    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_ESCAPE || (keyCode == KeyEvent.KEYCODE_ENTER && !event.isAltPressed && !composingText())) return true
+        return super.onKeyUp(keyCode, event)
+    }
+
+    private fun composingText() = text?.let { BaseInputConnection.getComposingSpanStart(it) >= 0 } == true
+
     fun sync(value: String) {
         if (text.toString() == value) return
         val cursor = selectionStart.coerceAtLeast(0)
@@ -89,15 +131,21 @@ fun NativeComposer(
     onChange: (String) -> Unit,
     onFile: (Uri, Any?) -> Unit,
     modifier: Modifier = Modifier,
+    onSubmit: () -> Unit = {},
+    onEscape: () -> Unit = {},
 ) {
     val change by rememberUpdatedState(onChange)
     val receive by rememberUpdatedState(onFile)
+    val submitMessage by rememberUpdatedState(onSubmit)
+    val sendEscape by rememberUpdatedState(onEscape)
     AndroidView(
         factory = { context ->
             RichComposer(android.view.ContextThemeWrapper(context, R.style.Theme_Relay)).apply {
                 hint = "Message your agent…"
                 changed = { change(it) }
                 receiveFile = { uri, lease -> receive(uri, lease) }
+                submit = { submitMessage() }
+                escape = { sendEscape() }
             }
         },
         modifier = modifier,

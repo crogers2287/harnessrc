@@ -10,6 +10,7 @@ export const capabilityNames = [
   'approveAction',
   'rejectAction',
   'interruptTurn',
+  'sendEscape',
   'resumeSession',
   'attachFiles',
   'readDiffs',
