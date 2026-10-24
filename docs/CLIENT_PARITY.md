@@ -12,8 +12,12 @@ because the installed runtime does not confirm changes reliably.
 Native protocol validation covers a real Coding Plan launch, streamed deltas,
 completed messages and a follow-up after restarting the native owner. Automated
 bridge tests cover launch replay, private sockets, approvals, stale ownership
-and durable dispatch receipts. Android rendering has not been tested on a
-physical device for Zcode specifically.
+and durable dispatch receipts. Production mobile web validation covers the
+Z.ai profile, both configured model choices, the symlinked `questguardian`
+folder, launch, live first reply, follow-up, explicit queued delivery and the
+native question card. Browser screenshots were inspected at 390px and 1440px.
+Native question selection also completed through Relay MCP. Android rendering
+has not been tested on a physical device for Zcode specifically.
 
 Both clients are first-class Relay clients. A user-facing feature or fix must be reviewed against both implementations before it is called complete. Equivalent outcomes matter; native clipboard, Android Back and browser installation use different platform APIs.
 
