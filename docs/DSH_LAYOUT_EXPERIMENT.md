@@ -2,8 +2,8 @@
 
 Branch: `experiment/dsh-conversation-layout`.
 Baseline: `5043fda` (Relay 0.1.36). Android preview: `0.1.37-dsh-preview`.
-Fred’s web app and gateway now serve the experiment at `1c09933` (activated
-2026-10-24 after the initial branch-only delivery). The published production APK
+Fred’s web app and gateway now serve this experiment (initial layout release
+`1c09933`, activated 2026-10-24 after the initial branch-only delivery). The published production APK
 remains on 0.1.36; the signed preview APK is attached separately in Relay.
 Rollback: atomically point `~/.local/share/relay/current` back to
 `releases/5043fda` and restart `relay.service`.
@@ -39,8 +39,11 @@ and system Back/Escape. Touch targets remain at least 48px/48dp.
 
 - The conversation picker is directly below the session header. Main conversation
   and native linked children share one searchable list with model, observed status
-  and last update. Unreported status is **Recorded**, not a fabricated running or
-  finished indicator. Native child status is displayed for DSH.
+  and last update. Claude and Codex models and turn state come from incremental
+  native records, including models beyond long initial context. Native Claude
+  task-completion notifications mark the exact child ended; a newer child turn
+  supersedes that completion. Unknown state remains **Recorded**. DSH retains
+  its native child status. Catalogs refresh at five-second intervals.
 - Chat and Activity switch the visible transcript. Child conversations are view
   only; there is no child composer, permission selector or separate session writer.
   Parent drafts and conversation scroll are retained while inspecting children.
@@ -101,3 +104,9 @@ Live deployment verification: gateway health and the served browser index match
 release `1c09933`. A fresh browser on the private endpoint opened the picker and
 Chat/Activity tabs, received WebSocket frames, listed launch folders and fit a
 390px viewport without horizontal overflow. Existing open tabs need a refresh.
+
+History recovery: conversation pagination excludes hidden native metadata before
+applying the page limit. Raw replay and usage records remain intact. This fixes
+older Codex sessions such as Canna Sol 6.1 whose last 100 records were all usage
+updates. The deployed fix was verified with real message rendering and earlier
+history paging. Both clients use this shared endpoint; no APK update is required.

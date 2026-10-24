@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, rm, symlink } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, appendFile, rm, symlink } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { SubagentReader } from '../../adapters/src/subagents.ts';
@@ -51,6 +51,8 @@ test('subagent discovery requires native parent linkage; histories replay with s
     const children = await reader.list(parent);
     assert.equal(children.length, 1);
     assert.equal(children[0].name, '/root/reviewer');
+    assert.equal(children[0].model, undefined);
+    assert.equal(children[0].status, 'observed', 'missing native lifecycle stays unknown');
     const result = await reader.conversation(parent, children[0].id, Number.MAX_SAFE_INTEGER, 100);
     assert.equal(result.events[0].data.text, 'Review complete');
     assert.deepEqual(
@@ -131,6 +133,174 @@ test('Claude children stay under the exact parent folder and skip symlinks', asy
     );
     assert.equal(reader.supported({ ...parent, harness: 'dsh' }), false);
   } finally {
+    await f.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('Claude catalog finds models beyond the prefix and refreshes working, idle, ended and resumed agents', async (t) => {
+  const f = await fixture({ startRuntime: false });
+  const root = await mkdtemp(path.join(os.tmpdir(), 'relay-agent-state-'));
+  let now = Date.now();
+  t.mock.method(Date, 'now', () => now);
+  const line = (record: unknown) => JSON.stringify(record) + '\n';
+  try {
+    const parent = {
+      ...f.session,
+      harness: 'claude',
+      nativeSessionId: 'parent',
+      nativeSessionKind: 'id' as const,
+    };
+    const parentFile = path.join(root, 'parent.jsonl');
+    await writeFile(parentFile, '{}\n');
+    const dir = path.join(root, 'parent', 'subagents');
+    await mkdir(dir, { recursive: true });
+    const file = path.join(dir, 'agent-review.jsonl');
+    await writeFile(
+      file,
+      line({ type: 'user', message: { content: 'Long initial context '.repeat(10000) } }) +
+        '{broken record\n' +
+        line({
+          type: 'assistant',
+          timestamp: '2026-10-24T10:00:00Z',
+          message: {
+            model: 'flash-next',
+            stop_reason: 'tool_use',
+            content: [{ type: 'tool_use' }],
+          },
+        }),
+    );
+    const reader = new SubagentReader({ claude: root, codex: root });
+    const entry = async () => {
+      now += 5001;
+      return (await reader.list(parent))[0];
+    };
+    assert.equal((await entry()).model, 'flash-next');
+    assert.equal((await entry()).status, 'working');
+    await appendFile(
+      file,
+      line({
+        type: 'assistant',
+        timestamp: '2026-10-24T10:01:00Z',
+        message: { model: 'flash-next-strata', stop_reason: 'end_turn' },
+      }),
+    );
+    assert.equal((await entry()).status, 'idle');
+    assert.equal((await entry()).model, 'flash-next-strata');
+    await appendFile(
+      parentFile,
+      line({
+        type: 'queue-operation',
+        operation: 'enqueue',
+        timestamp: '2026-10-24T10:02:00Z',
+        content:
+          '<task-notification><task-id>review</task-id><status>completed</status></task-notification>',
+      }),
+    );
+    assert.equal((await entry()).status, 'ended');
+    await appendFile(
+      file,
+      line({
+        type: 'api-request',
+        timestamp: '2026-10-24T10:03:00Z',
+        params: { model: 'fred/flash-next' },
+      }),
+    );
+    assert.equal(
+      (await entry()).status,
+      'working',
+      'a resumed child supersedes its older completion',
+    );
+    assert.equal((await entry()).model, 'fred/flash-next');
+    await writeFile(
+      file,
+      line({
+        type: 'assistant',
+        timestamp: '2026-10-24T10:04:00Z',
+        message: { model: 'replacement-model', stop_reason: 'end_turn' },
+      }),
+    );
+    assert.equal(
+      (await entry()).model,
+      'replacement-model',
+      'truncation resets the summary cursor',
+    );
+    assert.equal((await entry()).status, 'idle');
+    assert.equal(((await entry()) as any).file, undefined);
+  } finally {
+    t.mock.restoreAll();
+    await f.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('Codex catalog reports native turn state and current model after long and partial records', async (t) => {
+  const f = await fixture({ startRuntime: false });
+  const root = await mkdtemp(path.join(os.tmpdir(), 'relay-codex-agent-state-'));
+  let now = Date.now();
+  t.mock.method(Date, 'now', () => now);
+  const line = (record: unknown) => JSON.stringify(record) + '\n';
+  try {
+    const parent = {
+      ...f.session,
+      harness: 'codex',
+      nativeSessionId: 'parent',
+      nativeSessionKind: 'id' as const,
+    };
+    const file = path.join(root, 'rollout-child.jsonl');
+    await writeFile(
+      file,
+      line({
+        type: 'session_meta',
+        payload: {
+          id: 'child',
+          source: { subagent: { thread_spawn: { parent_thread_id: 'parent' } } },
+        },
+      }) +
+        line({
+          type: 'response_item',
+          payload: { type: 'message', role: 'user', content: 'Context '.repeat(100000) },
+        }) +
+        line({ type: 'turn_context', payload: { model: 'gpt-6.1-sol' } }) +
+        line({ type: 'event_msg', payload: { type: 'task_started' } }),
+    );
+    const reader = new SubagentReader({ codex: root, claude: root });
+    const entry = async () => {
+      now += 5001;
+      return (await reader.list(parent))[0];
+    };
+    assert.equal((await entry()).model, 'gpt-6.1-sol');
+    assert.equal((await entry()).status, 'working');
+    const completion = line({ type: 'event_msg', payload: { type: 'task_complete' } });
+    await appendFile(file, completion.slice(0, -2));
+    assert.equal(
+      (await entry()).status,
+      'working',
+      'partial lifecycle records are not interpreted',
+    );
+    await appendFile(file, completion.slice(-2));
+    assert.equal((await entry()).status, 'idle');
+    await appendFile(
+      file,
+      line({ type: 'turn_context', payload: { model: 'gpt-6.1-new' } }) +
+        line({ type: 'event_msg', payload: { type: 'task_started' } }),
+    );
+    assert.equal((await entry()).model, 'gpt-6.1-new');
+    assert.equal((await entry()).status, 'working');
+    await appendFile(file, line({ type: 'event_msg', payload: { type: 'turn_aborted' } }));
+    assert.equal((await entry()).status, 'idle');
+    await appendFile(
+      file,
+      line({ type: 'response_item', payload: { text: 'x'.repeat(4 * 1024 * 1024 + 1) } }) +
+        line({ type: 'event_msg', payload: { type: 'task_started' } }),
+    );
+    assert.equal(
+      (await entry()).status,
+      'working',
+      'oversized context cannot hide later lifecycle records',
+    );
+  } finally {
+    t.mock.restoreAll();
     await f.close();
     await rm(root, { recursive: true, force: true });
   }

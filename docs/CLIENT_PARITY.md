@@ -477,8 +477,14 @@ modal dialog and child deep links; Android uses a native bottom sheet and
 saveable child selection with system Back. Exact DSH parent links now join the
 existing Claude/Codex reader, with both parent/child read grants checked.
 
-The experimental web/gateway build `1c09933` is now active on Fred after the user
-requested the live web preview. The published Android download remains 0.1.36;
+The experimental web/gateway layout was activated on Fred at `1c09933` after the
+user requested the live web preview; subsequent fixes remain on the same branch. The published Android download remains 0.1.36;
 the preview APK is supplied separately. See
 [DSH_LAYOUT_EXPERIMENT.md](DSH_LAYOUT_EXPERIMENT.md) for the design, preview setup,
 validation and remaining limits.
+
+The shared gateway now filters hidden native metadata before conversation paging
+and reads linked Claude/Codex model and lifecycle records incrementally. Both
+web and Android receive these fixes through their existing APIs, with no APK
+change. Native Claude completion notifications mark ended children, and later
+resumed activity takes precedence. Missing lifecycle evidence stays Recorded.

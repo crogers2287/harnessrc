@@ -3,6 +3,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { redact, type Event, type Session } from '@harnessrc/protocol';
 import { JsonlAdapter, resolveTranscript } from './transcripts.ts';
+import { SubagentMetadata } from './subagent-metadata.ts';
 
 export type Subagent = {
   id: string;
@@ -18,6 +19,7 @@ export class SubagentReader {
   private catalogs = new Map<string, { at: number; entries: Entry[] }>();
   private metadata = new Map<string, { modified: number; records: any[] }>();
   private histories = new Map<string, { adapter: JsonlAdapter; events: Event[] }>();
+  private summaries = new SubagentMetadata();
   constructor(private roots: { claude: string; codex: string }) {}
   supported(s: Session) {
     return ['claude', 'codex'].includes(s.harness) && s.nativeSessionKind === 'id';
@@ -32,9 +34,10 @@ export class SubagentReader {
     if (!this.supported(s)) return [];
     const key = `${s.hostId}:${s.harness}:${s.nativeSessionId}`;
     const cached = this.catalogs.get(key);
-    if (cached && Date.now() - cached.at < 60000) return cached.entries;
+    if (cached && Date.now() - cached.at < 5000) return cached.entries;
     const root = await realpath(this.roots[s.harness as 'claude' | 'codex']);
     const candidates: string[] = [];
+    let parentSummary: Awaited<ReturnType<SubagentMetadata['read']>> | undefined;
     if (s.harness === 'claude') {
       const parent = await resolveTranscript(s, root);
       const dir = path.join(path.dirname(parent), s.nativeSessionId, 'subagents');
@@ -51,6 +54,7 @@ export class SubagentReader {
       for (const child of children)
         if (child.isFile() && /^agent-[\w-]+\.jsonl$/.test(child.name))
           candidates.push(path.join(dir, child.name));
+      if (candidates.length) parentSummary = await this.summaries.read(parent, s.harness);
     } else {
       const walk = async (dir: string, depth = 0) => {
         if (depth > 5) return;
@@ -115,17 +119,17 @@ export class SubagentReader {
         s.harness === 'codex' ? meta.id : path.basename(file, '.jsonl').slice(6);
       if (typeof nativeSessionId !== 'string' || !/^[a-zA-Z0-9_-]{1,160}$/.test(nativeSessionId))
         continue;
+      const summary = await this.summaries.read(file, s.harness);
+      const ended = parentSummary?.ended.get(nativeSessionId);
       entries.push({
         id: createHash('sha256').update(`${key}:${nativeSessionId}`).digest('hex'),
         nativeSessionId,
         name: String(
           spawn?.agent_path ?? spawn?.agent_nickname ?? `Agent ${nativeSessionId}`,
         ).slice(0, 256),
-        model:
-          records.find((r) => r.type === 'turn_context')?.payload?.model ??
-          records.find((r) => r.type === 'assistant')?.message?.model,
+        model: summary.model,
         updatedAt: info.mtime.toISOString(),
-        status: 'observed',
+        status: ended && ended.at >= summary.at ? ended.status : summary.status,
         file,
       });
     }
