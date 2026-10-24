@@ -202,12 +202,13 @@ export class Store extends EventEmitter {
             .reverse();
     return rows.map((r) => ({ ...JSON.parse(r.body as string), sequence: Number(r.sequence) }));
   }
-  /** Completed native messages replace their streamed token events for history paging. */
+  /** Page visible history, excluding native metadata and completed stream fragments. */
   conversationEvents(id: string, before: number, limit: number): Event[] {
     return this.db
       .prepare(
         `
       SELECT e.sequence,e.body FROM events e WHERE e.session_id=? AND e.sequence<?
+      AND NOT COALESCE(json_extract(e.body,'$.data.nativeMeta'),0)
       AND NOT (json_extract(e.body,'$.kind')='assistant.delta' AND EXISTS (
         SELECT 1 FROM events done WHERE done.session_id=e.session_id
         AND json_extract(done.body,'$.kind')='assistant.message'

@@ -116,6 +116,56 @@ test('conversation pages skip completed stream fragments without losing active s
   }
 });
 
+test('conversation pages skip native metadata before pagination while retaining raw usage replay', async () => {
+  const f = await fixture({ startRuntime: false });
+  try {
+    const store = f.gateway.store,
+      s = f.session;
+    const event = (
+      sourceId: string,
+      kind: 'user.message' | 'assistant.message' | 'progress',
+      data: Record<string, unknown>,
+    ) => store.event(s, { sourceId, kind, timestamp: new Date().toISOString(), data });
+    const older = event('older-chat', 'user.message', { text: 'Earlier question' });
+    const question = event('question-chat', 'user.message', { text: 'Latest question' });
+    for (let i = 0; i < 130; i++)
+      event(`middle-usage-${i}`, 'progress', { nativeMeta: true, usage: { totalTokens: i } });
+    const answer = event('answer-chat', 'assistant.message', { text: 'Saved answer' });
+    const progress = event('visible-progress', 'progress', {
+      text: 'Visible progress',
+      nativeMeta: false,
+    });
+    for (let i = 0; i < 230; i++)
+      event(`tail-usage-${i}`, 'progress', { nativeMeta: true, usage: { totalTokens: i } });
+    const page = async (before = Number.MAX_SAFE_INTEGER) => {
+      const response = await f.gateway.app.inject({
+        url: `/api/sessions/${s.id}/events?before=${before}&limit=2&conversation=1`,
+        headers: f.headers,
+      });
+      assert.equal(response.statusCode, 200);
+      return response.json().events;
+    };
+    assert.deepEqual(
+      (await page()).map((e: any) => e.id),
+      [answer.id, progress.id],
+    );
+    assert.deepEqual(
+      (await page(answer.sequence)).map((e: any) => e.id),
+      [older.id, question.id],
+    );
+    assert.deepEqual(await page(older.sequence), []);
+    const raw = await f.gateway.app.inject({
+      url: `/api/sessions/${s.id}/events?before=${Number.MAX_SAFE_INTEGER}&limit=100`,
+      headers: f.headers,
+    });
+    assert.equal(raw.statusCode, 200);
+    assert.equal(raw.json().events.length, 100);
+    assert.ok(raw.json().events.every((e: any) => e.data.nativeMeta === true));
+  } finally {
+    await f.close();
+  }
+});
+
 test('DSH native tool messages retain output, error state and image count without publishing model inputs', () => {
   const [event] = dshEvents({
     seq: 321,
