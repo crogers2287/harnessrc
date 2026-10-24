@@ -575,22 +575,11 @@ export function App() {
           open={helperOpen}
           show={showHelper}
           close={closeHelper}
-          sessions={sessions}
           openSession={(sessionId, interactionId) => {
             history.replaceState({ relayChat: true }, '', location.href);
             setHelperOpen(false);
             navigate({ session: sessionId, interaction: interactionId });
           }}
-          render={(session, helperRoute, navigateHelper, back) => (
-            <Conversation
-              key={session.id}
-              session={session}
-              connection={connection}
-              route={helperRoute}
-              back={back}
-              navigate={navigateHelper}
-            />
-          )}
         />
       )}
     </div>

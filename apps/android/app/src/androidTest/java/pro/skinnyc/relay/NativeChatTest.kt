@@ -108,10 +108,16 @@ class NativeChatTest {
                     }
                     val body =
                         when {
+                            path == "/api/helper/messages" -> {
+                                val input = JSONObject(request.body.clone().readUtf8())
+                                helperCurrent?.put("status", "running")?.optJSONArray("messages")?.put(json("role" to "user", "content" to input.str("prompt")))
+                                json("status" to "started", "requestId" to input.str("requestId")).toString()
+                            }
+                            path == "/api/helper/stop" -> { helperCurrent?.put("status", "stopped"); json("status" to "stopping").toString() }
                             path == "/api/helper" -> {
                                 if (request.method == "POST") {
                                     val input = JSONObject(request.body.clone().readUtf8())
-                                    helperCurrent = json("requestId" to input.str("requestId"), "profileId" to input.str("profileId"), "model" to input.str("model"), "sessionId" to "helper-session", "receipt" to json("status" to "started"))
+                                    helperCurrent = json("requestId" to input.str("requestId"), "profileId" to input.str("profileId"), "model" to input.str("model"), "id" to "11111111-1111-4111-8111-111111111111", "status" to "idle", "messages" to org.json.JSONArray().put(json("role" to "user", "content" to input.str("prompt"))).put(json("role" to "assistant", "content" to "I can inspect your sessions.")), "receipt" to json("status" to "started"))
                                     json("status" to "started").toString()
                                 } else json("profiles" to org.json.JSONArray().put(json("id" to "my-cfr", "label" to "My proxy", "provider" to "CFR proxy", "connected" to true, "defaultModel" to "model-a", "models" to org.json.JSONArray().put(json("id" to "model-a", "name" to "Model A")).put(json("id" to "model-b", "name" to "Model B")))), "current" to (helperCurrent ?: JSONObject.NULL), "attention" to json("enabled" to true, "waitingMinutes" to 5, "items" to org.json.JSONArray())).toString()
                             }
@@ -124,7 +130,7 @@ class NativeChatTest {
                             path.endsWith("/usage") -> """{"supported":true,"input":12000,"output":500,"total":12500,"contextUsed":4200,"contextWindow":200000}"""
                             path.endsWith("/models") || path.endsWith("/model") -> """{"current":{"provider":"fred","model":"$selectedModel","reasoningEffort":"$selectedEffort"},"default":{"provider":"fred","model":"flash-next"},"groups":[{"id":"fred","name":"Fred","models":[{"id":"flash-next","name":"Flash Next","reasoningEfforts":["low","medium","high"]},{"id":"astra","name":"Astra","reasoningEfforts":["low","medium","high"]}]}]}"""
                             path.endsWith("/permissions") -> """{"supported":false,"options":[],"reason":"Test session uses host permissions."}"""
-                            path == "/api/sessions" -> "{\"sessions\":[$session${if (helperCurrent != null) "," + JSONObject(session).put("id", "helper-session").put("sessionName", "Relay helper").put("status", "idle") else ""}]}"
+                            path == "/api/sessions" -> "{\"sessions\":[$session]}"
                             path == "/api/voice" -> "{\"enabled\":true,\"maxSeconds\":180}"
                             path == "/api/sessions/test-session" ->
                                 "{\"session\":$session,\"interactions\":[${pendingQuestion?.toString() ?: ""}],\"tasks\":[]}"
@@ -175,6 +181,7 @@ class NativeChatTest {
         scenario.onActivity { it.model.edit("Keep my main draft") }
         compose.onNodeWithContentDescription("Open Relay helper").performClick()
         compose.onNodeWithText("Relay helper", useUnmergedTree = true).assertExists()
+        compose.waitUntil(10000) { compose.onAllNodesWithText("Model A").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("Model A").performClick()
         compose.onNodeWithText("Model B").performClick()
         compose.onNodeWithText("Message").performTextInput("Inspect my sessions")
@@ -184,10 +191,35 @@ class NativeChatTest {
         assertEquals("my-cfr", sent.str("profileId"))
         assertEquals("model-b", sent.str("model"))
         assertEquals("Inspect my sessions", sent.str("prompt"))
-        compose.waitUntil(15000) { compose.onAllNodesWithContentDescription("Send instruction").fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(15000) { compose.onAllNodesWithText("You", substring = false).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Message").performTextInput("Follow up privately")
+        compose.onNodeWithText("Send", substring = false).performClick()
+        compose.waitUntil(15000) { requests.any { it.path == "/api/helper/messages" } }
+        val follow = JSONObject(requests.first { it.path == "/api/helper/messages" }.body.clone().readUtf8())
+        assertEquals("11111111-1111-4111-8111-111111111111", follow.str("conversationId"))
+        assertEquals("Follow up privately", follow.str("prompt"))
+        compose.waitUntil(15000) { compose.onAllNodesWithText("Stop", substring = false).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Stop", substring = false).performClick()
+        compose.waitUntil(15000) { requests.any { it.path == "/api/helper/stop" } }
+        compose.onNodeWithText("Message").performTouchInput { click() }
+        Thread.sleep(700)
+
+        InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot().let { bitmap ->
+            File(ApplicationProvider.getApplicationContext<Context>().getExternalFilesDir(null), "helper-native-keyboard.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        }
+        compose.onNodeWithText("model-b · Usage unavailable · App agent", substring = false).assertIsDisplayed()
+        compose.onNodeWithText("Message").performTouchInput { click() }
+        androidx.test.espresso.Espresso.closeSoftKeyboard()
+        compose.waitForIdle()
+        Thread.sleep(500)
+        InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot().let { bitmap ->
+            File(ApplicationProvider.getApplicationContext<Context>().getExternalFilesDir(null), "helper-native.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        }
+        compose.onNodeWithText("model-b · Usage unavailable · App agent", substring = false).assertIsDisplayed()
+
         compose.onNodeWithContentDescription("Close helper").performClick()
         scenario.onActivity { assertEquals("test-session", it.model.selected); assertEquals("Keep my main draft", it.model.draft) }
-        assertFalse(requests.any { it.path?.endsWith("/messages") == true })
+        assertFalse(requests.any { it.path?.startsWith("/api/sessions/") == true && it.path?.endsWith("/messages") == true })
         compose.onNodeWithContentDescription("Open Relay helper").performClick()
         compose.onNodeWithText("Waiting (0)").performClick()
         compose.onNodeWithText("No sessions are waiting for an answer.").assertExists()

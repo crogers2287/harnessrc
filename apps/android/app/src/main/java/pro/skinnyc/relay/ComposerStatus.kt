@@ -32,7 +32,7 @@ fun ComposerStatus(vm: RelayModel) {
     var panel by remember(session.id) { mutableStateOf("") }
     var revision by remember { mutableIntStateOf(0) }
     var loadError by remember(session.id) { mutableStateOf("") }
-    LaunchedEffect(session.id, session.data.str("generation"), session.data.optBoolean("connected"), revision) {
+    LaunchedEffect(session.id, session.data.str("generation"), session.data.optBoolean("connected"), session.can("changeModel"), revision) {
         var cycle = 0
         while (true) {
             if (session.data.optBoolean("connected")) {

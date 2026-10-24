@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, ApiError } from '@harnessrc/client-sdk';
-import type { SessionView } from '@harnessrc/protocol';
+import { api } from '@harnessrc/client-sdk';
 import { X } from 'lucide-react';
 
 type Profile = {
@@ -24,29 +25,23 @@ type HelperState = {
     requestId: string;
     profileId: string;
     model: string;
-    sessionId?: string;
+    id: string;
+    status: string;
+    error?: string;
+    messages: { role: string; content: string }[];
+    usage?: { total: number };
     receipt: { status: string; diagnostic?: string };
   };
 };
-type Route = { session?: string; view?: string; interaction?: string };
 export function HelperDrawer({
   open,
   show,
   close,
-  sessions,
-  render,
   openSession,
 }: {
   open: boolean;
   show: () => void;
   close: () => void;
-  sessions: SessionView[];
-  render: (
-    session: SessionView,
-    route: Route,
-    navigate: (route: Route) => void,
-    back: () => void,
-  ) => ReactNode;
   openSession: (sessionId: string, interactionId: string) => void;
 }) {
   const panel = useRef<HTMLDialogElement>(null);
@@ -55,9 +50,8 @@ export function HelperDrawer({
     queryKey: ['helper'],
     queryFn: () => api('/api/helper'),
     enabled: open,
-    refetchInterval: open ? 3000 : false,
+    refetchInterval: open ? 1000 : false,
   });
-  const [route, navigate] = useState<Route>({});
   const [fresh, setFresh] = useState(false);
   const [attentionOpen, setAttentionOpen] = useState(false);
   const [profileId, setProfileId] = useState('');
@@ -81,7 +75,6 @@ export function HelperDrawer({
     setPending('');
     setFresh(false);
   }, [pending, current]);
-  const session = sessions.find((s) => s.id === current?.sessionId);
   const profiles = state.data?.profiles ?? [];
   const profile = profiles.find((p) => p.id === profileId) ?? profiles[0];
   const chosenModel = model || profile?.defaultModel || profile?.models[0]?.id || '';
@@ -141,16 +134,7 @@ export function HelperDrawer({
         setPending('');
         sessionStorage.removeItem('relay-helper-pending');
       } else {
-        try {
-          await api(`/api/launch/${JSON.parse(pending).requestId}`);
-          setError('Launch was received. Reopen the helper to check its status.');
-        } catch (e) {
-          if (e instanceof ApiError && e.status === 404) {
-            setPending('');
-            sessionStorage.removeItem('relay-helper-pending');
-            setError('No launch was created. You can edit the settings and try again.');
-          } else throw e;
-        }
+        setError('No receipt is visible yet. Retry the same request to check delivery.');
       }
     } catch (e) {
       setError((e as Error).message);
@@ -179,11 +163,7 @@ export function HelperDrawer({
       sessionStorage.removeItem('relay-helper-pending');
       setPrompt('');
       setFresh(false);
-      navigate({});
-      await Promise.all([
-        query.invalidateQueries({ queryKey: ['helper'] }),
-        query.invalidateQueries({ queryKey: ['sessions'] }),
-      ]);
+      await Promise.all([query.invalidateQueries({ queryKey: ['helper'] })]);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -216,7 +196,6 @@ export function HelperDrawer({
                   aria-label="New conversation"
                   onClick={() => {
                     setFresh(true);
-                    navigate({});
                   }}
                 >
                   New chat
@@ -249,24 +228,7 @@ export function HelperDrawer({
                 <button onClick={() => setAttentionOpen(false)}>Back to helper</button>
               </div>
             ) : current && !fresh ? (
-              session ? (
-                <div className="helper-conversation main-pane">
-                  {render(session, route, navigate, () => (route.view ? navigate({}) : close()))}
-                </div>
-              ) : (
-                <div className="helper-setup">
-                  <p role="status">
-                    {current.receipt.status === 'uncertain'
-                      ? 'Launch needs checking'
-                      : 'Connecting to your helper…'}
-                  </p>
-                  <p>
-                    {current.receipt.diagnostic ||
-                      'The conversation will appear when the native session is ready. You can close this panel while it starts.'}
-                  </p>
-                  <button onClick={() => void state.refetch()}>Check status</button>
-                </div>
-              )
+              <PrivateHelperChat current={current} refresh={() => void state.refetch()} />
             ) : (
               <form
                 className="helper-setup"
@@ -283,8 +245,8 @@ export function HelperDrawer({
                   <p role="status">Loading connections…</p>
                 ) : !profiles.length ? (
                   <p>
-                    Enable a helper launch profile on the gateway with your CFR proxy connection and
-                    Relay MCP. No host or model is built into the app.
+                    Configure a helper connection on the gateway with your proxy URL and models. No
+                    host or model is built into the app.
                   </p>
                 ) : (
                   <>
@@ -378,7 +340,7 @@ export function HelperDrawer({
                 )}
                 {!!pending && (
                   <button type="button" disabled={busy} onClick={() => void recover()}>
-                    Check launch receipt
+                    Check request receipt
                   </button>
                 )}
                 {fresh && (
@@ -393,5 +355,131 @@ export function HelperDrawer({
         )}
       </dialog>
     </>
+  );
+}
+
+function PrivateHelperChat({
+  current,
+  refresh,
+}: {
+  current: NonNullable<HelperState['current']>;
+  refresh: () => void;
+}) {
+  const key = `relay-helper-message:${current.id}`;
+  const [draft, setDraft] = useState(() => sessionStorage.getItem(key) ?? '');
+  const [pending, setPending] = useState(() => sessionStorage.getItem(key + ':pending') ?? '');
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState('');
+  const end = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    end.current?.scrollIntoView({ block: 'nearest' });
+  }, [current.messages.length, current.messages.at(-1)?.content, current.status]);
+  const stop = async () => {
+    try {
+      await api('/api/helper/stop', { method: 'POST' });
+      refresh();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+  const send = async () => {
+    if (sending || (!draft.trim() && !pending)) return;
+    setSending(true);
+    setError('');
+    const body =
+      pending ||
+      JSON.stringify({ requestId: crypto.randomUUID(), conversationId: current.id, prompt: draft });
+    sessionStorage.setItem(key + ':pending', body);
+    setPending(body);
+    try {
+      await api('/api/helper/messages', { method: 'POST', body });
+      sessionStorage.removeItem(key + ':pending');
+      sessionStorage.removeItem(key);
+      setPending('');
+      setDraft('');
+      refresh();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSending(false);
+    }
+  };
+  return (
+    <div className="helper-conversation main-pane">
+      <div className="helper-private-messages" role="log" aria-label="Helper conversation">
+        {current.messages.map((m, i) => (
+          <article className={`helper-private-message ${m.role}`} key={i}>
+            <strong>{m.role === 'user' ? 'You' : 'Relay helper'}</strong>
+            {m.role === 'assistant' ? (
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
+            ) : (
+              <p>{m.content}</p>
+            )}
+          </article>
+        ))}
+        <p role="status">{current.status === 'running' ? 'Working…' : (current.error ?? '')}</p>
+        <div ref={end} />
+      </div>
+      <form
+        className="helper-private-composer"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void send();
+        }}
+      >
+        {(error || pending) && (
+          <p role="alert">
+            {error || 'Message delivery needs checking. Retry uses the same request ID.'}
+          </p>
+        )}
+        <label htmlFor="helper-message">Message</label>
+        <textarea
+          id="helper-message"
+          value={draft}
+          disabled={sending || !!pending}
+          rows={2}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            sessionStorage.setItem(key, e.target.value);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape' && current.status === 'running') {
+              e.preventDefault();
+              e.stopPropagation();
+              void stop();
+            }
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+              if (e.ctrlKey) {
+                e.preventDefault();
+                const f = e.currentTarget,
+                  a = f.selectionStart,
+                  b = f.selectionEnd;
+                const value = draft.slice(0, a) + '\n' + draft.slice(b);
+                setDraft(value);
+                sessionStorage.setItem(key, value);
+                requestAnimationFrame(() => f.setSelectionRange(a + 1, a + 1));
+              } else if (!e.shiftKey) {
+                e.preventDefault();
+                if (current.status !== 'running') void send();
+              }
+            }
+          }}
+        />
+        {current.status === 'running' && !draft.trim() ? (
+          <button type="button" onClick={() => void stop()}>
+            Stop
+          </button>
+        ) : (
+          <button disabled={sending || current.status === 'running' || (!draft.trim() && !pending)}>
+            {pending ? 'Retry same request' : sending ? 'Sending…' : 'Send'}
+          </button>
+        )}
+        <small>
+          {current.model} ·{' '}
+          {current.usage ? `${current.usage.total.toLocaleString()} tokens` : 'Usage unavailable'} ·
+          App agent
+        </small>
+      </form>
+    </div>
   );
 }

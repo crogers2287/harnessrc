@@ -3288,40 +3288,6 @@ test('right-side helper chooses a proxy model and preserves the current session 
   await pair(page);
   await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
   const mainId = new URL(page.url()).searchParams.get('session')!;
-  const mainSession = (await (await page.request.get('/api/sessions')).json()).sessions.find(
-    (s: any) => s.id === mainId,
-  );
-  const helperSession = {
-    ...mainSession,
-    id: 'helper-fixture',
-    sessionName: 'Relay helper',
-    model: 'proxy/model-b',
-    status: 'idle',
-    preview: '',
-  };
-  await page.route('**/api/sessions', async (route) => {
-    const original = await (await route.fetch()).json();
-    await route.fulfill({ json: { ...original, sessions: [...original.sessions, helperSession] } });
-  });
-  await page.route('**/api/sessions/helper-fixture', (route) =>
-    route.fulfill({ json: { session: helperSession, interactions: [], tasks: [] } }),
-  );
-  await page.route('**/api/sessions/helper-fixture/events?*', (route) =>
-    route.fulfill({
-      json: {
-        events: [
-          {
-            id: 'helper-reply',
-            timestamp: '2026-10-24T17:00:00Z',
-            sessionId: 'helper-fixture',
-            sequence: 1,
-            kind: 'assistant.message',
-            data: { text: 'I can inspect your Relay sessions.' },
-          },
-        ],
-      },
-    }),
-  );
   let current: any = null;
   let launch: any;
   await page.route('**/api/helper', async (route) => {
@@ -3331,7 +3297,12 @@ test('right-side helper chooses a proxy model and preserves the current session 
         requestId: launch.requestId,
         profileId: launch.profileId,
         model: launch.model,
-        sessionId: helperSession.id,
+        id: '11111111-1111-4111-8111-111111111111',
+        status: 'idle',
+        messages: [
+          { role: 'user', content: launch.prompt },
+          { role: 'assistant', content: 'I can inspect your Relay sessions.' },
+        ],
         receipt: { status: 'started' },
       };
       await route.fulfill({ json: { status: 'started', requestId: launch.requestId } });
@@ -3369,7 +3340,7 @@ test('right-side helper chooses a proxy model and preserves the current session 
   expect(launch.model).toBe('proxy/model-b');
   expect(launch.prompt).toBe('Check session health');
   expect(launch.requestId).toMatch(/^[0-9a-f-]{36}$/);
-  await helper.getByLabel('Instruction', { exact: true }).fill('Keep my helper draft');
+  await helper.getByLabel('Message', { exact: true }).fill('Keep my helper draft');
   await page.screenshot({ path: '/tmp/relay-helper-web-chat.png' });
   await page.keyboard.press('Escape');
   await expect(helper).not.toBeVisible();
@@ -3378,9 +3349,7 @@ test('right-side helper chooses a proxy model and preserves the current session 
   );
   expect(new URL(page.url()).searchParams.get('session')).toBe(mainId);
   await page.getByRole('button', { name: 'Open Relay helper' }).click();
-  await expect(helper.getByLabel('Instruction', { exact: true })).toHaveText(
-    'Keep my helper draft',
-  );
+  await expect(helper.getByLabel('Message', { exact: true })).toHaveValue('Keep my helper draft');
   await page.goBack();
   await expect(helper).not.toBeVisible();
   for (const theme of ['light', 'dark']) {

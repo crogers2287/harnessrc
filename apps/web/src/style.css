@@ -3845,3 +3845,37 @@ body,
   flex-direction: column;
   gap: 6px;
 }
+
+.helper-private-messages {
+  flex: 1;
+  overflow: auto;
+  padding: 16px;
+  min-height: 0;
+}
+.helper-private-message {
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  border-radius: 16px;
+  background: var(--surface);
+  overflow-wrap: anywhere;
+}
+.helper-private-message.user {
+  border: 1px solid var(--border);
+  margin-left: 24px;
+}
+.helper-private-message p {
+  white-space: pre-wrap;
+}
+.helper-private-composer {
+  padding: 12px 16px;
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+}
+.helper-private-composer textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+.helper-private-composer small {
+  overflow-wrap: anywhere;
+}

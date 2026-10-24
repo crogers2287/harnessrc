@@ -1,3 +1,7 @@
+import { Client as McpClient } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { createRelayMcp } from '../../mcp/src/server.ts';
+import { RelayClient } from '../../mcp/src/client.ts';
 import { dshTerminalOutput } from './dsh-terminal.ts';
 import { taskInputSchema } from '@harnessrc/protocol';
 import { SessionCommands } from './commands.ts';
@@ -26,7 +30,7 @@ import { z, ZodError } from 'zod';
 import { MAX_ATTACHMENT_BYTES } from '../../../packages/storage/src/attachments.ts';
 import { Store } from '@harnessrc/storage';
 import type { SessionView } from '@harnessrc/protocol';
-import { Auth, type Device } from './auth.ts';
+import { Auth, hash, type Device } from './auth.ts';
 import { Runtime } from './runtime.ts';
 import { startHookServer } from './hook-server.ts';
 import { TailnetAuth, type TailnetNode } from './tailnet.ts';
@@ -59,10 +63,10 @@ export async function createGateway(
     runtime.zcodeHosts,
   );
   launcher.recover();
-  const helper = new HelperConversations(store, launcher);
+  const helper = new HelperConversations(store, config.helperConnections);
   const attention = new HelperAttention(
     store,
-    config.helperAttention.enabled && config.launchProfiles.some((p) => p.helper),
+    config.helperAttention.enabled && config.helperConnections.length > 0,
     config.helperAttention.waitingMinutes,
   );
   const commands = new SessionCommands(runtime);
@@ -219,7 +223,7 @@ export async function createGateway(
     },
   );
   // One query per table per call: this runs for every session on every socket push.
-  const sessionViews = (device: Device): SessionView[] => {
+  const sessionViews = (device: Device, includeLegacy = false): SessionView[] => {
     const now = Date.now();
     const blocked = new Set<string>();
     const pending = new Map<string, number>();
@@ -247,9 +251,10 @@ export async function createGateway(
         .all()
         .map((r) => [r.session_id as string, r]),
     );
+    const legacyHelpers = helper.legacySessionIds();
     return store
       .sessions()
-      .filter((s) => auth.allowed(device, s.id))
+      .filter((s) => auth.allowed(device, s.id) && (includeLegacy || !legacyHelpers.has(s.id)))
       .map((s) => {
         const preference = preferences.get(s.id);
         const canManage = auth.allowed(device, s.id, true);
@@ -341,6 +346,51 @@ export async function createGateway(
     launchAdmin(req);
     return { profiles: await launcher.catalog() };
   });
+  const helperTools = (req: FastifyRequest) => async () => {
+    // Private, short-lived access token retains the initiating device's exact
+    // authorization. Never give credentials to the model or persist plaintext.
+    const tokens = auth.issue(req.device.id);
+    const client = new RelayClient(config.origin, {
+      fetch: async (url, init) => {
+        const result = await app.inject({
+          url: new URL(url).pathname + new URL(url).search,
+          method: (init.method ?? 'GET') as 'GET' | 'POST' | 'PATCH' | 'DELETE',
+          headers: {
+            ...(init.headers as Record<string, string>),
+            cookie: `rc_access=${tokens.access}`,
+          },
+          payload: init.body as string | undefined,
+        });
+        return new Response(result.body, { status: result.statusCode });
+      },
+    });
+    const server = createRelayMcp(client);
+    const mcp = new McpClient({ name: 'relay-app-helper', version: '1.0.0' });
+    const [a, b] = InMemoryTransport.createLinkedPair();
+    const cleanup = () => {
+      store.db
+        .prepare('DELETE FROM tokens WHERE hash=? OR hash=?')
+        .run(hash(tokens.access), hash(tokens.refresh));
+    };
+    try {
+      await server.connect(a);
+      await mcp.connect(b);
+    } catch (e) {
+      cleanup();
+      throw e;
+    }
+    const list = (await mcp.listTools()).tools.filter((t) => t.name !== 'relay_upload');
+    return {
+      list,
+      call: (name: string, args: Record<string, unknown>) =>
+        mcp.callTool({ name, arguments: args }),
+      close: async () => {
+        cleanup();
+        await mcp.close();
+        await server.close();
+      },
+    };
+  };
   app.get('/api/helper', async (req) => {
     launchAdmin(req);
     return { ...(await helper.view(req.device.id)), attention: attention.view() };
@@ -368,11 +418,18 @@ export async function createGateway(
     { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } },
     async (req) => {
       launchAdmin(req);
-      const receipt = await helper.start(req.body, req.device.id);
-      void runtime.refresh(receipt.hostId);
+      const receipt = await helper.start(req.body, req.device.id, helperTools(req));
       return receipt;
     },
   );
+  app.post('/api/helper/messages', async (req) => {
+    launchAdmin(req);
+    return helper.message(req.body, req.device.id, helperTools(req));
+  });
+  app.post('/api/helper/stop', async (req) => {
+    launchAdmin(req);
+    return helper.stop(req.device.id);
+  });
   app.get('/api/launch/folders', async (req) => {
     launchAdmin(req);
     const { profileId, path: folder } = z
@@ -487,13 +544,13 @@ export async function createGateway(
       store.audit(req.device.id, 'session.preferences', id, patch);
     });
     store.emit('change', id);
-    return { session: sessionViews(req.device).find((s) => s.id === id) };
+    return { session: sessionViews(req.device, true).find((s) => s.id === id) };
   });
   app.get('/api/sessions/:id', async (req) => {
     const { id } = req.params as { id: string };
     check(req, id);
     return {
-      session: sessionViews(req.device).find((s) => s.id === id),
+      session: sessionViews(req.device, true).find((s) => s.id === id),
       terminalOutput: await (async () => {
         const session = store.session(id);
         const socket = runtime.dshHosts.get(session.hostId)?.config.terminalSocket;
@@ -984,6 +1041,7 @@ export async function createGateway(
       ? undefined
       : await startHookServer(runtime, path.join(config.dataDir, 'hooks.sock'));
   app.addHook('onClose', async () => {
+    await helper.close();
     clearInterval(attentionTimer);
     await runtime.stop();
     if (hookServer) await new Promise<void>((resolve) => hookServer.close(() => resolve()));

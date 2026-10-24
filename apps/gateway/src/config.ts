@@ -1,3 +1,4 @@
+import { helperConnectionSchema } from './helper.ts';
 import { voiceConfigSchema } from './voice.ts';
 import { dshHostSchema } from './dsh-host.ts';
 import { zcodeHostSchema } from './zcode-host.ts';
@@ -8,6 +9,7 @@ import path from 'node:path';
 import { readFileSync } from 'node:fs';
 const home = homedir();
 export const configSchema = z.object({
+  helperConnections: z.array(helperConnectionSchema).default([]),
   helperAttention: z
     .object({
       enabled: z.boolean().default(true),

@@ -38,6 +38,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.*
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
@@ -123,7 +124,9 @@ private fun RelayAppContent(vm: RelayModel, shared: Intent?, nativeKeyboardVisib
             if (drawer.targetValue == DrawerValue.Closed) drawer.open() else drawer.close()
         }
     }
+    Box(Modifier.fillMaxSize()) {
     ModalNavigationDrawer(
+        modifier = if(helperOpen) Modifier.clearAndSetSemantics { } else Modifier,
         drawerState = drawer,
         drawerContent = {
             ModalDrawerSheet(modifier = Modifier.widthIn(max = 340.dp).fillMaxHeight()) {
@@ -438,6 +441,7 @@ private fun RelayAppContent(vm: RelayModel, shared: Intent?, nativeKeyboardVisib
         }
     }
     if (helperOpen) HelperDrawer(vm, openSession = { id -> vm.choose(id); helperOpen = false; screen = "questions" }) { helperOpen = false }
+    }
     if (vm.preparingDownload) AlertDialog(onDismissRequest = vm::cancelDownloadPreparation, title = { Text("Preparing download") }, text = { LinearProgressIndicator(Modifier.fillMaxWidth()) }, confirmButton = {}, dismissButton = { TextButton(onClick = vm::cancelDownloadPreparation) { Text("Cancel") } })
     rowActions?.let { s -> SessionActions(vm, vm.sessions.find { it.id == s.id } ?: s) { rowActions = null } }
     if (confirmShare && shared != null)

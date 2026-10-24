@@ -17,6 +17,7 @@ export async function fixture(
     harness?: string;
     voice?: Config['voice'];
     startRuntime?: boolean;
+    helperConnections?: Config['helperConnections'];
     tailnetLookup?: (ip: string) => Promise<{ id: string; name: string }>;
   } = {},
 ) {
@@ -27,6 +28,7 @@ export async function fixture(
   const config = configSchema.parse({
     dataDir: dir,
     voice: options.voice,
+    helperConnections: options.helperConnections,
     tailnet: options.tailnetLookup
       ? { endpoint: 'https://private.example.test', port: 49001 }
       : undefined,

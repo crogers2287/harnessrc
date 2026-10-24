@@ -2,145 +2,137 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { Store } from '@harnessrc/storage';
-import { HerdrClient } from '@harnessrc/herdr';
-import { Launcher, launchProfileSchema } from '../../../apps/gateway/src/launch.ts';
-import { HelperConversations, HELPER_INSTRUCTIONS } from '../../../apps/gateway/src/helper.ts';
-
-function setup() {
-  const store = new Store(':memory:');
-  const client = new HerdrClient('portable-host', '/unused');
-  client.host.connected = true;
-  const calls: { method: string; params: any }[] = [];
-  let name = '';
-  client.request = async (method, params: any) => {
-    calls.push({ method, params });
-    if (method === 'agent.start') name = params.name;
-    if (method === 'agent.get')
-      return {
-        agent: { terminal_id: 'helper-terminal', agent: 'codex', name, interactive_ready: true },
-      };
-    return { root_pane: { pane_id: 'w1:p4', terminal_id: 'helper-terminal' } };
-  };
-  const profile = launchProfileSchema.parse({
-    id: 'my-proxy',
-    hostId: 'portable-host',
-    label: 'My proxy',
-    harness: 'codex',
-    provider: 'Custom CFR connection',
-    helper: true,
-    modelsEndpoint: 'https://proxy.invalid/v1/models',
-    models: [{ id: 'chosen-model', name: 'Chosen model' }],
-    workspaceId: 'w1',
-    roots: ['/tmp'],
-  });
-  const launcher = new Launcher(
-    store,
-    [
-      profile,
-      { ...profile, id: 'ordinary', helper: false },
-      { ...profile, id: 'no-proxy', modelsEndpoint: undefined },
-    ],
-    new Map([['portable-host', client]]),
-  );
-  launcher.models = async (p) => {
-    if (!p.helper) throw new Error('Unrelated profile catalog is unavailable');
-    return p.models;
-  };
-  return { store, launcher, calls, helper: new HelperConversations(store, launcher) };
+import { HelperConversations, helperConnectionSchema } from '../../../apps/gateway/src/helper.ts';
+const connection = helperConnectionSchema.parse({
+  id: 'my-proxy',
+  label: 'My proxy',
+  baseUrl: 'https://proxy.invalid/v1',
+  models: [{ id: 'chosen-model', name: 'Chosen model' }],
+});
+const input = () => ({
+  requestId: randomUUID(),
+  profileId: connection.id,
+  model: 'chosen-model',
+  prompt: 'List my sessions',
+});
+async function settle(helper: HelperConversations, device = 'phone') {
+  for (let i = 0; i < 100; i++) {
+    const view = await helper.view(device);
+    if (view.current?.status !== 'running') return view;
+    await new Promise((resolve) => setTimeout(resolve, 2));
+  }
+  throw new Error('Helper did not settle');
 }
-
-test('helper uses configured proxy model, native owner, separate role, and durable request receipts', async () => {
-  const f = setup();
+test('app helper has private history, exact idempotency and no ordinary session or harness launch', async () => {
+  const store = new Store(':memory:');
+  const calls: any[] = [];
+  let toolCalls = 0;
+  const fetcher = async (url: string, init?: RequestInit) => {
+    if (String(url).endsWith('/models')) return Response.json({ data: [{ id: 'chosen-model' }] });
+    const body = JSON.parse(init!.body as string);
+    calls.push(body);
+    return Response.json({
+      choices: [
+        {
+          message:
+            calls.length === 1
+              ? {
+                  role: 'assistant',
+                  content: null,
+                  tool_calls: [
+                    {
+                      id: 'tool1',
+                      type: 'function',
+                      function: { name: 'relay_sessions', arguments: '{}' },
+                    },
+                  ],
+                }
+              : { role: 'assistant', content: 'One session is ready.' },
+        },
+      ],
+      usage: { prompt_tokens: 12, completion_tokens: 3, total_tokens: 15 },
+    });
+  };
+  const helper = new HelperConversations(store, [connection], fetcher);
+  const tools = async () => ({
+    list: [{ name: 'relay_sessions', inputSchema: { type: 'object' } }],
+    call: async () => {
+      toolCalls++;
+      return { sessions: [] };
+    },
+    close: async () => {},
+  });
   try {
-    assert.deepEqual(
-      (await f.helper.view('phone')).profiles.map((p) => p.id),
-      ['my-proxy'],
-    );
-    const input = {
-      requestId: randomUUID(),
-      profileId: 'my-proxy',
-      model: 'chosen-model',
-      prompt: 'List my sessions',
-    };
+    const body = input();
     const [first, replay] = await Promise.all([
-      f.helper.start(input, 'phone'),
-      f.helper.start(input, 'phone'),
+      helper.start(body, 'phone', tools),
+      helper.start(body, 'phone', tools),
     ]);
-    assert.equal(first.status, 'started');
-    assert.equal(replay.requestId, input.requestId);
-    assert.equal(f.calls.filter((c) => c.method === 'agent.start').length, 1);
-    const args = f.calls.find((c) => c.method === 'agent.start')!.params.args;
-    assert.deepEqual(args, [
-      '-c',
-      `developer_instructions=${JSON.stringify(HELPER_INSTRUCTIONS)}`,
-      '--model',
-      'chosen-model',
-    ]);
-    assert.equal((await f.helper.view('phone')).current?.model, 'chosen-model');
-    assert.equal((await f.helper.view('other-device')).current, null);
-    const reopened = new HelperConversations(f.store, f.launcher);
-    await reopened.start(input, 'phone');
-    assert.equal(f.calls.filter((c) => c.method === 'agent.start').length, 1);
+    assert.equal(first.conversationId, replay.conversationId);
+    let view = await settle(helper);
+    assert.equal(view.current?.messages.length, 2);
+    assert.equal(view.current?.status, 'idle');
+    assert.equal(view.current?.usage?.total, 30);
+    assert.equal(toolCalls, 1);
+    assert.equal(calls[1].messages.at(-1).role, 'tool');
+    assert.equal(calls[0].model, 'chosen-model');
+    assert.equal(store.sessions().length, 0);
+    assert.equal((await helper.view('other-device')).current, null);
     await assert.rejects(
-      () => f.helper.start({ ...input, model: 'missing' }, 'phone'),
-      /available proxy model/,
-    );
-    await assert.rejects(
-      () => f.helper.start({ ...input, prompt: 'Changed' }, 'phone'),
+      () => helper.start({ ...body, prompt: 'changed' }, 'phone', tools),
       /different settings/,
     );
+    await assert.rejects(() => helper.start(body, 'other-device', tools), /different settings/);
+    const follow = {
+      requestId: randomUUID(),
+      conversationId: first.conversationId,
+      prompt: 'Thank you',
+    };
+    await helper.message(follow, 'phone', tools);
+    await helper.message(follow, 'phone', tools);
+    view = await settle(helper);
+    assert.equal(view.current?.messages.length, 4);
+    assert.equal(calls.length, 3);
+    const reopened = new HelperConversations(store, [connection], fetcher);
+    assert.equal((await reopened.view('phone')).current?.id, first.conversationId);
+    await reopened.start(body, 'phone', tools);
+    assert.equal(calls.length, 3);
     await assert.rejects(
-      () => f.helper.start({ ...input, requestId: randomUUID() }, 'phone'),
-      /already exists/,
-    );
-    await assert.rejects(
-      () => f.helper.start({ ...input, profileId: 'ordinary' }, 'phone'),
-      /enabled helper/,
-    );
-    await assert.rejects(
-      () => f.helper.start({ ...input, profileId: 'no-proxy' }, 'phone'),
-      /enabled helper/,
+      () => helper.start({ ...input(), model: 'missing' }, 'phone', tools),
+      /available proxy model/,
     );
   } finally {
-    f.store.close();
+    helper.close();
+    store.close();
   }
 });
-
-test('helper restores previous binding on definite prelaunch failure and retains uncertain native launches', async () => {
-  const f = setup();
-  try {
-    const input = {
-      requestId: randomUUID(),
-      profileId: 'my-proxy',
-      model: 'chosen-model',
-      prompt: 'Inspect health',
-    };
-    await f.helper.start(input, 'phone');
-    const original = f.launcher.launch.bind(f.launcher);
-    f.launcher.launch = async () => {
-      throw new Error('Host disconnected');
-    };
-    await assert.rejects(
-      () => f.helper.start({ ...input, requestId: randomUUID(), replace: true }, 'phone'),
-      /Host disconnected/,
+test('helper stop aborts only its own request and restart never repeats tool mutations', async () => {
+  const store = new Store(':memory:');
+  const fetcher = async (url: string, init?: RequestInit) => {
+    if (String(url).endsWith('/models')) return Response.json({ data: [{ id: 'chosen-model' }] });
+    return new Promise<Response>((_resolve, reject) =>
+      init!.signal!.addEventListener('abort', () => reject(new Error('aborted')), { once: true }),
     );
-    assert.equal((await f.helper.view('phone')).current?.requestId, input.requestId);
-    f.launcher.launch = original;
-    const requestId = randomUUID();
-    const receipt = {
-      requestId,
-      status: 'uncertain',
-      hostId: 'portable-host',
-      diagnostic: 'Check native owner',
-    };
-    f.store.db
-      .prepare('INSERT INTO launches VALUES(?,?,?,?)')
-      .run(requestId, '{}', JSON.stringify(receipt), new Date().toISOString());
-    f.launcher.launch = async () => receipt as any;
-    await f.helper.start({ ...input, requestId, replace: true }, 'phone');
-    assert.equal((await f.helper.view('phone')).current?.receipt.status, 'uncertain');
+  };
+  const helper = new HelperConversations(store, [connection], fetcher);
+  const tools = async () => ({ list: [], call: async () => null, close: async () => {} });
+  try {
+    await helper.start(input(), 'phone', tools);
+    await new Promise((r) => setTimeout(r, 5));
+    helper.stop('other');
+    assert.equal((await helper.view('phone')).current?.status, 'running');
+    helper.stop('phone');
+    assert.equal((await settle(helper)).current?.status, 'stopped');
+    assert.equal(store.sessions().length, 0);
+    const row = store.db.prepare('SELECT body FROM helper_chats').get()!;
+    const chat = JSON.parse(row.body as string);
+    chat.status = 'running';
+    store.db.prepare('UPDATE helper_chats SET body=?').run(JSON.stringify(chat));
+    const restarted = new HelperConversations(store, [connection], fetcher);
+    assert.equal((await restarted.view('phone')).current?.status, 'stopped');
   } finally {
-    f.store.close();
+    helper.close();
+    store.close();
   }
 });
 
@@ -236,6 +228,199 @@ test('helper notification API checks generation, auth, idempotency and publishes
       await app.inject({ url: '/api/notifications?after=0', headers: f.headers })
     ).json();
     assert.ok(feed.items.some((i: any) => i.kind === 'helper' && i.body === payload.body));
+  } finally {
+    await f.close();
+  }
+});
+
+test('private helper tools use the initiating device authorization through Relay API and leave session list unchanged', async () => {
+  const { createServer } = await import('node:http');
+  const { fixture, eventually } = await import('./helpers.ts');
+  let proxyCalls = 0;
+  let observedToolResult = '';
+  const proxy = createServer(async (req, res) => {
+    if (req.url === '/v1/models') {
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ data: [{ id: 'chosen-model' }] }));
+      return;
+    }
+    const chunks = [];
+    for await (const c of req) chunks.push(c);
+    const body = JSON.parse(Buffer.concat(chunks).toString());
+    proxyCalls++;
+    assert.ok(body.tools.some((t: any) => t.function.name === 'relay_sessions'));
+    const message =
+      proxyCalls === 1
+        ? {
+            role: 'assistant',
+            content: null,
+            tool_calls: [
+              {
+                id: 'list1',
+                type: 'function',
+                function: { name: 'relay_sessions', arguments: '{}' },
+              },
+            ],
+          }
+        : { role: 'assistant', content: 'Sessions inspected.' };
+    if (proxyCalls === 2) observedToolResult = body.messages.at(-1).content;
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify({ choices: [{ message }] }));
+  });
+  await new Promise<void>((r) => proxy.listen(0, '127.0.0.1', r));
+  const address = proxy.address() as { port: number };
+  const f = await fixture({
+    startRuntime: false,
+    helperConnections: [{ ...connection, baseUrl: `http://127.0.0.1:${address.port}/v1` }],
+  });
+  try {
+    const initial = (await f.gateway.app.inject({ url: '/api/sessions', headers: f.headers }))
+      .json()
+      .sessions.map((s: any) => s.id);
+    const body = input();
+    assert.equal(
+      (
+        await f.gateway.app.inject({
+          url: '/api/helper',
+          method: 'POST',
+          headers: f.headers,
+          payload: body,
+        })
+      ).statusCode,
+      200,
+    );
+    await eventually(
+      async () =>
+        (await f.gateway.app.inject({ url: '/api/helper', headers: f.headers })).json().current
+          ?.status === 'idle',
+    );
+    assert.equal(proxyCalls, 2);
+    assert.ok(JSON.parse(observedToolResult).content[0].text.includes(f.session.id));
+    assert.deepEqual(
+      (await f.gateway.app.inject({ url: '/api/sessions', headers: f.headers }))
+        .json()
+        .sessions.map((s: any) => s.id),
+      initial,
+    );
+    assert.equal(
+      (await f.gateway.app.inject({ url: '/api/helper', headers: f.headers }))
+        .json()
+        .current.messages.at(-1).content,
+      'Sessions inspected.',
+    );
+    assert.equal(
+      Number(f.gateway.store.db.prepare('SELECT count(*) AS n FROM tokens').get()!.n),
+      2,
+      'temporary tool tokens are deleted',
+    );
+    await f.gateway.app.inject({
+      url: '/api/helper',
+      method: 'POST',
+      headers: f.headers,
+      payload: body,
+    });
+    assert.equal(proxyCalls, 2);
+  } finally {
+    await f.close();
+    await new Promise<void>((resolve, reject) => proxy.close((e) => (e ? reject(e) : resolve())));
+  }
+});
+test('helper proxy handles streamed text and fragmented tool arguments and detects disconnection', async () => {
+  const { helperCompletion } = await import('../../../apps/gateway/src/helper-proxy.ts');
+  const frames = [
+    { choices: [{ delta: { role: 'assistant', content: 'Hello ' } }] },
+    {
+      choices: [
+        {
+          delta: {
+            content: 'there',
+            tool_calls: [
+              { index: 0, id: 'call1', function: { name: 'relay_sessions', arguments: '{' } },
+            ],
+          },
+        },
+      ],
+    },
+    {
+      choices: [
+        {
+          delta: { tool_calls: [{ index: 0, function: { arguments: '}' } }] },
+          finish_reason: 'tool_calls',
+        },
+      ],
+      usage: { total_tokens: 20 },
+    },
+  ];
+  const wire =
+    frames.map((f) => 'data: ' + JSON.stringify(f) + '\n\n').join('') + 'data: [DONE]\n\n';
+  const chunks: string[] = [];
+  const response = new Response(
+    new ReadableStream({
+      start(c) {
+        for (let i = 0; i < wire.length; i += 17)
+          c.enqueue(new TextEncoder().encode(wire.slice(i, i + 17)));
+        c.close();
+      },
+    }),
+    { headers: { 'content-type': 'text/event-stream' } },
+  );
+  const result = await helperCompletion(response, (t) => chunks.push(t));
+  assert.equal(result.choices[0].message.content, 'Hello there');
+  assert.equal(result.choices[0].message.tool_calls[0].function.arguments, '{}');
+  assert.equal(result.usage.total_tokens, 20);
+  assert.deepEqual(chunks, ['Hello ', 'Hello there']);
+  await assert.rejects(
+    () =>
+      helperCompletion(
+        new Response('data: ' + JSON.stringify(frames[0]) + '\n\n', {
+          headers: { 'content-type': 'text/event-stream' },
+        }),
+        () => {},
+      ),
+    /disconnected/,
+  );
+});
+
+test('legacy migration hides only the exact app-created helper and preserves its session and transcript', async () => {
+  const { fixture } = await import('./helpers.ts');
+  const f = await fixture({ startRuntime: false });
+  try {
+    const { store, app } = f.gateway;
+    const requestId = randomUUID();
+    store.db.exec(
+      'CREATE TABLE helper_bindings(device_id TEXT PRIMARY KEY,request_id TEXT UNIQUE NOT NULL,body TEXT NOT NULL)',
+    );
+    store.db
+      .prepare('INSERT INTO helper_bindings VALUES(?,?,?)')
+      .run('legacy-device', requestId, '{}');
+    store.db.prepare('INSERT INTO launches VALUES(?,?,?,?)').run(
+      requestId,
+      '{}',
+      JSON.stringify({
+        requestId,
+        status: 'started',
+        hostId: f.session.hostId,
+        nativeSessionId: f.session.nativeSessionId,
+      }),
+      new Date().toISOString(),
+    );
+    store.saveSession({ ...f.session, ownership: 'herdr-cli' });
+    const helper = new HelperConversations(store, []);
+    assert.ok(helper.legacySessionIds().has(f.session.id));
+    const list = (await app.inject({ url: '/api/sessions', headers: f.headers })).json().sessions;
+    assert.ok(!list.some((s: any) => s.id === f.session.id));
+    assert.ok(store.session(f.session.id));
+    assert.equal(
+      (await app.inject({ url: `/api/sessions/${f.session.id}`, headers: f.headers })).statusCode,
+      200,
+    );
+    store.db
+      .prepare('UPDATE launches SET receipt=? WHERE id=?')
+      .run(
+        JSON.stringify({ hostId: 'different-host', nativeSessionId: f.session.nativeSessionId }),
+        requestId,
+      );
+    assert.equal(helper.legacySessionIds().size, 0);
   } finally {
     await f.close();
   }

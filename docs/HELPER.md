@@ -1,41 +1,66 @@
 # Relay helper
 
 Open **Helper** in the session drawer or chat header, or swipe inward from the
-right edge. Choose a configured proxy connection and model, then send an initial
-instruction. This is a regular Herdr-owned native conversation with its own draft,
-queue, history and receipts. Closing it preserves the session you were viewing.
-**New conversation** leaves the previous helper available in Sessions.
+right edge. Choose a proxy connection and model and send an instruction.
+The helper is an independent agent owned by Relay's gateway. It calls the proxy
+chat API directly, with the existing Relay function tools. It has no Codex/DSH/OMP
+CLI process, Herdr pane, ordinary session entry, terminal or general shell access.
+Its private conversation and drafts remain separate from the session you viewed.
 
 ## Portable configuration
 
-Add `"helper": true` to a trusted Claude Code or Codex launch profile that already
-uses your CFR/VCFR proxy and has `modelsEndpoint` configured. Relay uses that
-profile's host, allowed roots, native harness, proxy environment and model catalog.
-No Fred address, FlashNext model, account or existing session is built in.
-Catalog credentials remain server-side. See [provider configuration](PROVIDER_SWAP.md).
+Configure `helperConnections` in the gateway JSON, for example:
 
-The native harness on that host must have Relay MCP installed and authorized:
-follow [agent installation](AGENT_INSTALL.md). Read-only access can inspect;
-mutations and helper notices require a permitted writable connection. Restrict
-the MCP connection to the hosts/sessions it should manage. Herdr should launch
-the helper in a managed pane. Native provider authentication stays on the host.
+```json
+{
+  "helperConnections": [{
+    "id": "my-proxy",
+    "label": "My proxy",
+    "baseUrl": "http://127.0.0.1:8420/v1",
+    "defaultModel": "your-model-id",
+    "models": [{"id": "your-model-id", "name": "My model"}],
+    "apiKeyEnv": "MY_PROXY_API_KEY"
+  }]
+}
+```
 
-The detailed [operating prompt](HELPER_PROMPT.md), prepared with prompt-master, is
-delivered as native developer/system instructions separately from the first user
-message. It covers identities, capabilities, receipts, Herdr discovery, pending
-interactions, cleanup, recovery, notifications and uncertainty. This agent has
-real system access through its coding harness: review its authorized scope,
-forbidden actions and stop conditions before enabling another installation.
+`baseUrl` is an OpenAI-compatible proxy API root. Models are discovered from its
+`/models` endpoint, with the configured catalog as fallback. Omit `apiKeyEnv`
+when the proxy does not require credentials; otherwise set that environment
+variable on the gateway. Use HTTPS for nonlocal proxies. No host, account, or
+model is built into either client. Only server administrators configure endpoints.
+The old launch-profile `helper` flag no longer creates or configures this agent.
+
+The detailed [operating prompt](HELPER_PROMPT.md), prepared with prompt-master,
+is installed as system instructions. It documents Relay and Herdr identities,
+capabilities, pending interactions, receipts, cleanup, monitoring and uncertainty.
+Its complete tool inventory comes from the same MCP implementation used by
+external agents, restricted to authenticated Relay operations. Local-file upload
+is excluded because this agent has no filesystem tools. A short-lived internal
+credential retains the initiating administrator device's authority, is checked on
+every API action, and is deleted when the turn ends. Revocation still applies.
 
 > This prompt is for an agentic tool with real system access. Review the scope locks, forbidden actions, and stop conditions before pasting. Confirm file paths, directories, and permissions match the actual project.
 
-Each authorized device has one current helper binding. Clients save the exact
-launch UUID before mutation and retain it for uncertain-delivery recovery. They
-never automatically repeat a launch. Another device can choose its own helper.
+Conversations live in dedicated `helper_chats` storage, never the session table.
+One current conversation is bound to each authorized device. New chat preserves
+the previous database history. Initial messages and follow-up messages use durable
+UUID receipts; replay never starts another turn. Replies stream through the proxy
+and both drawers refresh the private state each second while open. Stop cancels
+the helper model request; completed session-management actions remain applied.
+A gateway restart stops unfinished helper turns without replaying tool actions.
+Each turn is limited to 20 model steps and bounded response/history sizes.
+
+Legacy helpers created by Android 0.1.34/0.1.35 are excluded from the ordinary
+session feed only when their saved helper binding and launch receipt prove the
+exact native identity. Their process and original transcript are preserved; the
+new agent does not resume that coding session. Private archived helper chats are
+currently retained in the database; only the current private chat is exposed by
+the drawer.
 
 ## Attention and notifications
 
-When a helper profile is enabled, the gateway checks every 30 seconds for pending
+When a helper connection is configured, the gateway checks every 30 seconds for pending
 native questions/approvals and emits one reminder per interaction after five
 minutes. Set `"helperAttention": { "enabled": true, "waitingMinutes": 5 }` in the
 gateway JSON configuration to customize this. Disabled monitoring, disconnected,

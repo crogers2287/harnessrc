@@ -427,3 +427,42 @@ landscape 768 and desktop 1440 pixels were inspected; accessibility checks pass.
 Native keyboard-open/closed composer screenshots were inspected. One preexisting
 steering assertion expected Steer on an empty active draft; it now correctly
 expects Stop, then Steer after typing, and passes.
+
+### Independent app helper — Android 0.1.36
+
+This supersedes the 0.1.34/0.1.35 helper harness design. Both drawers now use a
+private, gateway-owned agent loop that calls the configured proxy directly.
+It creates no CLI session, Herdr pane or ordinary Relay session. Private chat
+history, UUID receipts, drafts, cancellation and token usage live separately.
+The selected proxy/model remains installation configuration; the existing chosen
+model is preserved during this installation's migration. The installed detailed
+prompt now describes the app agent's real tool boundary and Herdr semantics.
+
+Tools share Relay's MCP implementation and authenticated API. The initiating
+device's authority is checked for every action; temporary credentials are kept
+out of model context and removed after each turn. The gateway retains attention
+monitoring and the existing notification channels independently of model turns.
+Legacy helper sessions are omitted from the normal feed by exact saved launch
+identity. Their process and transcript are preserved, and direct history access
+remains available. New helpers do not reuse those native coding conversations.
+
+Validation: all 213 backend tests, TypeScript, lint and web build pass. The real
+configured proxy completed a private turn with the complete Relay tool catalog
+and a session-inspection call, with no change to the ordinary session list.
+Four browser flows pass, including mobile approval/Queue/reconnect, background
+activity presentation, helper model selection and separate drafts, and composer
+usage/model/thinking/permission controls. Helper layouts were inspected in light
+and dark at 320/375/430/768/1440 pixels and passed accessibility checks. All 33
+native checks are covered: 32 passed together, and the project-creation check
+passed on an isolated retry after a timeout. Native unit tests and lint pass.
+Checks cover model selection, private follow-up Send/Stop, retained main draft,
+Back, and keyboard-open/closed footer visibility on a disposable emulator. The
+native drawer uses the existing Activity window and hides the underlying session
+from accessibility while open, preserving system and keyboard insets.
+
+The helper drawer currently accepts text; ordinary-session image insertion and
+recording remain in the existing native composer. Private older helper chats are
+retained in the database; the drawer exposes the current chat. Android's physical
+edge gestures and OS notification restrictions still require a phone check.
+Closed-browser Web Push remains unimplemented; connected-browser notifications
+and Android's enabled background connection service retain their existing limits.
