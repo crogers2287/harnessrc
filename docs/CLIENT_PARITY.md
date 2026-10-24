@@ -1,5 +1,21 @@
 # Web and Android feature parity
 
+### Stopped Codex status recovery, 2026-10-24
+
+Verified Codex sessions now read their current turn status from the native daemon
+instead of relying on terminal activity detection. A terminal can continue reporting
+working after Escape even when its native turn is interrupted. The shared session
+feed now returns idle in that case, so both clients remove Stop and the working
+indicator. A later native turn restores working; pending terminal questions retain
+blocked state. An unavailable status read never implies that a turn stopped.
+Codex's structured `turn_aborted` transcript event also closes retained tool activity.
+
+The TV-stuff native daemon confirmed the user's first Stop interrupted the turn
+while Herdr's activity detector stayed working. Validation adds native-status and
+interruption-ingestion regressions; all 201 backend tests, typecheck, lint and web
+build pass. This is a gateway update; installed Android 0.1.33 uses the corrected
+shared status feed without another APK.
+
 ### Enter, Escape and contextual Stop, 2026-10-24
 
 Web and Android 0.1.33 use Enter to send and Ctrl+Enter/Shift+Enter for a newline.

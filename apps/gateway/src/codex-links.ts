@@ -248,15 +248,34 @@ export class CodexLinks {
       if (discoveryDue) this.nextDiscovery = Date.now() + 10000;
       const after = (await client.snapshot()).agents;
       const links = new Map(this.links().map((link) => [link.terminalId, link]));
-      return after.map((agent) => {
+      return Promise.all(after.map(async (agent) => {
         const link = links.get(agent.terminal_id);
-        return link &&
+        if (link &&
           (!link.threadId ||
             agent.agent_session?.value !== link.threadId ||
-            !titleMatches(agent, link.name))
-          ? { ...agent, agent_session: null }
-          : agent;
-      });
+            !titleMatches(agent, link.name)))
+          return { ...agent, agent_session: null };
+        if (!link?.threadId || agent.agent !== 'codex') return agent;
+        // Terminal activity detection can stay "working" after Escape. The
+        // proved native thread owns turn state; never infer completion from a key receipt.
+        try {
+          const result = await this.native.request('thread/turns/list', {
+            threadId: link.threadId,
+            limit: 1,
+            sortDirection: 'desc',
+            itemsView: 'notLoaded',
+          });
+          if (!Array.isArray(result.data)) return agent;
+          const status = result.data[0]?.status;
+          if (!result.data.length || ['completed', 'failed', 'interrupted'].includes(status))
+            return { ...agent, agent_status: 'idle' as const };
+          if (status === 'inProgress')
+            return { ...agent, agent_status: agent.agent_status === 'blocked' ? 'blocked' as const : 'working' as const };
+        } catch {
+          // A failed status read is not evidence that the turn stopped.
+        }
+        return agent;
+      }));
     });
   }
   async assertDelivery(client: HerdrClient, session: Session) {

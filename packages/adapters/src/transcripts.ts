@@ -167,6 +167,10 @@ export function normalizeCodex(record: any, index: number): SourceEvent[] {
   if (record.type === 'event_msg') {
     if (p.type === 'task_started')
       return [source(record, prefix, 'turn.started', { turnId: p.turn_id })];
+    if (p.type === 'turn_aborted')
+      return [source(record, prefix, 'turn.completed', {
+        turnId: p.turn_id, status: 'interrupted', text: 'Turn stopped',
+      })];
     // A turn the provider rejected still ends in task_complete, but carries the error.
     if (p.type === 'task_complete' && p.error)
       return [

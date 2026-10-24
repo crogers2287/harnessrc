@@ -112,6 +112,43 @@ function fixture() {
   };
 }
 
+test('verified native turn state replaces stale terminal activity after Escape and tracks later turns', async () => {
+  const f = fixture();
+  try {
+    const snapshot = f.client.snapshot;
+    let terminalStatus: Agent['agent_status'] = 'working';
+    f.client.snapshot = async () => ({ ...(await snapshot()), agents: [{ ...f.agent(), agent_status: terminalStatus }] });
+    const original = f.native.request;
+    let nativeStatus = 'interrupted';
+    let fail = false;
+    f.native.request = async (method, params) => {
+      if (method === 'thread/turns/list') {
+        assert.equal(params.threadId, 'thread-b');
+        assert.equal(params.limit, 1);
+        if (fail) throw new Error('Native state unavailable');
+        return { data: nativeStatus ? [{ id: 'turn', status: nativeStatus }] : [] } as any;
+      }
+      return original(method, params);
+    };
+    for (const native of ['interrupted', 'completed', 'failed', '']) {
+      nativeStatus = native;
+      const [agent] = await f.links.refresh(f.client, [f.agent()]);
+      assert.equal(agent.agent_session?.value, 'thread-b');
+      assert.equal(sessionFromAgent('test', agent, 'project').status, 'idle');
+    }
+    nativeStatus = 'inProgress';
+    terminalStatus = 'idle';
+    assert.equal((await f.links.refresh(f.client, []))[0].agent_status, 'working');
+    terminalStatus = 'blocked';
+    assert.equal((await f.links.refresh(f.client, []))[0].agent_status, 'blocked');
+    fail = true;
+    terminalStatus = 'working';
+    assert.equal((await f.links.refresh(f.client, []))[0].agent_status, 'working');
+  } finally {
+    f.store.close();
+  }
+});
+
 test('native nonce selects the correct same-name thread, restores names, and registers the existing terminal', async () => {
   const f = fixture();
   try {

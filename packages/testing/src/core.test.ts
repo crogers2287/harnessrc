@@ -133,6 +133,15 @@ test('Codex canonical rollout avoids duplicate event_msg conversation entries', 
     'assistant.delta',
   );
 });
+test('Codex interruption emits a terminal turn event instead of leaving tools active', () => {
+  const [event] = normalizeCodex({ type: 'event_msg', payload: {
+    type: 'turn_aborted', turn_id: 'stopped-turn', reason: 'interrupted',
+  } }, 4);
+  assert.equal(event.kind, 'turn.completed');
+  assert.equal(event.data.turnId, 'stopped-turn');
+  assert.equal(event.data.status, 'interrupted');
+  assert.equal(event.data.text, 'Turn stopped');
+});
 test('Codex provider rejection surfaces as a failed turn, not a silent completion', () => {
   const failed = normalizeCodex(
     {
