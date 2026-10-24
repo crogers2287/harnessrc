@@ -34,7 +34,7 @@ export class HelperConversations {
     return row ? helperRequestSchema.parse(JSON.parse(row.body as string)) : undefined;
   }
   async view(device: string) {
-    const profiles = (await this.launcher.catalog()).filter((p) => {
+    const profiles = (await this.launcher.catalog({ helper: true })).filter((p) => {
       const trusted = this.launcher.profile(p.id);
       return trusted.helper && !!trusted.modelsEndpoint && ['codex', 'claude'].includes(p.harness);
     });

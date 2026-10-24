@@ -225,10 +225,15 @@ export class Launcher {
       description: o.description ?? '',
     }));
   }
-  async catalog(filter?: { hostId: string; harness: string }) {
+  async catalog(filter?: { hostId?: string; harness?: string; helper?: boolean }) {
     return Promise.all(
       this.profiles
-        .filter((p) => !filter || (p.hostId === filter.hostId && p.harness === filter.harness))
+        .filter(
+          (p) =>
+            (!filter?.hostId || p.hostId === filter.hostId) &&
+            (!filter?.harness || p.harness === filter.harness) &&
+            (filter?.helper === undefined || p.helper === filter.helper),
+        )
         .map(async (p) => ({
           id: p.id,
           hostId: p.hostId,

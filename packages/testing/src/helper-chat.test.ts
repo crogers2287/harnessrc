@@ -42,7 +42,10 @@ function setup() {
     ],
     new Map([['portable-host', client]]),
   );
-  launcher.models = async (p) => p.models;
+  launcher.models = async (p) => {
+    if (!p.helper) throw new Error('Unrelated profile catalog is unavailable');
+    return p.models;
+  };
   return { store, launcher, calls, helper: new HelperConversations(store, launcher) };
 }
 
