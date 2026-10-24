@@ -1,4 +1,5 @@
 import type { DshQuestions } from './dsh-questions.ts';
+import { dshUsage } from './usage.ts';
 import { randomUUID } from 'node:crypto';
 import WebSocket from 'ws';
 import { z } from 'zod';
@@ -79,8 +80,19 @@ export function dshEvents(input: unknown): SourceEvent[] {
         data: { text: text(d), requestId: d.source?.rpcId, replacesEventSourceIds: replaced },
       },
     ];
-  if (e.type === 'assistant/message')
+  if (e.type === 'assistant/message') {
+    const usage = dshUsage(d.usage, base.sourceId);
     return [
+      ...(usage
+        ? [
+            {
+              ...base,
+              sourceId: `${base.sourceId}:usage`,
+              kind: 'progress' as const,
+              data: { usage, nativeMeta: true },
+            },
+          ]
+        : []),
       {
         ...base,
         kind: 'assistant.message',
@@ -92,6 +104,7 @@ export function dshEvents(input: unknown): SourceEvent[] {
         },
       },
     ];
+  }
   if (e.type === 'turn/start') return [{ ...base, kind: 'turn.started', data: {} }];
   if (e.type === 'turn/end')
     return [

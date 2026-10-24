@@ -248,6 +248,8 @@ test('session creation and host folder browsing require an administrator', async
     const headers = { ...f.headers, cookie: `rc_access=${tokens.access}` };
     for (const url of [
       '/api/launch/profiles',
+      '/api/helper',
+      '/api/helper/attention',
       '/api/launch/folders?profileId=fred',
       '/api/launch/' + randomUUID(),
     ]) {
@@ -259,6 +261,10 @@ test('session creation and host folder browsing require an administrator', async
       403,
     );
     assert.equal(f.gateway.store.db.prepare('SELECT COUNT(*) AS n FROM launches').get()!.n, 0);
+    assert.equal(
+      (await app.inject({ method: 'POST', url: '/api/helper', headers, payload: {} })).statusCode,
+      403,
+    );
   } finally {
     await f.close();
   }

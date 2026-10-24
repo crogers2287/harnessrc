@@ -14,7 +14,7 @@ import okhttp3.*
 import org.json.JSONArray
 import org.json.JSONObject
 
-class RelayModel(application: Application) : AndroidViewModel(application) {
+class RelayModel @JvmOverloads constructor(application: Application, private val selectionKey: String = "session") : AndroidViewModel(application) {
     private val prefs = application.getSharedPreferences("relay", 0)
     var colorMode by mutableStateOf(prefs.getString("colorMode", "system") ?: "system")
         private set
@@ -61,7 +61,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
     var sessions by mutableStateOf(listOf<Session>())
         private set
 
-    var selected by mutableStateOf(prefs.getString("session", "")!!)
+    var selected by mutableStateOf(prefs.getString(selectionKey, "")!!)
         private set
 
     var lastOpenedAt by mutableStateOf(readLastOpened())
@@ -164,7 +164,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
     fun start() {
         if (foreground || !configured) { if (!configured) loading = false; return }
         foreground = true
-        RelayNotifications.visibleSession = selected
+        if (selectionKey == "session") RelayNotifications.visibleSession = selected
         markOpened(selected)
         terminalPoll?.cancel()
         terminalPoll = viewModelScope.launch {
@@ -192,7 +192,7 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
         foreground = false
         terminalPoll?.cancel()
         conversationPoll?.cancel()
-        RelayNotifications.visibleSession = null
+        if (selectionKey == "session") RelayNotifications.visibleSession = null
         retry?.cancel()
         socket?.close(1000, "Background")
         socket = null
@@ -271,10 +271,10 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
     suspend fun refreshSessions() {
         try {
             sessions = api.api("/api/sessions").rows("sessions").map(::Session)
-            successorSession(sessions, selected)?.let(::choose)
+            if (selectionKey == "session") successorSession(sessions, selected)?.let(::choose)
             voiceEnabled = api.api("/api/voice").optBoolean("enabled")
             val previousSelection = selected
-            if (sessions.none { it.id == selected })
+            if (selectionKey == "session" && sessions.none { it.id == selected })
                 selected =
                     sessions
                         .firstOrNull { it.data.str("presence") != "saved" && it.status != "ended" }
@@ -297,9 +297,9 @@ class RelayModel(application: Application) : AndroidViewModel(application) {
         saveDraft()
         cancelVoice()
         selected = id
-        if (foreground) RelayNotifications.visibleSession = id
+        if (foreground && selectionKey == "session") RelayNotifications.visibleSession = id
         markOpened(id)
-        prefs.edit().putString("session", id).apply()
+        prefs.edit().putString(selectionKey, id).apply()
         draft = ""
         voiceOriginal = ""
         attachments = emptyList()

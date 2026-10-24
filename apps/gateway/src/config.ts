@@ -8,6 +8,12 @@ import path from 'node:path';
 import { readFileSync } from 'node:fs';
 const home = homedir();
 export const configSchema = z.object({
+  helperAttention: z
+    .object({
+      enabled: z.boolean().default(true),
+      waitingMinutes: z.number().int().min(1).max(1440).default(5),
+    })
+    .default({ enabled: true, waitingMinutes: 5 }),
   voice: voiceConfigSchema.optional(),
   dsh: z.array(dshHostSchema).default([]),
   zcode: z.array(zcodeHostSchema).default([]),

@@ -395,3 +395,35 @@ including `~/questguardian` pointing to `/mnt/storage/questguardian/repo`.
 
 Validation details and deployment are recorded in ANDROID.md. Android needs APK
 0.1.32 for periodic replay; the gateway fixes also benefit earlier installed APKs.
+
+
+### Session helper and native composer controls — Android 0.1.34
+
+Both clients have a right-side helper panel, a visible header/drawer entry and
+right-edge swipe access. Each device chooses a trusted proxy profile/model. The
+helper is a separate native conversation, with durable launch identity and receipt
+recovery; main/helper drafts and selection remain independent. The installed
+[operating prompt](HELPER_PROMPT.md) documents Relay/Herdr operations and limits.
+See [setup and notification behavior](HELPER.md).
+
+Both composers show a horizontally scrollable 48px/48dp strip for native usage,
+model, thinking and permission settings, plus agent mode where supported. Quick
+changes use native APIs; permission changes retain confirmation. Unsupported
+controls explain their limits. Codex, Claude, DSH and Zcode usage normalization
+preserves actual counters and distinguishes cumulative from current context use.
+
+Gateway attention monitoring emits one aged-question reminder per interaction.
+Android's opt-in connection service can notify while the Activity is backgrounded;
+browser alerts require an open connected tab/PWA. Closed-browser Web Push is not
+implemented. Android OS force-stop/network/sleep behavior remains a physical-phone
+check. Read/write MCP scope and exact owner generations apply to helper tools.
+
+Validation: 210 backend tests, TypeScript, ESLint and production build; Android
+unit tests, lint, debug/test builds and all 33 native instrumentation checks pass.
+Ten selected browser flows pass, covering helper selection/draft recovery, model/
+thinking/confirmed permissions, native questions, Queue, Enter/Stop, 200% text scaling, viewport
+insets and missed-frame recovery. Light/dark web screenshots at 320, 375, 430,
+landscape 768 and desktop 1440 pixels were inspected; accessibility checks pass.
+Native keyboard-open/closed composer screenshots were inspected. One preexisting
+steering assertion expected Steer on an empty active draft; it now correctly
+expects Stop, then Steer after typing, and passes.

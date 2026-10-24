@@ -270,3 +270,25 @@ remains unverified.
 
 Signed APK 0.1.33 (versionCode 34) is published in the gateway data directory.
 SHA-256: `7d8c2a3f038ea61294bd674b8c6e5eaea3fbfa6f6331d8e3e6ab3ce15f0745af`.
+
+
+### 0.1.34 — Session helper and native settings (2026-10-24)
+
+The helper opens from the header, drawer or right-edge swipe. Choose a configured
+CFR proxy model; the helper retains its own native session and draft. Its Waiting
+view opens pending session questions. Gateway reminders and helper notices use
+the existing opt-in background notification service and privacy preferences.
+
+The composer now exposes native token/context counters, model, thinking level,
+permission mode and supported agent mode. Tap the horizontal strip to change
+settings through the harness API. No chat instruction or second writer is used.
+See [HELPER.md](HELPER.md) for setup, supported harnesses and platform limits.
+
+Android unit tests/lint/debug/test builds and all 33 disposable Android 15
+instrumentation checks pass, including quick thinking changes with owner
+generation, helper proxy/model choice and draft preservation. Native keyboard-open
+and keyboard-closed screenshots were inspected. Physical-phone sleep/network
+notification behavior remains unverified.
+
+Signed APK 0.1.34 (versionCode 35) is published in the gateway data directory.
+SHA-256: `18f99820e41255e49c86a21b708813c26d17d1d87b91236068c89b675c6e9dc3`.

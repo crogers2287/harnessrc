@@ -12,6 +12,9 @@ import { ProviderSwaps } from './provider-swap.ts';
 import { randomUUID } from 'node:crypto';
 import { deliverSteer } from './steering.ts';
 import { Launcher, launchRequestSchema } from './launch.ts';
+import { HelperConversations } from './helper.ts';
+import { HelperAttention, helperNoticeSchema } from './helper-attention.ts';
+import { sessionUsage } from './usage.ts';
 import Fastify, { type FastifyRequest, type FastifyReply } from 'fastify';
 import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
@@ -56,6 +59,12 @@ export async function createGateway(
     runtime.zcodeHosts,
   );
   launcher.recover();
+  const helper = new HelperConversations(store, launcher);
+  const attention = new HelperAttention(
+    store,
+    config.helperAttention.enabled && config.launchProfiles.some((p) => p.helper),
+    config.helperAttention.waitingMinutes,
+  );
   const commands = new SessionCommands(runtime);
   const providerSwaps = new ProviderSwaps(runtime, launcher);
   const tailnet = new TailnetAuth(options.tailnetLookup);
@@ -332,6 +341,38 @@ export async function createGateway(
     launchAdmin(req);
     return { profiles: await launcher.catalog() };
   });
+  app.get('/api/helper', async (req) => {
+    launchAdmin(req);
+    return { ...(await helper.view(req.device.id)), attention: attention.view() };
+  });
+  app.get('/api/helper/attention', async (req) => {
+    launchAdmin(req);
+    return attention.view();
+  });
+  app.post(
+    '/api/sessions/:id/helper-notices',
+    { config: { rateLimit: { max: 6, timeWindow: '1 minute' } } },
+    async (req) => {
+      launchAdmin(req);
+      const { id } = z.object({ id: z.string() }).parse(req.params);
+      check(req, id, true);
+      if (req.headers['x-rc-generation'] !== store.session(id).generation)
+        throw Object.assign(new Error('Attach to the current session before notifying'), {
+          statusCode: 409,
+        });
+      return attention.notify(id, helperNoticeSchema.parse(req.body), req.device.id);
+    },
+  );
+  app.post(
+    '/api/helper',
+    { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } },
+    async (req) => {
+      launchAdmin(req);
+      const receipt = await helper.start(req.body, req.device.id);
+      void runtime.refresh(receipt.hostId);
+      return receipt;
+    },
+  );
   app.get('/api/launch/folders', async (req) => {
     launchAdmin(req);
     const { profileId, path: folder } = z
@@ -641,6 +682,11 @@ export async function createGateway(
     await runtime.assertBinding(store.session(id));
     return adapter.models(store.session(id));
   });
+  app.get('/api/sessions/:id/usage', async (req) => {
+    const { id } = z.object({ id: z.string() }).parse(req.params);
+    check(req, id);
+    return sessionUsage(store, id);
+  });
   app.post('/api/sessions/:id/model', async (req) => {
     const { id } = req.params as { id: string };
     check(req, id, true);
@@ -938,10 +984,14 @@ export async function createGateway(
       ? undefined
       : await startHookServer(runtime, path.join(config.dataDir, 'hooks.sock'));
   app.addHook('onClose', async () => {
+    clearInterval(attentionTimer);
     await runtime.stop();
     if (hookServer) await new Promise<void>((resolve) => hookServer.close(() => resolve()));
     store.close();
   });
   if (options.startRuntime !== false) runtime.start();
+  const attentionTimer =
+    options.startRuntime === false ? undefined : setInterval(() => attention.tick(), 30000);
+  attentionTimer?.unref();
   return { app, runtime, store, auth };
 }

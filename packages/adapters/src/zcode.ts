@@ -1,4 +1,6 @@
 import { stat } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { zcodeUsage } from './usage.ts';
 import { z } from 'zod';
 import { bridgeRequest } from './codex.ts';
 import { dshAnswerSchema, dshQuestionSchema } from './dsh-questions.ts';
@@ -223,7 +225,21 @@ export class ZcodeAdapter implements Adapter {
         );
     }
     const snapshot = await this.snapshot(s);
-    return [...zcodeEvents(events), ...zcodeMessages(snapshot.messages)];
+    const usage = zcodeUsage(snapshot.projection);
+    return [
+      ...zcodeEvents(events),
+      ...zcodeMessages(snapshot.messages),
+      ...(usage
+        ? [
+            {
+              sourceId: `zcode:usage:${createHash('sha256').update(JSON.stringify(usage)).digest('hex')}`,
+              timestamp: new Date().toISOString(),
+              kind: 'progress' as const,
+              data: { usage, nativeMeta: true },
+            },
+          ]
+        : []),
+    ];
   }
   async send(s: Session, task: Task) {
     await this.checkBinding(s);

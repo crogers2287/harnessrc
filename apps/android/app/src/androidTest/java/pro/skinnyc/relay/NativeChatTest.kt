@@ -42,12 +42,14 @@ class NativeChatTest {
     @Volatile private var pendingQuestion: JSONObject? = null
     @Volatile private var selectedMode = "default"
     @Volatile private var selectedModel = "flash-next"
+    @Volatile private var selectedEffort = "medium"
     @Volatile private var rejectMessage = false
     @Volatile private var messageDelayMs = 0L
     @Volatile private var dictationOriginal = "please uh check the image and fix the layout"
     @Volatile private var receiptConfirmed = false
     @Volatile private var liveSocket: okhttp3.WebSocket? = null
     @Volatile private var recoveredHistory = false
+    @Volatile private var helperCurrent: JSONObject? = null
     private val ctx
         get() = ApplicationProvider.getApplicationContext<Context>()
 
@@ -99,17 +101,30 @@ class NativeChatTest {
                             .setBody("{\"error\":\"Connection lost\"}")
                     if (path == "/api/interactions/question-1/respond") pendingQuestion = null
                     if (path.endsWith("/mode") && request.method == "POST") selectedMode = JSONObject(request.body.clone().readUtf8()).getString("value")
-                    if (path.endsWith("/model") && request.method == "POST") selectedModel = JSONObject(request.body.clone().readUtf8()).getString("model")
+                    if (path.endsWith("/model") && request.method == "POST") {
+                        val body = JSONObject(request.body.clone().readUtf8())
+                        selectedModel = body.getString("model")
+                        selectedEffort = body.str("reasoningEffort", "medium")
+                    }
                     val body =
                         when {
+                            path == "/api/helper" -> {
+                                if (request.method == "POST") {
+                                    val input = JSONObject(request.body.clone().readUtf8())
+                                    helperCurrent = json("requestId" to input.str("requestId"), "profileId" to input.str("profileId"), "model" to input.str("model"), "sessionId" to "helper-session", "receipt" to json("status" to "started"))
+                                    json("status" to "started").toString()
+                                } else json("profiles" to org.json.JSONArray().put(json("id" to "my-cfr", "label" to "My proxy", "provider" to "CFR proxy", "connected" to true, "defaultModel" to "model-a", "models" to org.json.JSONArray().put(json("id" to "model-a", "name" to "Model A")).put(json("id" to "model-b", "name" to "Model B")))), "current" to (helperCurrent ?: JSONObject.NULL), "attention" to json("enabled" to true, "waitingMinutes" to 5, "items" to org.json.JSONArray())).toString()
+                            }
+                            path == "/api/sessions/helper-session" -> json("session" to JSONObject(session).put("id", "helper-session").put("sessionName", "Relay helper").put("status", "idle"), "interactions" to org.json.JSONArray(), "tasks" to org.json.JSONArray()).toString()
                             path == "/api/launch/profiles" -> """{"profiles":[{"id":"test","label":"Claude","connected":true,"projectHome":"/home/test","models":[],"permissions":[{"id":"plan","name":"Plan","description":"Plan before changes."}]}]}"""
                             path.startsWith("/api/launch/saved-launch") -> """{"requestId":"saved-launch","status":"uncertain","diagnostic":"Startup was not confirmed."}"""
                             path == "/api/launch/folders" -> """{"path":"/home/test/Phone project"}"""
                             path == "/api/launch" -> """{"requestId":"test","status":"started","terminalId":"new-terminal"}"""
                             path.endsWith("/mode") -> """{"supported":true,"current":"$selectedMode","options":[{"value":"default","name":"Build"},{"value":"plan","name":"Plan","description":"Applies to subsequent turns."}]}"""
-                            path.endsWith("/models") || path.endsWith("/model") -> """{"current":{"provider":"fred","model":"$selectedModel"},"default":{"provider":"fred","model":"flash-next"},"groups":[{"id":"fred","name":"Fred","models":[{"id":"flash-next","name":"Flash Next"},{"id":"astra","name":"Astra"}]}]}"""
+                            path.endsWith("/usage") -> """{"supported":true,"input":12000,"output":500,"total":12500,"contextUsed":4200,"contextWindow":200000}"""
+                            path.endsWith("/models") || path.endsWith("/model") -> """{"current":{"provider":"fred","model":"$selectedModel","reasoningEffort":"$selectedEffort"},"default":{"provider":"fred","model":"flash-next"},"groups":[{"id":"fred","name":"Fred","models":[{"id":"flash-next","name":"Flash Next","reasoningEfforts":["low","medium","high"]},{"id":"astra","name":"Astra","reasoningEfforts":["low","medium","high"]}]}]}"""
                             path.endsWith("/permissions") -> """{"supported":false,"options":[],"reason":"Test session uses host permissions."}"""
-                            path == "/api/sessions" -> "{\"sessions\":[$session]}"
+                            path == "/api/sessions" -> "{\"sessions\":[$session${if (helperCurrent != null) "," + JSONObject(session).put("id", "helper-session").put("sessionName", "Relay helper").put("status", "idle") else ""}]}"
                             path == "/api/voice" -> "{\"enabled\":true,\"maxSeconds\":180}"
                             path == "/api/sessions/test-session" ->
                                 "{\"session\":$session,\"interactions\":[${pendingQuestion?.toString() ?: ""}],\"tasks\":[]}"
@@ -154,6 +169,32 @@ class NativeChatTest {
         server.shutdown()
     }
 
+
+    @Test
+    fun helperSelectsProxyModelAndKeepsMainDraftWhenDismissed() {
+        scenario.onActivity { it.model.edit("Keep my main draft") }
+        compose.onNodeWithContentDescription("Open Relay helper").performClick()
+        compose.onNodeWithText("Relay helper", useUnmergedTree = true).assertExists()
+        compose.onNodeWithText("Model A").performClick()
+        compose.onNodeWithText("Model B").performClick()
+        compose.onNodeWithText("Message").performTextInput("Inspect my sessions")
+        compose.onNodeWithText("Start chat").performClick()
+        compose.waitUntil(15000) { requests.any { it.path == "/api/helper" && it.method == "POST" } }
+        val sent = JSONObject(requests.first { it.path == "/api/helper" && it.method == "POST" }.body.clone().readUtf8())
+        assertEquals("my-cfr", sent.str("profileId"))
+        assertEquals("model-b", sent.str("model"))
+        assertEquals("Inspect my sessions", sent.str("prompt"))
+        compose.waitUntil(15000) { compose.onAllNodesWithContentDescription("Send instruction").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithContentDescription("Close helper").performClick()
+        scenario.onActivity { assertEquals("test-session", it.model.selected); assertEquals("Keep my main draft", it.model.draft) }
+        assertFalse(requests.any { it.path?.endsWith("/messages") == true })
+        compose.onNodeWithContentDescription("Open Relay helper").performClick()
+        compose.onNodeWithText("Waiting (0)").performClick()
+        compose.onNodeWithText("No sessions are waiting for an answer.").assertExists()
+        androidx.test.espresso.Espresso.pressBack()
+        compose.onNodeWithContentDescription("Close helper").assertExists()
+        compose.onNodeWithContentDescription("Close helper").performClick()
+    }
 
     @Test
     fun missedConversationFrameRecoversWithoutReopeningOrLosingDraft() {
@@ -836,6 +877,32 @@ class NativeChatTest {
         assertEquals("fred", body.getString("provider"))
         assertEquals("astra", body.getString("model"))
         assertEquals(2, body.length())
+        assertFalse(requests.any { it.path?.endsWith("/messages") == true || it.path?.endsWith("/tasks") == true })
+    }
+
+    @Test
+    fun composerShowsUsageAndChangesNativeThinkingWithoutSendingChat() {
+        compose.waitUntil(10000) { compose.onAllNodesWithText("4,200 / 200,000 tokens").fetchSemanticsNodes().isNotEmpty() }
+        InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot().let { bitmap ->
+            File(ctx.getExternalFilesDir(null), "native-composer-status.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            bitmap.recycle()
+        }
+        compose.onNodeWithText("4,200 / 200,000 tokens").performClick()
+        compose.onNodeWithText("Session input: 12,000\nSession output: 500\nSession total: 12,500").assertExists()
+        compose.onNodeWithText("Close session settings").performClick()
+        compose.onNodeWithContentDescription("Native session settings").performScrollToNode(hasText("Think: medium"))
+        compose.onNodeWithText("Think: medium").performClick()
+        compose.onNodeWithText("medium", substring = false).performClick()
+        compose.onNodeWithText("high", substring = false).performClick()
+        compose.onNodeWithText("Apply model settings").performClick()
+        compose.waitUntil(10000) { requests.any { it.path?.endsWith("/model") == true && it.method == "POST" } }
+        val request = requests.last { it.path?.endsWith("/model") == true && it.method == "POST" }
+        val body = JSONObject(request.body.clone().readUtf8())
+        assertEquals("flash-next", body.str("model"))
+        assertEquals("high", body.str("reasoningEffort"))
+        assertEquals("fixture-owner", request.getHeader("X-RC-Generation"))
+        compose.onNodeWithText("Native model settings saved.").assertExists()
+        compose.onNodeWithText("Close session settings").performClick()
         assertFalse(requests.any { it.path?.endsWith("/messages") == true || it.path?.endsWith("/tasks") == true })
     }
 

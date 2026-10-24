@@ -20,6 +20,7 @@ object RelayNotifications {
     const val QUESTIONS = "relay-questions"
     const val COMPLETIONS = "relay-completions"
     const val FAILURES = "relay-failures"
+    const val HELPER = "relay-helper"
     const val OPEN = "pro.skinnyc.relay.OPEN_NOTIFICATION"
     @Volatile var visibleSession: String? = null
     fun prefs(context: Context) = context.getSharedPreferences("relay", 0)
@@ -32,6 +33,7 @@ object RelayNotifications {
             NotificationChannel(QUESTIONS, "Questions and approvals", NotificationManager.IMPORTANCE_HIGH),
             NotificationChannel(COMPLETIONS, "Completed turns", NotificationManager.IMPORTANCE_DEFAULT),
             NotificationChannel(FAILURES, "Failed turns", NotificationManager.IMPORTANCE_DEFAULT),
+            NotificationChannel(HELPER, "Helper alerts", NotificationManager.IMPORTANCE_HIGH),
         ))
     }
     fun sync(context: Context) {
@@ -62,7 +64,7 @@ object RelayNotifications {
         val session = item.str("sessionId")
         val prefs = prefs(context)
         if ((visibleSession == session && kind != "question") || !prefs.getBoolean("notify:$kind", true)) return
-        val channel = when (kind) { "question" -> QUESTIONS; "failure" -> FAILURES; else -> COMPLETIONS }
+        val channel = when (kind) { "question" -> QUESTIONS; "failure" -> FAILURES; "helper" -> HELPER; else -> COMPLETIONS }
         val note = NotificationCompat.Builder(context, channel)
             .setSmallIcon(R.drawable.ic_notification).setContentTitle(item.str("title"))
             .setContentText(if (prefs.getBoolean("notificationPreview", true)) item.str("body") else "Open Relay to view the session")

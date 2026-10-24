@@ -97,6 +97,7 @@ private fun RelayAppContent(vm: RelayModel, shared: Intent?, nativeKeyboardVisib
     val conversationState = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
     var screen by rememberSaveable { mutableStateOf("") }
     var quickShortcuts by remember { mutableStateOf(false) }
+    var helperOpen by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(vm.commandAction) {
         if (vm.commandAction == "help") quickShortcuts = true
         else if (vm.commandAction.isNotEmpty()) screen = commandScreen(vm.commandAction)
@@ -308,6 +309,7 @@ private fun RelayAppContent(vm: RelayModel, shared: Intent?, nativeKeyboardVisib
                     Modifier.fillMaxWidth().padding(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    TextButton(onClick = { helperOpen = true; scope.launch { drawer.close() } }) { Text("Helper") }
                     TextButton(onClick = { showSaved = !showSaved }) {
                         Text(if (showSaved) "Hide saved" else "Show saved")
                     }
@@ -320,7 +322,23 @@ private fun RelayAppContent(vm: RelayModel, shared: Intent?, nativeKeyboardVisib
             }
         },
     ) {
-        Surface(Modifier.fillMaxSize()) {
+        Surface(Modifier.fillMaxSize().pointerInput(Unit) {
+            val edge = 40.dp.toPx()
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false)
+                if (down.position.x < size.width - edge) return@awaitEachGesture
+                val origin = down.position
+                while (true) {
+                    val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
+                    if (!change.pressed) break
+                    val delta = change.position - origin
+                    if (kotlin.math.abs(delta.y) > edge && kotlin.math.abs(delta.y) > kotlin.math.abs(delta.x)) break
+                    if (delta.x < -55.dp.toPx() && kotlin.math.abs(delta.x) > kotlin.math.abs(delta.y) * 1.5f) {
+                        change.consume(); helperOpen = true; break
+                    }
+                }
+            }
+        }) {
             when (screen) {
                 "settings" -> SettingsScreen(vm) { screen = "" }
                 "new" -> LaunchScreen(vm, showSessions = { screen = ""; scope.launch { drawer.open() } }) { screen = "" }
@@ -370,6 +388,7 @@ private fun RelayAppContent(vm: RelayModel, shared: Intent?, nativeKeyboardVisib
                                 ActionIcon(Icons.Outlined.Checklist, "Agent tasks") {
                                     screen = "tasks"
                                 }
+                                ActionIcon(Icons.Outlined.ChatBubbleOutline, "Open Relay helper") { helperOpen = true }
                                 ActionIcon(Icons.Outlined.MoreHoriz, "Session details") {
                                     screen = "details"
                                 }
@@ -418,6 +437,7 @@ private fun RelayAppContent(vm: RelayModel, shared: Intent?, nativeKeyboardVisib
             }
         }
     }
+    if (helperOpen) HelperDrawer(vm, openSession = { id -> vm.choose(id); helperOpen = false; screen = "questions" }) { helperOpen = false }
     if (vm.preparingDownload) AlertDialog(onDismissRequest = vm::cancelDownloadPreparation, title = { Text("Preparing download") }, text = { LinearProgressIndicator(Modifier.fillMaxWidth()) }, confirmButton = {}, dismissButton = { TextButton(onClick = vm::cancelDownloadPreparation) { Text("Cancel") } })
     rowActions?.let { s -> SessionActions(vm, vm.sessions.find { it.id == s.id } ?: s) { rowActions = null } }
     if (confirmShare && shared != null)
@@ -1226,6 +1246,7 @@ fun Composer(vm: RelayModel) {
                 }
             }
 
+            ComposerStatus(vm)
             if (vm.commandNotice.isNotBlank()) Text(vm.commandNotice, Modifier.padding(horizontal = 6.dp, vertical = 6.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (vm.voiceOriginal.isNotBlank()) {
                 var showOriginal by remember(vm.voiceOriginal) { mutableStateOf(false) }

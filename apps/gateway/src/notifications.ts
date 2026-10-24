@@ -31,7 +31,8 @@ export function notificationFeed(
   const rows = store.db
     .prepare(
       `SELECT sequence,body FROM events WHERE sequence>? AND sequence<=?
-    AND json_extract(body,'$.kind') IN ('question','approval.request','turn.completed','turn.failed','task.completed')
+    AND (json_extract(body,'$.kind') IN ('question','approval.request','turn.completed','turn.failed','task.completed')
+      OR (json_extract(body,'$.kind')='agent.status' AND json_extract(body,'$.data.helperAlert')=1))
     ORDER BY sequence LIMIT 200`,
     )
     .all(after, high);
@@ -48,7 +49,10 @@ export function notificationFeed(
       Date.parse(event.timestamp) < Math.max(since, Date.now() - 86400000)
     )
       return [];
-    const question = ['question', 'approval.request'].includes(event.kind);
+    const helper = event.kind === 'agent.status' && event.data.helperAlert === true;
+    const question =
+      ['question', 'approval.request'].includes(event.kind) ||
+      (helper && !!event.data.interactionId);
     const interactionId =
       typeof event.data.interactionId === 'string' ? event.data.interactionId : '';
     if (question) {
@@ -56,6 +60,7 @@ export function notificationFeed(
       if (
         !interaction ||
         interaction.sessionId !== session.id ||
+        interaction.generation !== session.generation ||
         interaction.status !== 'pending' ||
         (interaction.expiresAt && Date.parse(interaction.expiresAt) <= Date.now())
       )
@@ -66,13 +71,23 @@ export function notificationFeed(
         id: event.id,
         sessionId: session.id,
         interactionId,
-        kind: question ? 'question' : event.kind === 'turn.failed' ? 'failure' : 'completion',
-        title: question
-          ? 'Your agent needs input'
-          : event.kind === 'turn.failed'
-            ? 'Agent needs attention'
-            : 'Turn complete',
-        body: String(preference?.name || session.sessionName || session.project),
+        kind: question
+          ? 'question'
+          : helper
+            ? 'helper'
+            : event.kind === 'turn.failed'
+              ? 'failure'
+              : 'completion',
+        title: helper
+          ? String(event.data.title)
+          : question
+            ? 'Your agent needs input'
+            : event.kind === 'turn.failed'
+              ? 'Agent needs attention'
+              : 'Turn complete',
+        body: helper
+          ? String(event.data.text)
+          : String(preference?.name || session.sessionName || session.project),
         timestamp: event.timestamp,
       },
     ];

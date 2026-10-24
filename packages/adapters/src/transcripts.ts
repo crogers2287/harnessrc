@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { claudeUsage, codexUsage } from './usage.ts';
 import { readdir, realpath, stat, open } from 'node:fs/promises';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -42,8 +43,11 @@ export function normalizeClaude(record: any): SourceEvent[] {
   if (!id || !['user', 'assistant'].includes(record.type)) return [];
   const content = record.message?.content;
   const events: SourceEvent[] = [];
+  const usage = record.type === 'assistant' ? claudeUsage(record.message) : undefined;
+  if (usage) events.push(source(record, `${id}:usage`, 'progress', { usage, nativeMeta: true }));
   if (typeof content === 'string')
     return [
+      ...events,
       source(record, id, record.type === 'user' ? 'user.message' : 'assistant.message', {
         text: content,
       }),
@@ -165,6 +169,10 @@ export function normalizeCodex(record: any, index: number): SourceEvent[] {
       ];
   }
   if (record.type === 'event_msg') {
+    if (p.type === 'token_count') {
+      const usage = codexUsage(p.info);
+      return usage ? [source(record, `${prefix}:usage`, 'progress', { usage, nativeMeta: true })] : [];
+    }
     if (p.type === 'task_started')
       return [source(record, prefix, 'turn.started', { turnId: p.turn_id })];
     if (p.type === 'turn_aborted')

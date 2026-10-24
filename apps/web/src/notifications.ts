@@ -3,8 +3,10 @@ import type { Event, SessionView } from '@harnessrc/protocol';
 /** Only durable native events trigger alerts. Connection/session-status churn never does. */
 export function notificationFor(event: Event, session: SessionView, openedAt: number) {
   if (session.archived || Date.parse(event.timestamp) < openedAt) return;
-  const label =
-    event.kind === 'question' || event.kind === 'approval.request'
+  const helper = event.kind === 'agent.status' && event.data.helperAlert === true;
+  const label = helper
+    ? String(event.data.title)
+    : event.kind === 'question' || event.kind === 'approval.request'
       ? 'Your agent needs input'
       : event.kind === 'task.completed' || event.kind === 'turn.completed'
         ? 'Turn complete'
@@ -18,7 +20,9 @@ export function notificationFor(event: Event, session: SessionView, openedAt: nu
     label,
     key: `${session.id}:${event.id}`,
     options: {
-      body: session.relayName || session.sessionName || session.project,
+      body: helper
+        ? String(event.data.text)
+        : session.relayName || session.sessionName || session.project,
       tag: `relay-session:${session.id}`,
       renotify: false,
       data: {

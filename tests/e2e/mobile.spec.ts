@@ -474,8 +474,9 @@ test('default Send and Steer use native message delivery; only explicit Queue sc
   );
   await page.getByRole('button', { name: 'Send message', exact: true }).click();
   expect((await (await sent).json()).mode).toBe('send');
-  await expect(page.getByRole('button', { name: 'Steer active turn', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Stop turn', exact: true })).toBeVisible();
   await draft.fill('Change the current approach');
+  await expect(page.getByRole('button', { name: 'Steer active turn', exact: true })).toBeVisible();
   const steered = page.waitForResponse(
     (response) => response.url().endsWith('/messages') && response.request().method() === 'POST',
   );
@@ -2994,9 +2995,15 @@ test('composer Enter sends, Ctrl+Enter inserts a newline, and Escape and Stop us
   await expect(editor).toHaveText('');
   await expect(stop).toBeEnabled();
   await editor.fill('Software keyboard send');
-  await editor.evaluate((node) => node.dispatchEvent(new InputEvent('beforeinput', {
-    bubbles: true, cancelable: true, inputType: 'insertParagraph',
-  })));
+  await editor.evaluate((node) =>
+    node.dispatchEvent(
+      new InputEvent('beforeinput', {
+        bubbles: true,
+        cancelable: true,
+        inputType: 'insertParagraph',
+      }),
+    ),
+  );
   await expect.poll(() => messages.length).toBe(2);
   expect(messages[1].prompt).toBe('Software keyboard send');
   await expect(editor).toHaveText('');
@@ -3271,4 +3278,273 @@ test('history recovery retains a stream frame received during the HTTP snapshot'
   await expect(
     page.getByText('Live frame survives snapshot recovery', { exact: true }),
   ).toBeVisible();
+});
+
+test('right-side helper chooses a proxy model and preserves the current session draft', async ({
+  page,
+}) => {
+  test.setTimeout(90000);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await pair(page);
+  await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
+  const mainId = new URL(page.url()).searchParams.get('session')!;
+  const mainSession = (await (await page.request.get('/api/sessions')).json()).sessions.find(
+    (s: any) => s.id === mainId,
+  );
+  const helperSession = {
+    ...mainSession,
+    id: 'helper-fixture',
+    sessionName: 'Relay helper',
+    model: 'proxy/model-b',
+    status: 'idle',
+    preview: '',
+  };
+  await page.route('**/api/sessions', async (route) => {
+    const original = await (await route.fetch()).json();
+    await route.fulfill({ json: { ...original, sessions: [...original.sessions, helperSession] } });
+  });
+  await page.route('**/api/sessions/helper-fixture', (route) =>
+    route.fulfill({ json: { session: helperSession, interactions: [], tasks: [] } }),
+  );
+  await page.route('**/api/sessions/helper-fixture/events?*', (route) =>
+    route.fulfill({
+      json: {
+        events: [
+          {
+            id: 'helper-reply',
+            timestamp: '2026-10-24T17:00:00Z',
+            sessionId: 'helper-fixture',
+            sequence: 1,
+            kind: 'assistant.message',
+            data: { text: 'I can inspect your Relay sessions.' },
+          },
+        ],
+      },
+    }),
+  );
+  let current: any = null;
+  let launch: any;
+  await page.route('**/api/helper', async (route) => {
+    if (route.request().method() === 'POST') {
+      launch = route.request().postDataJSON();
+      current = {
+        requestId: launch.requestId,
+        profileId: launch.profileId,
+        model: launch.model,
+        sessionId: helperSession.id,
+        receipt: { status: 'started' },
+      };
+      await route.fulfill({ json: { status: 'started', requestId: launch.requestId } });
+    } else
+      await route.fulfill({
+        json: {
+          profiles: [
+            {
+              id: 'my-cfr',
+              label: 'My proxy',
+              provider: 'CFR proxy',
+              connected: true,
+              defaultModel: 'proxy/model-a',
+              models: [
+                { id: 'proxy/model-a', name: 'Model A' },
+                { id: 'proxy/model-b', name: 'Model B' },
+              ],
+            },
+          ],
+          current,
+        },
+      });
+  });
+  await page.getByLabel('Instruction', { exact: true }).fill('Keep my main session draft');
+  await page.getByRole('button', { name: 'Open Relay helper' }).click();
+  const helper = page.locator('dialog.helper-drawer[open]');
+  await expect(helper).toBeVisible();
+  await helper.getByRole('combobox', { name: 'Model', exact: true }).selectOption('proxy/model-b');
+  await helper.getByLabel('Message', { exact: true }).fill('Check session health');
+  await helper.getByRole('button', { name: 'Start chat', exact: true }).click();
+  await expect(
+    helper.getByText('I can inspect your Relay sessions.', { exact: true }),
+  ).toBeVisible();
+  expect(launch.profileId).toBe('my-cfr');
+  expect(launch.model).toBe('proxy/model-b');
+  expect(launch.prompt).toBe('Check session health');
+  expect(launch.requestId).toMatch(/^[0-9a-f-]{36}$/);
+  await helper.getByLabel('Instruction', { exact: true }).fill('Keep my helper draft');
+  await page.screenshot({ path: '/tmp/relay-helper-web-chat.png' });
+  await page.keyboard.press('Escape');
+  await expect(helper).not.toBeVisible();
+  await expect(page.getByLabel('Instruction', { exact: true })).toHaveText(
+    'Keep my main session draft',
+  );
+  expect(new URL(page.url()).searchParams.get('session')).toBe(mainId);
+  await page.getByRole('button', { name: 'Open Relay helper' }).click();
+  await expect(helper.getByLabel('Instruction', { exact: true })).toHaveText(
+    'Keep my helper draft',
+  );
+  await page.goBack();
+  await expect(helper).not.toBeVisible();
+  for (const theme of ['light', 'dark']) {
+    for (const width of [320, 375, 430, 768, 1440]) {
+      await page.setViewportSize({ width, height: width === 768 ? 430 : 844 });
+      await page.evaluate((theme) => (document.documentElement.dataset.theme = theme), theme);
+      await page.getByRole('button', { name: 'Open Relay helper' }).click();
+      await helper.getByRole('button', { name: 'New conversation', exact: true }).click();
+      await expect(helper.getByRole('combobox', { name: 'Model', exact: true })).toBeVisible();
+      expect(await helper.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+      await page.screenshot({ path: `/tmp/relay-helper-${theme}-${width}.png` });
+      await helper.getByRole('button', { name: 'Back to conversation', exact: true }).click();
+      await helper.getByRole('button', { name: 'Close helper' }).click();
+    }
+  }
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.getByRole('button', { name: 'Open Relay helper' }).click();
+  expect(
+    (await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze())
+      .violations,
+  ).toEqual([]);
+});
+
+test('composer exposes native token counters, thinking, model and confirmed permissions', async ({
+  page,
+}) => {
+  test.setTimeout(90000);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route('**/api/sessions', async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    for (const s of body.sessions) s.capabilities.changeModel = true;
+    await route.fulfill({ response, json: body });
+  });
+  await page.routeWebSocket('**/ws', (socket) => {
+    socket.connectToServer().onMessage((message) => {
+      const data = JSON.parse(String(message));
+      if (data.type === 'invalidate')
+        for (const s of data.sessions) s.capabilities.changeModel = true;
+      socket.send(JSON.stringify(data));
+    });
+  });
+  let effort = 'medium',
+    model = 'model-a',
+    permission = 'workspace-write';
+  const catalog = () => ({
+    current: { provider: 'proxy', model, reasoningEffort: effort },
+    default: { provider: 'proxy', model: 'model-a' },
+    groups: [
+      {
+        id: 'proxy',
+        name: 'My proxy',
+        models: [
+          { id: 'model-a', name: 'Model A', reasoningEfforts: ['low', 'medium', 'high'] },
+          {
+            id: 'model-b',
+            name: 'Model B',
+            reasoningEfforts: ['low', 'high'],
+            defaultReasoningEffort: 'low',
+          },
+        ],
+      },
+    ],
+  });
+  await page.route('**/api/sessions/*/models', (r) => r.fulfill({ json: catalog() }));
+  let modelWrites = 0;
+  await page.route('**/api/sessions/*/model', async (r) => {
+    const body = r.request().postDataJSON();
+    expect(r.request().headers()['x-rc-generation']).toBeTruthy();
+    expect(body.provider).toBe('proxy');
+    effort = body.reasoningEffort;
+    model = body.model;
+    modelWrites++;
+    await r.fulfill({ json: catalog() });
+  });
+  await page.route('**/api/sessions/*/usage', (r) =>
+    r.fulfill({
+      json: {
+        supported: true,
+        input: 12000,
+        output: 500,
+        total: 12500,
+        contextUsed: 4200,
+        contextWindow: 200000,
+      },
+    }),
+  );
+  let permissionWrites = 0;
+  await page.route('**/api/sessions/*/permissions', async (r) => {
+    if (r.request().method() === 'POST') {
+      expect(r.request().postDataJSON()).toEqual({
+        value: 'read-only',
+        expected: 'workspace-write',
+        confirm: true,
+      });
+      permission = 'read-only';
+      permissionWrites++;
+    }
+    await r.fulfill({
+      json: {
+        supported: true,
+        current: permission,
+        currentName: permission,
+        options: [
+          { value: 'workspace-write', name: 'Workspace write' },
+          { value: 'read-only', name: 'Read only' },
+        ],
+      },
+    });
+  });
+  const chatWrites: string[] = [];
+  page.on('request', (r) => {
+    if (r.method() === 'POST' && /\/(messages|tasks)$/.test(new URL(r.url()).pathname))
+      chatWrites.push(r.url());
+  });
+  await pair(page);
+  await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
+  await expect(page.getByRole('button', { name: 'Token usage', exact: true })).toHaveText(
+    '4.2K / 200K tokens',
+  );
+  await page.getByRole('button', { name: 'Token usage', exact: true }).click();
+  const panel = page.getByRole('dialog', { name: 'Native session settings', exact: true });
+  await expect(panel.getByText('12.5K tokens', { exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Quick thinking settings', exact: true }).click();
+  await panel.getByRole('combobox', { name: 'Thinking level', exact: true }).selectOption('high');
+  await panel.getByRole('button', { name: 'Apply model settings', exact: true }).click();
+  await expect(panel.getByText('Native model settings saved.')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('button', { name: 'Quick thinking settings' })).toHaveText(
+    'Think: high',
+  );
+  await page.getByRole('button', { name: 'Quick model settings', exact: true }).click();
+  await panel
+    .getByRole('combobox', { name: 'Native model' })
+    .selectOption(JSON.stringify({ provider: 'proxy', model: 'model-b' }));
+  await panel.getByRole('button', { name: 'Apply model settings', exact: true }).click();
+  await expect(panel.getByText('Native model settings saved.')).toBeVisible();
+  expect(modelWrites).toBe(2);
+  expect(effort).toBe('low');
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Quick permission settings' }).click();
+  await panel.getByRole('combobox', { name: 'Permission preset' }).selectOption('read-only');
+  expect(permissionWrites).toBe(0);
+  await panel.getByLabel('Apply this change to this session').check();
+  await panel.getByRole('button', { name: 'Apply settings', exact: true }).click();
+  await expect(panel.getByText('Settings saved in the harness.')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('button', { name: 'Quick permission settings' })).toHaveText(
+    'read-only',
+  );
+  expect(chatWrites).toEqual([]);
+  for (const theme of ['light', 'dark'])
+    for (const width of [320, 375, 430, 768, 1440]) {
+      await page.setViewportSize({ width, height: width === 768 ? 430 : 844 });
+      await page.evaluate((theme) => (document.documentElement.dataset.theme = theme), theme);
+      await expect(page.getByRole('button', { name: 'Token usage', exact: true })).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+      await page.screenshot({ path: `/tmp/relay-composer-${theme}-${width}.png` });
+    }
+  expect(
+    (await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze())
+      .violations,
+  ).toEqual([]);
 });

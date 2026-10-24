@@ -80,6 +80,59 @@ test('MCP discovers, attaches, sends once, checks receipt and rejects replaced o
     await f.close();
   }
 });
+test('MCP helper attention respects scope and helper notices retain exact receipts without agent input', async () => {
+  const f = await fixture();
+  const m = await connect(f, { sessionIds: [f.session.id] });
+  try {
+    const hosts = data(await m.client.callTool({ name: 'relay_hosts', arguments: {} }));
+    assert.ok(hosts);
+    const attention = data(await m.client.callTool({ name: 'relay_attention', arguments: {} }));
+    assert.ok(attention.items.every((item: any) => item.sessionId === f.session.id));
+    const usage = data(
+      await m.client.callTool({
+        name: 'relay_settings',
+        arguments: { sessionId: f.session.id, kind: 'usage' },
+      }),
+    );
+    assert.equal(usage.supported, false);
+    const args = {
+      sessionId: f.session.id,
+      generation: f.session.generation,
+      requestId: randomUUID(),
+      title: 'Session check',
+      body: 'Open this session to review progress.',
+    };
+    const first = await m.client.callTool({ name: 'relay_notify', arguments: args });
+    assert.equal(first.isError, undefined);
+    assert.equal(data(first).accepted, true);
+    assert.deepEqual(
+      data(await m.client.callTool({ name: 'relay_notify', arguments: args })),
+      data(first),
+    );
+    assert.equal(
+      (
+        await m.client.callTool({
+          name: 'relay_notify',
+          arguments: { ...args, generation: 'replaced' },
+        })
+      ).isError,
+      true,
+    );
+    assert.equal(
+      (
+        await m.client.callTool({
+          name: 'relay_notify',
+          arguments: { ...args, sessionId: 'other' },
+        })
+      ).isError,
+      true,
+    );
+    assert.equal(f.mock.prompts.length, 0);
+  } finally {
+    await m.close();
+    await f.close();
+  }
+});
 test('MCP enforces session scope, read-only mode, exact interaction and file roots', async () => {
   const f = await fixture();
   const m = await connect(f, { sessionIds: [f.session.id], fileRoots: [f.dir] });

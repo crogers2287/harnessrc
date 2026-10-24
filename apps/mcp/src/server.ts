@@ -124,6 +124,46 @@ export function createRelayMcp(
     }),
   );
   add(
+    'relay_hosts',
+    'Read gateway-reported host connectivity. Does not probe by sending agent input.',
+    {},
+    false,
+    () => client.request('/api/hosts'),
+  );
+  add(
+    'relay_attention',
+    'Read pending questions/approvals and their waiting durations plus background reminder settings. Never answers a question.',
+    {},
+    false,
+    async () => {
+      const result = await client.request('/api/helper/attention');
+      return {
+        ...result,
+        items: result.items.filter(
+          (item: any) => !options.sessionIds || options.sessionIds.includes(item.sessionId),
+        ),
+      };
+    },
+  );
+  add(
+    'relay_notify',
+    'Publish an authorized session-linked helper alert to enabled Relay clients. Retain the UUID for retry; acceptance is not proof the user saw a push. Does not send input to the worker.',
+    {
+      ...write,
+      requestId: key,
+      title: z.string().trim().min(1).max(100),
+      body: z.string().trim().min(1).max(400),
+    },
+    true,
+    (a) =>
+      client.request(
+        route(a, '/helper-notices'),
+        'POST',
+        { requestId: a.requestId, title: a.title, body: a.body },
+        a.generation,
+      ),
+  );
+  add(
     'relay_events',
     'Read conversation history (before cursor) or incremental events (after cursor). IDs/sequences support durable polling without terminal scraping.',
     {
@@ -240,8 +280,8 @@ export function createRelayMcp(
   );
   add(
     'relay_settings',
-    'Read native model choices, permissions or agent mode. Unsupported functions return native errors/reasons, never terminal menu automation.',
-    { ...session, kind: z.enum(['models', 'permissions', 'mode']) },
+    'Read native token usage, model/thinking choices, permissions or agent mode. Unsupported functions return native errors/reasons, never terminal menu automation.',
+    { ...session, kind: z.enum(['usage', 'models', 'permissions', 'mode']) },
     false,
     (a) => client.request(route(a, `/${a.kind}`)),
   );

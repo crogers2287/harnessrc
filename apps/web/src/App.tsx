@@ -37,6 +37,8 @@ import { presentUserMessage, toolLabel } from '@harnessrc/protocol';
 import { OutgoingMessages, useOutgoing } from './outgoing.tsx';
 import { NewSession } from './NewSession.tsx';
 import { SessionDrawer } from './SessionDrawer.tsx';
+import { HelperDrawer } from './HelperDrawer.tsx';
+import { ComposerStatus } from './ComposerStatus.tsx';
 import { useEffect, useRef, useState, useMemo, type FormEvent, type ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { MessageMarkdown } from './MessageMarkdown.tsx';
@@ -167,6 +169,22 @@ export function App() {
     }
   }, [groupByDir]);
   const [drawerOpen, setDrawerOpen] = useState(() => !!history.state?.relayDrawer);
+  const [helperOpen, setHelperOpen] = useState(false);
+  const showHelper = () => {
+    setDrawerOpen(false);
+    if (!history.state?.relayHelper)
+      history.pushState({ ...history.state, relayHelper: true }, '', location.href);
+    setHelperOpen(true);
+  };
+  const closeHelper = () => {
+    if (history.state?.relayHelper) history.back();
+    else setHelperOpen(false);
+  };
+  useEffect(() => {
+    const popped = () => setHelperOpen(!!history.state?.relayHelper);
+    window.addEventListener('popstate', popped);
+    return () => window.removeEventListener('popstate', popped);
+  }, []);
   const [mobile, setMobile] = useState(() => matchMedia('(max-width: 767px)').matches);
   useEffect(() => {
     watchMobileBack(mobile && !drawerOpen && !route.view);
@@ -494,6 +512,11 @@ export function App() {
           )}
         </div>
         <nav className="sidebar-nav">
+          {!!auth.data.device.admin && (
+            <button onClick={showHelper} aria-label="Open helper chat">
+              <MessageSquare size={20} aria-hidden="true" /> Helper
+            </button>
+          )}
           <button onClick={() => navigate({ view: 'attention' })}>
             <CircleHelp size={20} aria-hidden="true" />
             Needs attention{' '}
@@ -505,8 +528,8 @@ export function App() {
           </button>
         </nav>
       </SessionDrawer>
-      <main className="main-pane" inert={drawerOpen && mobile}>
-        {route.view === 'new' ? (
+      <main className="main-pane" inert={(drawerOpen && mobile) || helperOpen}>
+        {helperOpen ? null : route.view === 'new' ? (
           <NewSession
             sessions={sessions}
             back={() => navigate(selected ? { session: selected.id } : {})}
@@ -524,6 +547,7 @@ export function App() {
             route={route}
             back={openDrawer}
             navigate={navigate}
+            showHelper={auth.data.device.admin ? showHelper : undefined}
           />
         ) : (
           <div className="welcome">
@@ -546,6 +570,29 @@ export function App() {
           </div>
         )}
       </main>
+      {!!auth.data.device.admin && (
+        <HelperDrawer
+          open={helperOpen}
+          show={showHelper}
+          close={closeHelper}
+          sessions={sessions}
+          openSession={(sessionId, interactionId) => {
+            history.replaceState({ relayChat: true }, '', location.href);
+            setHelperOpen(false);
+            navigate({ session: sessionId, interaction: interactionId });
+          }}
+          render={(session, helperRoute, navigateHelper, back) => (
+            <Conversation
+              key={session.id}
+              session={session}
+              connection={connection}
+              route={helperRoute}
+              back={back}
+              navigate={navigateHelper}
+            />
+          )}
+        />
+      )}
     </div>
   );
 }
@@ -640,12 +687,14 @@ function Conversation({
   route,
   back,
   navigate,
+  showHelper,
 }: {
   session: SessionView;
   connection: string;
   route: Route;
   back: () => void;
   navigate: (route: Route) => void;
+  showHelper?: () => void;
 }) {
   const query = useQueryClient();
   const detail = useQuery<Detail>({
@@ -1132,6 +1181,11 @@ function Conversation({
             </span>
           </button>
         </div>
+        {showHelper && (
+          <IconButton label="Open Relay helper" onClick={showHelper}>
+            <MessageSquare size={22} />
+          </IconButton>
+        )}
         <IconButton
           label="Agent tasks"
           onClick={() => navigate({ session: session.id, view: 'queue' })}
@@ -1370,23 +1424,32 @@ function Conversation({
           </Dialog>
         )}
         {session.capabilities.queueTask ? (
-          <form
-            className="composer"
-            onSubmit={submit}
-            onDragOver={(e) => {
-              if (session.capabilities.attachFiles) e.preventDefault();
-            }}
-            onDrop={(e) => {
-              e.preventDefault();
-              if (session.capabilities.attachFiles)
-                attachments.add(Array.from(e.dataTransfer.files));
-            }}
-          >
-            {voice.panel}
-            {draft.startsWith('/') && (
-              <div className="slash-suggestions" aria-label="Slash commands">
-                {['help', 'model', 'permissions', 'plan', 'compact', 'tasks', 'agents', 'stop'].map(
-                  (name) => (
+          <>
+            <form
+              className="composer"
+              onSubmit={submit}
+              onDragOver={(e) => {
+                if (session.capabilities.attachFiles) e.preventDefault();
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                if (session.capabilities.attachFiles)
+                  attachments.add(Array.from(e.dataTransfer.files));
+              }}
+            >
+              {voice.panel}
+              {draft.startsWith('/') && (
+                <div className="slash-suggestions" aria-label="Slash commands">
+                  {[
+                    'help',
+                    'model',
+                    'permissions',
+                    'plan',
+                    'compact',
+                    'tasks',
+                    'agents',
+                    'stop',
+                  ].map((name) => (
                     <button
                       type="button"
                       key={name}
@@ -1395,98 +1458,104 @@ function Conversation({
                     >
                       /{name}
                     </button>
-                  ),
-                )}
-              </div>
-            )}
-            <AttachmentTray value={attachments} />
-            <ComposerInput
-              ref={composer}
-              allowFiles={session.capabilities.attachFiles}
-              onFiles={attachments.add}
-              placeholder={
-                session.status === 'working' || pending.length
-                  ? 'What should happen next?'
-                  : 'Message your agent…'
-              }
-              value={draft}
-              onChange={setDraft}
-              onSubmit={submit}
-            />
-            <div className="composer-controls">
-              {session.capabilities.attachFiles && (
-                <AttachmentPicker disabled={attachments.files.length >= 10} add={attachments.add} />
+                  ))}
+                </div>
               )}
-              <div className="composer-mode">
-                <Layers size={16} aria-hidden="true" />
-                <label className="sr-only" htmlFor="mode">
-                  Instruction behavior
-                </label>
-                <select id="mode" value={behavior} onChange={(e) => setBehavior(e.target.value)}>
-                  <option value="auto">
-                    {mode === 'steer' ? 'Steer active turn' : 'Send message'}
-                  </option>
-                  <option value="queue">Queue for later</option>
-                </select>
-              </div>
-              <button
-                type="button"
-                className="secondary"
-                aria-label="Quick shortcuts"
-                onClick={() => setShortcutsOpen(true)}
-              >
-                <Keyboard size={20} />
-              </button>
-              {voice.button}
-              <button
-                className="send-button"
-                type={showStop ? 'button' : 'submit'}
-                onClick={
-                  showStop ? () => command.mutate({ line: '/esc', preserveDraft: true }) : undefined
+              <AttachmentTray value={attachments} />
+              <ComposerInput
+                ref={composer}
+                allowFiles={session.capabilities.attachFiles}
+                onFiles={attachments.add}
+                placeholder={
+                  session.status === 'working' || pending.length
+                    ? 'What should happen next?'
+                    : 'Message your agent…'
                 }
-                disabled={
-                  showStop
-                    ? command.isPending || send.isPending
-                    : (!draft.trim() && !attachments.files.length) ||
-                      voice.busy ||
-                      attachments.busy ||
-                      attachments.invalid ||
-                      (busyWithoutSteering && !draft.startsWith('/')) ||
-                      command.isPending ||
-                      send.isPending ||
-                      !session.connected
-                }
-                aria-label={
-                  showStop
-                    ? 'Stop turn'
-                    : mode === 'steer'
-                      ? 'Steer active turn'
-                      : mode === 'queue'
-                        ? 'Queue instruction'
-                        : 'Send message'
-                }
-              >
-                <span className="sr-only">
-                  {showStop
-                    ? command.isPending
-                      ? 'Stopping…'
-                      : 'Stop'
-                    : send.isPending
-                      ? 'Sending…'
-                      : mode === 'steer'
-                        ? 'Steer'
-                        : mode === 'queue'
-                          ? 'Queue'
-                          : 'Send'}
-                </span>
-                {showStop ? (
-                  <Square size={20} fill="currentColor" aria-hidden="true" />
-                ) : (
-                  <ArrowUp size={22} aria-hidden="true" />
+                value={draft}
+                onChange={setDraft}
+                onSubmit={submit}
+              />
+              <div className="composer-controls">
+                {session.capabilities.attachFiles && (
+                  <AttachmentPicker
+                    disabled={attachments.files.length >= 10}
+                    add={attachments.add}
+                  />
                 )}
-              </button>
-            </div>
-          </form>
+                <div className="composer-mode">
+                  <Layers size={16} aria-hidden="true" />
+                  <label className="sr-only" htmlFor="mode">
+                    Instruction behavior
+                  </label>
+                  <select id="mode" value={behavior} onChange={(e) => setBehavior(e.target.value)}>
+                    <option value="auto">
+                      {mode === 'steer' ? 'Steer active turn' : 'Send message'}
+                    </option>
+                    <option value="queue">Queue for later</option>
+                  </select>
+                </div>
+                <button
+                  type="button"
+                  className="secondary"
+                  aria-label="Quick shortcuts"
+                  onClick={() => setShortcutsOpen(true)}
+                >
+                  <Keyboard size={20} />
+                </button>
+                {voice.button}
+                <button
+                  className="send-button"
+                  type={showStop ? 'button' : 'submit'}
+                  onClick={
+                    showStop
+                      ? () => command.mutate({ line: '/esc', preserveDraft: true })
+                      : undefined
+                  }
+                  disabled={
+                    showStop
+                      ? command.isPending || send.isPending
+                      : (!draft.trim() && !attachments.files.length) ||
+                        voice.busy ||
+                        attachments.busy ||
+                        attachments.invalid ||
+                        (busyWithoutSteering && !draft.startsWith('/')) ||
+                        command.isPending ||
+                        send.isPending ||
+                        !session.connected
+                  }
+                  aria-label={
+                    showStop
+                      ? 'Stop turn'
+                      : mode === 'steer'
+                        ? 'Steer active turn'
+                        : mode === 'queue'
+                          ? 'Queue instruction'
+                          : 'Send message'
+                  }
+                >
+                  <span className="sr-only">
+                    {showStop
+                      ? command.isPending
+                        ? 'Stopping…'
+                        : 'Stop'
+                      : send.isPending
+                        ? 'Sending…'
+                        : mode === 'steer'
+                          ? 'Steer'
+                          : mode === 'queue'
+                            ? 'Queue'
+                            : 'Send'}
+                  </span>
+                  {showStop ? (
+                    <Square size={20} fill="currentColor" aria-hidden="true" />
+                  ) : (
+                    <ArrowUp size={22} aria-hidden="true" />
+                  )}
+                </button>
+              </div>
+            </form>
+            <ComposerStatus session={session} />
+          </>
         ) : (
           <div className="readonly-note">
             <Info size={18} aria-hidden="true" />

@@ -54,11 +54,13 @@ class RelayApi(var base: String = DEFAULT_ENDPOINT, var tailnetIp: String = "") 
         )
     }
 
-    suspend fun api(path: String, method: String = "GET", body: JSONObject? = null): JSONObject {
+    suspend fun api(path: String, method: String = "GET", body: JSONObject? = null, generation: String? = null): JSONObject {
         val payload =
             if (method == "GET") null
             else (body?.toString() ?: "{}").toRequestBody("application/json".toMediaType())
-        return jsonResponse(request(path).method(method, payload).build())
+        val builder = request(path).method(method, payload)
+        if (generation != null) builder.header("X-RC-Generation", generation)
+        return jsonResponse(builder.build())
     }
 
     suspend fun binary(path: String, bytes: ByteArray): JSONObject =

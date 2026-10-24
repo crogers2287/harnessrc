@@ -17,6 +17,8 @@ export const launchProfileSchema = z.object({
   label: z.string(),
   harness: z.enum(['claude', 'codex', 'pi', 'omp', 'opencode', 'hermes', 'dsh', 'zcode']),
   provider: z.string().default('Harness default'),
+  // Opt in only after configuring the proxy and Relay MCP for this native CLI.
+  helper: z.boolean().default(false),
   modelsEndpoint: z.string().url().optional(),
   defaultModel: z
     .string()
@@ -233,6 +235,7 @@ export class Launcher {
           label: p.label,
           harness: p.harness,
           provider: p.provider,
+          helper: p.helper,
           models: await this.models(p),
           allowCustomModel: p.allowCustomModel,
           defaultModel: p.defaultModel,
@@ -391,8 +394,12 @@ export class Launcher {
     const row = this.store.db.prepare('SELECT receipt FROM launches WHERE id=?').get(requestId);
     return row ? JSON.parse(row.receipt as string) : undefined;
   }
-  async launch(input: LaunchRequest, deviceId: string): Promise<LaunchReceipt> {
-    const fingerprint = JSON.stringify(input);
+  async launch(
+    input: LaunchRequest,
+    deviceId: string,
+    instructions?: string,
+  ): Promise<LaunchReceipt> {
+    const fingerprint = JSON.stringify(instructions ? { ...input, instructions } : input);
     const existing = this.store.db
       .prepare('SELECT body,receipt FROM launches WHERE id=?')
       .get(input.requestId);
@@ -553,7 +560,10 @@ export class Launcher {
             cwd: resolved,
             model: selectedModel,
             modelProvider: p.codexProvider,
-            config: await this.codexConfiguration(p, selectedModel ?? ''),
+            config: {
+              ...(await this.codexConfiguration(p, selectedModel ?? '')),
+              ...(instructions ? { developer_instructions: instructions } : {}),
+            },
             ephemeral: false,
             ...(permission?.sandbox ? { sandbox: permission.sandbox } : {}),
             ...(permission?.approvalPolicy ? { approvalPolicy: permission.approvalPolicy } : {}),
@@ -589,6 +599,11 @@ export class Launcher {
                 ? ['resume', receipt.nativeSessionId, '--remote', `unix://${socket}`]
                 : []),
               ...(receipt.nativeSessionId ? [] : p.args),
+              ...(!receipt.nativeSessionId && instructions
+                ? p.harness === 'claude'
+                  ? ['--append-system-prompt', instructions]
+                  : ['-c', `developer_instructions=${JSON.stringify(instructions)}`]
+                : []),
               // Remote threads already received permissions through thread/start.
               // Codex rejects CLI permission overrides when resuming them.
               ...(receipt.nativeSessionId ? [] : (permission?.args ?? [])),
