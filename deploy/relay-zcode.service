@@ -1,0 +1,27 @@
+[Unit]
+Description=Relay native Zcode session owner
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/.local/share/relay/current
+Environment=RC_ZCODE_DIR=%h/.local/state/relay/zcode
+Environment=RC_ZCODE_BINARY=%h/.local/bin/zcode
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=TOKIO_WORKER_THREADS=2
+Environment=RAYON_NUM_THREADS=4
+Environment=GOMAXPROCS=4
+Environment=OMP_NUM_THREADS=1
+Environment=OPENBLAS_NUM_THREADS=1
+Environment=MKL_NUM_THREADS=1
+ExecStart=/usr/bin/node --import tsx scripts/zcode-bridge.ts
+Restart=on-failure
+RestartSec=3
+KillMode=control-group
+TimeoutStopSec=15
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

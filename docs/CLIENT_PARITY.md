@@ -1,5 +1,20 @@
 # Web and Android feature parity
 
+### Zcode native host, 2026-10-24
+
+The gateway publishes Zcode as a server-defined launch profile for both existing
+clients. Both implementations already read harness/profile IDs without an enum,
+use native capability flags, and support the shared approval and `choice-batch`
+question payloads. No client or APK code change is required. Attachments and
+active-turn steering remain hidden. Permission-mode overrides are unsupported
+because the installed runtime does not confirm changes reliably.
+
+Native protocol validation covers a real Coding Plan launch, streamed deltas,
+completed messages and a follow-up after restarting the native owner. Automated
+bridge tests cover launch replay, private sockets, approvals, stale ownership
+and durable dispatch receipts. Android rendering has not been tested on a
+physical device for Zcode specifically.
+
 Both clients are first-class Relay clients. A user-facing feature or fix must be reviewed against both implementations before it is called complete. Equivalent outcomes matter; native clipboard, Android Back and browser installation use different platform APIs.
 
 ## Source audit, 2026-10-09

@@ -1,5 +1,6 @@
 import { voiceConfigSchema } from './voice.ts';
 import { dshHostSchema } from './dsh-host.ts';
+import { zcodeHostSchema } from './zcode-host.ts';
 import { launchProfileSchema } from './launch.ts';
 import { z } from 'zod';
 import { homedir } from 'node:os';
@@ -9,6 +10,7 @@ const home = homedir();
 export const configSchema = z.object({
   voice: voiceConfigSchema.optional(),
   dsh: z.array(dshHostSchema).default([]),
+  zcode: z.array(zcodeHostSchema).default([]),
   dataDir: z.string().default('.data'),
   listen: z.string().default('127.0.0.1'),
   port: z.number().int().min(1).max(65535).default(4080),

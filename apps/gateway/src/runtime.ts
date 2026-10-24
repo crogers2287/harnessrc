@@ -3,6 +3,7 @@ import { SubagentReader } from '../../../packages/adapters/src/subagents.ts';
 import { importNativeImage } from './artifacts.ts';
 import { ClaudeSteering } from './claude-steering.ts';
 import { DshHost } from './dsh-host.ts';
+import { ZcodeHost } from './zcode-host.ts';
 import { CodexLinks } from './codex-links.ts';
 import { CodexDaemon } from '../../../packages/adapters/src/codex-daemon.ts';
 import { EventEmitter } from 'node:events';
@@ -28,6 +29,7 @@ export class Runtime extends EventEmitter {
   claudeQuestions = new ClaudeQuestions(this);
   claudeSteering = new ClaudeSteering(this);
   dshHosts = new Map<string, DshHost>();
+  zcodeHosts = new Map<string, ZcodeHost>();
   clients = new Map<string, HerdrClient>();
   private codexLinks = new Map<string, CodexLinks>();
   adapters = new Map<string, Adapter>();
@@ -78,6 +80,11 @@ export class Runtime extends EventEmitter {
         throw new Error('DSH host IDs must be unique');
       this.dshHosts.set(host.id, new DshHost(host, store, this.attachments));
     }
+    for (const host of config.zcode ?? []) {
+      if (this.clients.has(host.id) || this.dshHosts.has(host.id) || this.zcodeHosts.has(host.id))
+        throw new Error('Zcode host IDs must be unique');
+      this.zcodeHosts.set(host.id, new ZcodeHost(host, store));
+    }
     this.queue = new TaskQueue(
       store,
       (id) => this.adapters.get(id),
@@ -103,6 +110,7 @@ export class Runtime extends EventEmitter {
     );
   }
   async assertBinding(s: Session) {
+    if (this.zcodeHosts.has(s.hostId)) return this.zcodeHosts.get(s.hostId)!.assertBinding(s);
     if (this.dshHosts.has(s.hostId)) return this.dshHosts.get(s.hostId)!.assertBinding(s);
     await this.clients.get(s.hostId)!.assertBinding(s);
     if (s.processIdentity) {
@@ -472,6 +480,10 @@ export class Runtime extends EventEmitter {
         await host.refresh();
         for (const [id, a] of host.adapters) this.adapters.set(id, a);
       }
+      for (const host of this.zcodeHosts.values()) {
+        await host.refresh();
+        for (const [id, a] of host.adapters) this.adapters.set(id, a);
+      }
       for (const s of this.store.sessions().filter((s) => s.connected)) {
         const adapter = this.adapters.get(s.id);
         if (!adapter) continue;
@@ -494,7 +506,7 @@ export class Runtime extends EventEmitter {
                 (i) =>
                   i.route !== 'claude-hook' &&
                   (i.status === 'pending' ||
-                    (['dsh-native', 'codex-native'].includes(i.route) &&
+                    (['dsh-native', 'codex-native', 'zcode-native'].includes(i.route) &&
                       i.status === 'uncertain')) &&
                   !ids.has(i.nativeRequestId),
               )) {
@@ -532,6 +544,15 @@ export class Runtime extends EventEmitter {
   }
   async prepareConversation(id: string) {
     const s = this.store.session(id);
+    const zcode = this.zcodeHosts.get(s.hostId);
+    if (zcode) {
+      if (!zcode.adapters.has(id)) await zcode.refresh();
+      const adapter = zcode.adapters.get(id);
+      if (!adapter) throw new Error('Zcode conversation is not available yet. Reopen the session.');
+      this.adapters.set(id, adapter);
+      await this.readConversation(s, adapter);
+      return;
+    }
     const host = this.dshHosts.get(s.hostId);
     if (!host) return;
     // Discovery publishes sessions before the next scheduler tick copies their

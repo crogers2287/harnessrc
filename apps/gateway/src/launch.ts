@@ -2,6 +2,7 @@ import { startHarness, harnessReady, HarnessStartupBlocked } from './start-harne
 import { launchPermissionSchema } from './launch-permissions.ts';
 import { acceptClaudeResumeTrust } from './claude-resume-trust.ts';
 import type { DshHost } from './dsh-host.ts';
+import type { ZcodeHost } from './zcode-host.ts';
 import { CodexDaemon } from '../../../packages/adapters/src/codex-daemon.ts';
 import { realpath, readdir, stat, mkdir, open } from 'node:fs/promises';
 import path from 'node:path';
@@ -14,7 +15,7 @@ export const launchProfileSchema = z.object({
   id: z.string().regex(/^[a-z0-9-]+$/),
   hostId: z.string(),
   label: z.string(),
-  harness: z.enum(['claude', 'codex', 'pi', 'omp', 'opencode', 'hermes', 'dsh']),
+  harness: z.enum(['claude', 'codex', 'pi', 'omp', 'opencode', 'hermes', 'dsh', 'zcode']),
   provider: z.string().default('Harness default'),
   modelsEndpoint: z.string().url().optional(),
   defaultModel: z
@@ -24,6 +25,7 @@ export const launchProfileSchema = z.object({
   codexProvider: z.string().optional(),
   dshProvider: z.string().default('cfrproxy'),
   dshPreset: z.string().optional(),
+  zcodeProvider: z.string().default('account:zai-individual-coding-plan'),
   workspaceId: z.string(),
   roots: z.array(z.string()).min(1),
   // Trusted host opt-in: direct visible directory links in a root are project aliases.
@@ -94,6 +96,7 @@ export class Launcher {
     private clients: Map<string, HerdrClient>,
     private codexSockets = new Map<string, string>(),
     private dshHosts = new Map<string, DshHost>(),
+    private zcodeHosts = new Map<string, ZcodeHost>(),
   ) {}
   profile(id: string) {
     const p = this.profiles.find((p) => p.id === id);
@@ -198,6 +201,7 @@ export class Launcher {
     }
   }
   async permissionOptions(p: LaunchProfile) {
+    if (p.harness === 'zcode') return [];
     if (p.harness !== 'dsh')
       return p.permissionPresets.map(({ id, name, description }) => ({ id, name, description }));
     const host = this.dshHosts.get(p.hostId);
@@ -236,6 +240,7 @@ export class Launcher {
           permissions: await this.permissionOptions(p),
           ...(p.harness === 'dsh' ? await this.presets(p) : {}),
           connected:
+            this.zcodeHosts.get(p.hostId)?.connected ??
             this.dshHosts.get(p.hostId)?.connected ??
             this.clients.get(p.hostId)?.host.connected ??
             false,
@@ -415,7 +420,14 @@ export class Launcher {
     }
     const client = this.clients.get(p.hostId);
     const dsh = this.dshHosts.get(p.hostId);
-    if (!(p.harness === 'dsh' ? dsh?.connected : client?.host.connected))
+    const zcode = this.zcodeHosts.get(p.hostId);
+    if (
+      !(p.harness === 'zcode'
+        ? zcode?.connected
+        : p.harness === 'dsh'
+          ? dsh?.connected
+          : client?.host.connected)
+    )
       throw new Error('Host is disconnected');
     const { resolved } = await this.directory(p.id, input.cwd);
     if (
@@ -449,6 +461,50 @@ export class Launcher {
     });
     try {
       const selectedModel = input.model || p.defaultModel;
+      if (p.harness === 'zcode') {
+        if (!zcode) throw new Error('Zcode host unavailable');
+        const nativeId = `sess_relay_${input.requestId.replaceAll('-', '')}`;
+        const created = await zcode.native.call(
+          'session/create',
+          {
+            sessionId: nativeId,
+            workspace: { workspacePath: resolved, workspaceKey: resolved },
+            mode: 'build',
+          },
+          `launch:${input.requestId}:create`,
+        );
+        receipt.nativeSessionId = nativeId;
+        receipt.terminalId = `zcode:${nativeId}`;
+        save();
+        if (selectedModel) {
+          const option = created.settings.model.available.find(
+            (m: any) =>
+              m.ref.providerId === p.zcodeProvider &&
+              m.ref.modelId === selectedModel &&
+              !m.disabledReason,
+          );
+          if (!option) throw new Error('Selected model is unavailable for this Z.ai account');
+          const level = option.reasoning?.defaultLevel;
+          await zcode.native.call('session/setModel', {
+            sessionId: nativeId,
+            model: {
+              providerId: p.zcodeProvider,
+              modelId: selectedModel,
+              ...(level ? { options: { reasoningLevel: level } } : {}),
+            },
+          });
+        }
+        const result = await zcode.native.call(
+          'session/send',
+          { sessionId: nativeId, inputId: input.requestId, content: input.prompt },
+          `launch:${input.requestId}:send`,
+        );
+        if (result.accepted !== true || result.sessionId !== nativeId)
+          throw new Error('Zcode did not confirm the first message');
+        receipt.status = 'started';
+        save();
+        return receipt;
+      }
       if (p.harness === 'dsh') {
         if (!dsh) throw new Error('DSH host unavailable');
         const nativeId = `session-${input.requestId}`;

@@ -53,6 +53,7 @@ export async function createGateway(
     runtime.clients,
     new Map(config.codexDaemons.map((d) => [d.hostId, d.socket])),
     runtime.dshHosts,
+    runtime.zcodeHosts,
   );
   launcher.recover();
   const commands = new SessionCommands(runtime);
@@ -365,6 +366,8 @@ export async function createGateway(
       const receipt = await launcher.launch(launchRequestSchema.parse(req.body), req.device.id);
       if (runtime.dshHosts.has(receipt.hostId))
         void runtime.dshHosts.get(receipt.hostId)!.refresh();
+      else if (runtime.zcodeHosts.has(receipt.hostId))
+        void runtime.zcodeHosts.get(receipt.hostId)!.refresh();
       else void runtime.refresh(receipt.hostId);
       return receipt;
     },
@@ -396,6 +399,14 @@ export async function createGateway(
     hosts: [
       ...runtime.clients.values(),
       ...[...runtime.dshHosts.values()].map((h) => ({
+        host: {
+          id: h.config.id,
+          name: h.config.name,
+          connected: h.connected,
+          diagnostic: h.diagnostic,
+        },
+      })),
+      ...[...runtime.zcodeHosts.values()].map((h) => ({
         host: {
           id: h.config.id,
           name: h.config.name,

@@ -112,7 +112,14 @@ export const interactionInputSchema = z.object({
   default: z.unknown().optional(),
   responseSchema: z.record(z.string(), z.unknown()),
   expiresAt: z.string(),
-  route: z.enum(['claude-hook', 'codex-bridge', 'codex-native', 'mock', 'dsh-native']),
+  route: z.enum([
+    'claude-hook',
+    'codex-bridge',
+    'codex-native',
+    'mock',
+    'dsh-native',
+    'zcode-native',
+  ]),
   metadata: z.record(z.string(), z.unknown()).default({}),
 });
 export type InteractionInput = z.infer<typeof interactionInputSchema>;
