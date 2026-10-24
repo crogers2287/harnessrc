@@ -477,6 +477,8 @@ modal dialog and child deep links; Android uses a native bottom sheet and
 saveable child selection with system Back. Exact DSH parent links now join the
 existing Claude/Codex reader, with both parent/child read grants checked.
 
-This is an experimental branch, not a production web deployment. See
+The experimental web/gateway build `1c09933` is now active on Fred after the user
+requested the live web preview. The published Android download remains 0.1.36;
+the preview APK is supplied separately. See
 [DSH_LAYOUT_EXPERIMENT.md](DSH_LAYOUT_EXPERIMENT.md) for the design, preview setup,
 validation and remaining limits.

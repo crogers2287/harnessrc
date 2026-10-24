@@ -2,7 +2,11 @@
 
 Branch: `experiment/dsh-conversation-layout`.
 Baseline: `5043fda` (Relay 0.1.36). Android preview: `0.1.37-dsh-preview`.
-The production gateway and published production APK remain on the baseline.
+Fred’s web app and gateway now serve the experiment at `1c09933` (activated
+2026-10-24 after the initial branch-only delivery). The published production APK
+remains on 0.1.36; the signed preview APK is attached separately in Relay.
+Rollback: atomically point `~/.local/share/relay/current` back to
+`releases/5043fda` and restart `relay.service`.
 
 Reading this as: a coding-agent workspace for developers supervising a parent and
 its delegated work, with the compact conversation navigation shown in the supplied
@@ -92,3 +96,8 @@ Screenshots:
 - [Native child chat](screenshots/dsh-layout-native-chat.png)
 
 Real device edge gestures, TalkBack and OS keyboard variations remain physical-device checks.
+
+Live deployment verification: gateway health and the served browser index match
+release `1c09933`. A fresh browser on the private endpoint opened the picker and
+Chat/Activity tabs, received WebSocket frames, listed launch folders and fit a
+390px viewport without horizontal overflow. Existing open tabs need a refresh.
