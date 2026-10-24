@@ -13,7 +13,7 @@ import { publishArtifact } from './artifacts.ts';
 import { VoiceService, MAX_VOICE_BYTES, voiceMimeSchema } from './voice.ts';
 import { sendMessage } from './messages.ts';
 import { ProviderSwaps } from './provider-swap.ts';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { deliverSteer } from './steering.ts';
 import { Launcher, launchRequestSchema } from './launch.ts';
 import { HelperConversations } from './helper.ts';
@@ -567,6 +567,24 @@ export async function createGateway(
     const { id } = req.params as { id: string };
     check(req, id);
     const session = store.session(id);
+    if (session.harness === 'dsh') {
+      await runtime.dshHosts.get(session.hostId)?.refresh();
+      return {
+        supported: true,
+        subagents: store
+          .sessions()
+          .filter((child) => child.parentSessionId === id && child.hostId === session.hostId)
+          .filter((child) => auth.allowed(req.device, child.id))
+          .map((child) => ({
+            id: createHash('sha256').update(`${id}:${child.id}`).digest('hex'),
+            nativeSessionId: child.nativeSessionId,
+            name: child.sessionName || child.project || 'Sub-agent',
+            model: child.model,
+            status: child.status,
+            updatedAt: child.lastActivity,
+          })),
+      };
+    }
     return {
       supported: runtime.subagents.supported(session),
       subagents: await runtime.subagents.list(session),
@@ -583,6 +601,22 @@ export async function createGateway(
         limit: z.coerce.number().int().min(1).max(200).default(100),
       })
       .parse(req.query);
+    const parent = store.session(id);
+    if (parent.harness === 'dsh') {
+      await runtime.dshHosts.get(parent.hostId)?.refresh();
+      const linked = store
+        .sessions()
+        .find(
+          (candidate) =>
+            candidate.parentSessionId === id &&
+            candidate.hostId === parent.hostId &&
+            createHash('sha256').update(`${id}:${candidate.id}`).digest('hex') === child,
+        );
+      if (!linked) throw new Error('Subagent does not belong to this session');
+      check(req, linked.id);
+      await runtime.prepareConversation(linked.id);
+      return { events: store.conversationEvents(linked.id, query.before, query.limit) };
+    }
     return runtime.subagents.conversation(store.session(id), child, query.before, query.limit);
   });
   app.get('/api/sessions/:id/events', async (req) => {

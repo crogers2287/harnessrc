@@ -380,6 +380,14 @@ test('DSH child history uses its durable parent address and exposes read-only co
   try {
     await host.refresh();
     const session = store.sessions()[0];
+    assert.equal(
+      session.parentSessionId,
+      (await import('node:crypto'))
+        .createHash('sha256')
+        .update(JSON.stringify(['dsh', 'dsh', 'parent']))
+        .digest('hex')
+        .slice(0, 32),
+    );
     assert.match(session.diagnostic!, /Read-only DSH sub-agent/);
     assert.equal(session.capabilities.readConversation, true);
     for (const capability of [

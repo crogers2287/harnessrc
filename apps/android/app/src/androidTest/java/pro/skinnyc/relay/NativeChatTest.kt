@@ -132,6 +132,8 @@ class NativeChatTest {
                             path.endsWith("/permissions") -> """{"supported":false,"options":[],"reason":"Test session uses host permissions."}"""
                             path == "/api/sessions" -> "{\"sessions\":[$session]}"
                             path == "/api/voice" -> "{\"enabled\":true,\"maxSeconds\":180}"
+                            path.endsWith("/subagents") -> """{"supported":true,"subagents":[{"id":"${"b".repeat(64)}","name":"Image reviewer","model":"Test model","status":"working","updatedAt":"2026-10-24T22:00:00Z"},{"id":"${"c".repeat(64)}","name":"Layout inspector","model":"Test model","status":"observed","updatedAt":"2026-10-24T22:00:00Z"}]}"""
+                            path.contains("/subagents/") && path.contains("/events?") -> json("events" to org.json.JSONArray().put(json("id" to "agent-1", "sequence" to 1, "kind" to "assistant.message", "data" to json("text" to if (path.contains("c".repeat(64))) "Layout inspector private reply" else "Image reviewer private reply"))).put(json("id" to "agent-tool", "sequence" to 2, "kind" to "tool.invocation", "data" to json("tool" to "Read", "text" to "Inspect layout")))).toString()
                             path == "/api/sessions/test-session" ->
                                 "{\"session\":$session,\"interactions\":[${pendingQuestion?.toString() ?: ""}],\"tasks\":[]}"
                             path.contains("/events?") ->
@@ -175,6 +177,58 @@ class NativeChatTest {
         server.shutdown()
     }
 
+
+    @Test
+    fun conversationPickerKeepsParentDraftAndSeparatesAgentChatAndActivity() {
+        scenario.onActivity { it.model.edit("Keep this parent draft") }
+        compose.onNodeWithContentDescription("Choose conversation").performClick()
+        compose.waitUntil(10000) { compose.onAllNodesWithText("Image reviewer", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Image reviewer", useUnmergedTree = true).performClick()
+        compose.waitUntil(15000) { requests.any { it.path?.contains("/subagents/${"b".repeat(64)}/events") == true } }
+        compose.onNodeWithContentDescription("Add attachment").assertDoesNotExist()
+        compose.onNodeWithText("View only · The parent agent controls this work.").assertIsDisplayed()
+        compose.onNodeWithText("Activity", substring = false).performClick()
+        compose.waitUntil(10000) { compose.onAllNodesWithText("Agent activity · 1").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Agent activity · 1").assertIsDisplayed()
+        compose.onNodeWithText("Chat", substring = false).performClick()
+        compose.waitUntil(10000) { compose.onAllNodesWithText("Agent activity · 1").fetchSemanticsNodes().isEmpty() }
+        compose.waitUntil(10000) {
+            var visible = false
+            fun contains(view: android.view.View): Boolean = (view is android.widget.TextView && view.text.contains("Image reviewer private reply")) || (view is android.view.ViewGroup && (0 until view.childCount).any { contains(view.getChildAt(it)) })
+            scenario.onActivity { visible = contains(it.window.decorView) }
+            visible
+        }
+        InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot().let { bitmap ->
+            File(ctx.getExternalFilesDir(null), "dsh-agent-native.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }; bitmap.recycle()
+        }
+        compose.onNodeWithContentDescription("Choose conversation").performClick()
+        compose.onNodeWithText("Find an agent").performTextInput("Layout")
+        compose.waitUntil(10000) { compose.onAllNodesWithText("Image reviewer", useUnmergedTree = true).fetchSemanticsNodes().size <= 1 }
+        compose.onNodeWithText("Layout inspector", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
+        InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot().let { bitmap ->
+            File(ctx.getExternalFilesDir(null), "dsh-picker-native-keyboard.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }; bitmap.recycle()
+        }
+        compose.onNodeWithText("Layout inspector", useUnmergedTree = true).performClick()
+        compose.waitUntil(10000) { compose.onAllNodesWithText("Find an agent").fetchSemanticsNodes().isEmpty() }
+        androidx.test.espresso.Espresso.closeSoftKeyboard()
+        compose.waitForIdle()
+        compose.waitUntil(15000) { requests.any { it.path?.contains("/subagents/${"c".repeat(64)}/events") == true } }
+        scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
+        compose.waitUntil(10000) { compose.onAllNodesWithContentDescription("Add attachment").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithContentDescription("Add attachment").assertExists()
+        scenario.onActivity { assertEquals("Keep this parent draft", it.model.draft); assertEquals("test-session", it.model.selected); it.model.updateColorMode("dark") }
+        androidx.test.espresso.Espresso.closeSoftKeyboard()
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("Choose conversation").performClick()
+        compose.waitUntil(10000) { compose.onAllNodesWithText("Conversations", substring = false).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Conversations", substring = false).assertIsDisplayed()
+        Thread.sleep(400)
+        InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot().let { bitmap ->
+            File(ctx.getExternalFilesDir(null), "dsh-picker-native.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }; bitmap.recycle()
+        }
+        scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
+        assertFalse(requests.any { it.method == "POST" && it.path?.endsWith("/messages") == true })
+    }
 
     @Test
     fun helperSelectsProxyModelAndKeepsMainDraftWhenDismissed() {

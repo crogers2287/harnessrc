@@ -1185,77 +1185,19 @@ fun LaunchScreen(vm: RelayModel, showSessions: () -> Unit = {}, back: () -> Unit
 
 @Composable
 fun SubagentsScreen(vm: RelayModel, back: () -> Unit) {
-    val parent = vm.selected
-    var agents by remember(parent) { mutableStateOf<List<JSONObject>>(emptyList()) }
-    var child by remember(parent) { mutableStateOf<JSONObject?>(null) }
-    var events by remember(parent, child?.str("id")) { mutableStateOf<List<ChatEvent>>(emptyList()) }
-    var supported by remember(parent) { mutableStateOf(true) }
-    var loading by remember(parent) { mutableStateOf(true) }
-    var error by remember(parent) { mutableStateOf("") }
-    var olderLoading by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
-    androidx.activity.compose.BackHandler(enabled = child != null) { child = null }
-    LaunchedEffect(parent, child?.str("id")) {
-        loading = true
-        while (true) {
-            try {
-                if (child == null) {
-                    val result = vm.api.api("/api/sessions/$parent/subagents")
-                    agents = result.rows("subagents")
-                    supported = result.optBoolean("supported")
-                } else {
-                    val result = vm.api.api("/api/sessions/$parent/subagents/${child!!.str("id")}/events?limit=100")
-                    events = mergeEvents(events, result.rows("events").map(::ChatEvent))
-                }
-                error = ""
-            } catch (e: Exception) {
-                if (e is CancellationException) throw e
-                error = e.message ?: "Could not load sub-agents"
-            }
-            loading = false
-            delay(if (child == null) 15000 else 3000)
+    var child by rememberSaveable(vm.selected) { mutableStateOf("") }
+    var activity by rememberSaveable(vm.selected) { mutableStateOf(false) }
+    androidx.activity.compose.BackHandler(enabled = child.isNotBlank()) { child = "" }
+    Column(Modifier.fillMaxSize().safeDrawingPadding()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            ActionIcon(Icons.Outlined.ArrowBack, "Back") { if (child.isNotBlank()) child = "" else back() }
+            Text(vm.session?.title ?: "Conversations", style = MaterialTheme.typography.titleMedium)
         }
-    }
-    Page(if (child == null) "Sub-agents" else "Sub-agent conversation", { if (child != null) child = null else back() }) {
-        child?.let { Text(it.str("name"), style = MaterialTheme.typography.titleMedium) }
-        Text("View only · The parent agent controls their work.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        if (loading) CircularProgressIndicator()
-        if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error)
-        if (child == null) {
-            if (!loading && agents.isEmpty()) Text(if (supported) "No linked sub-agents recorded yet." else "This harness does not expose linked sub-agent conversations to Relay yet.")
-            agents.forEach { agent ->
-                OutlinedCard(onClick = { child = agent }, modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(agent.str("name"), fontWeight = FontWeight.SemiBold)
-                        Text(agent.str("model", "Model not reported"), style = MaterialTheme.typography.bodySmall)
-                        Text(agent.str("updatedAt"), style = MaterialTheme.typography.labelSmall)
-                    }
-                }
-            }
-        } else {
-            if ((events.firstOrNull()?.sequence ?: 0) > 1) OutlinedButton(enabled = !olderLoading, onClick = {
-                scope.launch {
-                    olderLoading = true
-                    try {
-                        val result = vm.api.api("/api/sessions/$parent/subagents/${child!!.str("id")}/events?before=${events.first().sequence}&limit=100")
-                        events = mergeEvents(events, result.rows("events").map(::ChatEvent))
-                    } catch (e: Exception) { if (e is CancellationException) throw e; error = e.message ?: "Could not load history" }
-                    finally { olderLoading = false }
-                }
-            }) { Text("Load earlier messages") }
-            if (!loading && events.isEmpty()) Text("No conversation recorded yet.")
-            groupConversationActivity(conversationRows(events)).forEach { group ->
-                val event = group.first()
-                if (isGroupedActivity(event)) {
-                    var expanded by remember(event.id) { mutableStateOf(false) }
-                    TextButton(onClick = { expanded = !expanded }) { Text("Agent activity · ${group.size}") }
-                    if (expanded) group.forEach { item -> SelectionContainerCompat { Text(item.body.toString(2).take(24000)) } }
-                } else if (event.text.isNotBlank()) {
-                    Text(if (event.kind == "user.message") "User" else "Agent", style = MaterialTheme.typography.labelMedium)
-                    MarkdownText(displayText(event.text), vm.api.base)
-                    MessageTime(event, if (event.kind == "user.message") "Sent" else "Received")
-                }
-            }
+        AgentConversationNavigation(vm, child, activity, { child = it; activity = false }, { activity = it })
+        if (child.isNotBlank()) AgentConversation(vm, child, activity, Modifier.weight(1f))
+        else {
+            Text("Choose a sub-agent above to read its work.", Modifier.padding(20.dp))
+            TextButton(onClick = back) { Text("Return to Main conversation") }
         }
     }
 }

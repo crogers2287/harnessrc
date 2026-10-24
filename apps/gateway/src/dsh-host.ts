@@ -70,6 +70,12 @@ export class DshHost {
           hostId: this.config.id,
           harness: 'dsh',
           nativeSessionId: row.sessionId,
+          parentSessionId: child?.parentSessionId
+            ? createHash('sha256')
+                .update(JSON.stringify([this.config.id, 'dsh', child.parentSessionId]))
+                .digest('hex')
+                .slice(0, 32)
+            : undefined,
           nativeSessionKind: 'id',
           terminalId: `dsh:${row.sessionId}`,
           paneId: '',

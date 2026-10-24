@@ -1,6 +1,8 @@
+import { conversationItems } from './conversation-items.ts';
 import { ProviderSwap } from './ProviderSwap.tsx';
 import { ReadingPreferences, usePreferences, feedback } from './preferences.tsx';
 import { Subagents } from './Subagents.tsx';
+import { ConversationNavigation } from './ConversationNavigation.tsx';
 import { RichActionContext } from './rich-context.ts';
 import { Fragment, lazy, Suspense } from 'react';
 const LazyRichResponse = lazy(() => import('./RichResponse.tsx'));
@@ -86,7 +88,13 @@ type Detail = {
   interactions: Interaction[];
   tasks: Task[];
 };
-type Route = { session?: string; view?: string; interaction?: string };
+type Route = {
+  session?: string;
+  view?: string;
+  interaction?: string;
+  agent?: string;
+  tab?: string;
+};
 const getRoute = (): Route => Object.fromEntries(new URLSearchParams(location.search));
 const previewText = (text: string) =>
   text
@@ -156,7 +164,7 @@ export function App() {
   }, [filters]);
   const [groupByDir, setGroupByDir] = useState(() => {
     try {
-      return localStorage.getItem('relay-group-by-cwd') === '1';
+      return localStorage.getItem('relay-group-by-cwd') !== '0';
     } catch {
       return false;
     }
@@ -370,9 +378,12 @@ export function App() {
     );
   if (!auth.data) return <Pair onPaired={() => void query.invalidateQueries()} />;
   const selected = sessions.find((s) => s.id === route.session);
-  const shown = filterSessions(sessions, filters, lastOpened);
+  const matching = filterSessions(sessions, filters, lastOpened);
+  const shown = matching.filter(
+    (s) => !s.parentSessionId || !matching.some((parent) => parent.id === s.parentSessionId),
+  );
   return (
-    <div className={`app ${route.session || route.view ? 'has-detail' : ''}`}>
+    <div className={`app dsh-layout-preview ${route.session || route.view ? 'has-detail' : ''}`}>
       <SessionDrawer open={drawerOpen} close={closeDrawer}>
         <header className="brand">
           <div className="brand-mark">
@@ -793,8 +804,19 @@ function Conversation({
   }, [history, events.data]);
   const preferences = usePreferences();
   const visible = useMemo(
-    () => conversationItems(merged, preferences.activity),
-    [merged, preferences.activity],
+    () =>
+      route.tab === 'activity'
+        ? conversationItems(merged, 'everything').filter(
+            (e) =>
+              ![
+                'user.message',
+                'assistant.message',
+                'assistant.delta',
+                'artifact.created',
+              ].includes(e.kind),
+          )
+        : conversationItems(merged, preferences.activity),
+    [merged, preferences.activity, route.tab],
   );
   useEffect(() => {
     drafts.set(session.id, draft);
@@ -1076,12 +1098,45 @@ function Conversation({
       setLoadingMore(false);
     }
   };
+  const conversationNavigation = (
+    <ConversationNavigation
+      sessionId={session.id}
+      title={sessionLabel(session)}
+      agentId={route.agent}
+      activity={route.tab === 'activity'}
+      select={(agent) =>
+        navigate({ session: session.id, ...(agent ? { view: 'subagents', agent } : {}) })
+      }
+      tab={(activity) => navigate({ ...route, tab: activity ? 'activity' : undefined })}
+    />
+  );
   if (route.view === 'subagents')
     return (
-      <>
-        <PageHeader title="Sub-agents" back={() => navigate({ session: session.id })} />
-        <Subagents sessionId={session.id} renderEvent={(event) => <EventCard event={event} />} />
-      </>
+      <MediaPreviewProvider>
+        <header className="conversation-header">
+          <IconButton label="Open sessions" className="mobile-back" onClick={back}>
+            <Menu size={22} />
+          </IconButton>
+          <button className="parent-breadcrumb" onClick={() => navigate({ session: session.id })}>
+            <ArrowLeft size={17} aria-hidden="true" />
+            <span>{sessionLabel(session)}</span>
+          </button>
+          <IconButton
+            label="Session details"
+            onClick={() => navigate({ session: session.id, view: 'details' })}
+          >
+            <MoreHorizontal size={23} />
+          </IconButton>
+        </header>
+        {conversationNavigation}
+        <Subagents
+          sessionId={session.id}
+          childId={route.agent}
+          activity={route.tab === 'activity'}
+          select={(agent) => navigate({ session: session.id, view: 'subagents', agent })}
+          renderEvent={(event) => <EventCard event={event} />}
+        />
+      </MediaPreviewProvider>
     );
   if (route.view === 'queue')
     return (
@@ -1213,6 +1268,7 @@ function Conversation({
           <MoreHorizontal size={23} />
         </IconButton>
       </header>
+      {conversationNavigation}
       <div className="chat-context-strip">
         <Status status={session.status} />
         <span title={session.cwd}>{session.cwd || 'Directory not reported'}</span>
@@ -1733,59 +1789,6 @@ function WorkingIndicator({
       )}
     </div>
   );
-}
-function conversationItems(events: Event[], activity = 'grouped'): Event[] {
-  const replaced = new Set(
-    events.flatMap((e) =>
-      Array.isArray(e.data.replacesEventSourceIds) ? e.data.replacesEventSourceIds : [],
-    ),
-  );
-  events = events.filter((e) => !replaced.has(e.sourceId));
-  const completed = new Set(
-    events.filter((e) => e.kind === 'assistant.message' && e.data.itemId).map((e) => e.data.itemId),
-  );
-  const deltas = new Map<unknown, Event>();
-  const output: Event[] = [];
-  for (const e of events) {
-    if (e.data.nativeMeta) continue;
-    if (e.kind === 'assistant.delta') {
-      const key = e.data.itemId;
-      if (completed.has(key)) continue;
-      const existing = deltas.get(key);
-      if (existing) existing.data.text = String(existing.data.text) + String(e.data.text);
-      else {
-        const item = { ...e, data: { ...e.data } };
-        deltas.set(key, item);
-        output.push(item);
-      }
-    } else if (
-      ![
-        'turn.started',
-        'turn.completed',
-        'task.queued',
-        'task.dispatched',
-        'task.completed',
-        'connection.state',
-        'agent.status',
-        'question',
-        'approval.request',
-        'approval.response',
-      ].includes(e.kind)
-    )
-      output.push(e);
-  }
-  if (activity === 'responses')
-    return output.filter((e) => !e.kind.startsWith('tool.') && e.kind !== 'reasoning.summary');
-  if (activity === 'everything') return output;
-  const grouped: Event[] = [];
-  for (const event of output) {
-    const previous = grouped[grouped.length - 1];
-    if (event.kind.startsWith('tool.') || event.kind === 'reasoning.summary') {
-      if (previous?.data.activityGroup) (previous.data.activities as Event[]).push(event);
-      else grouped.push({ ...event, data: { activityGroup: true, activities: [event] } });
-    } else grouped.push(event);
-  }
-  return grouped;
 }
 function EventCard({ event, deliveryLabel }: { event: Event; deliveryLabel?: string }) {
   const data = event.data;

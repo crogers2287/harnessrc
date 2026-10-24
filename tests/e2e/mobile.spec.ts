@@ -3517,3 +3517,126 @@ test('composer exposes native token counters, thinking, model and confirmed perm
       .violations,
   ).toEqual([]);
 });
+
+test('DSH layout switches parent and agents without losing drafts and follows isolated child history', async ({
+  page,
+}) => {
+  test.setTimeout(90000);
+  await page.setViewportSize({ width: 390, height: 844 });
+  const first = 'b'.repeat(64),
+    second = 'c'.repeat(64);
+  const stamp = new Date().toISOString();
+  let live = false;
+  const event = (id: string, text: string, sequence: number, kind = 'assistant.message') => ({
+    id,
+    sourceId: id,
+    sessionId: first,
+    nativeSessionId: 'child',
+    source: 'codex',
+    sequence,
+    timestamp: stamp,
+    kind,
+    data: { text, tool: 'Read' },
+  });
+  await page.route('**/api/sessions/*/subagents', (route) =>
+    route.fulfill({
+      json: {
+        supported: true,
+        subagents: [
+          {
+            id: first,
+            name: 'Image reviewer',
+            model: 'Test model',
+            status: 'working',
+            updatedAt: stamp,
+          },
+          {
+            id: second,
+            name: 'Layout inspector',
+            model: 'Another model',
+            status: 'observed',
+            updatedAt: stamp,
+          },
+        ],
+      },
+    }),
+  );
+  await page.route('**/api/sessions/*/subagents/*/events?*', (route) =>
+    route.fulfill({
+      json: {
+        events: route.request().url().includes(second)
+          ? [event('second-reply', 'Layout inspector private reply', 1)]
+          : [
+              event('first-reply', 'Image reviewer private reply', 1),
+              event('tool', 'Read screenshot metadata', 2, 'tool.invocation'),
+              ...(live ? [event('live-reply', 'Live child update arrived', 3)] : []),
+            ],
+      },
+    }),
+  );
+  await pair(page);
+  await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
+  const message = page.getByRole('textbox', { name: 'Instruction', exact: true });
+  await message.fill('Keep this parent draft');
+  await page
+    .getByRole('button', { name: 'Choose conversation: Main conversation', exact: true })
+    .click();
+  const picker = page.getByRole('dialog', { name: 'Conversations', exact: true });
+  await expect(picker).toBeVisible();
+  await picker.getByRole('button', { name: /Image reviewer/ }).click();
+  await expect(page.getByText('Image reviewer private reply')).toBeVisible();
+  await expect(message).toHaveCount(0);
+  await expect(page).toHaveURL(new RegExp('agent=' + first));
+  live = true;
+  await expect(page.getByText('Live child update arrived')).toBeVisible({ timeout: 10000 });
+  await page.getByRole('button', { name: 'Activity', exact: true }).click();
+  await expect(page.getByText('Image reviewer private reply')).toHaveCount(0);
+  await expect(page.locator('.activity-group')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Chat', exact: true }).click();
+  await page
+    .getByRole('button', { name: 'Choose conversation: Image reviewer', exact: true })
+    .click();
+  await picker.getByRole('searchbox', { name: 'Find an agent' }).fill('Layout');
+  await expect(picker.getByRole('button', { name: /Image reviewer/ })).toHaveCount(0);
+  await picker.getByRole('button', { name: /Layout inspector/ }).click();
+  await expect(page.getByText('Layout inspector private reply')).toBeVisible();
+  await expect(page.getByText('Image reviewer private reply')).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByText('Layout inspector private reply')).toBeVisible();
+  await page
+    .getByRole('button', { name: 'Choose conversation: Layout inspector', exact: true })
+    .click();
+  await picker.getByRole('button', { name: /Main conversation/ }).click();
+  await expect(message).toHaveText('Keep this parent draft');
+  await page
+    .getByRole('button', { name: 'Choose conversation: Main conversation', exact: true })
+    .click();
+  await page.keyboard.press('Escape');
+  await expect(picker).not.toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Choose conversation: Main conversation', exact: true }),
+  ).toBeFocused();
+  for (const width of [320, 375, 430, 768, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.evaluate(() => (document.documentElement.dataset.theme = 'light'));
+    await page.screenshot({ path: `/tmp/relay-dsh-layout-${width}.png` });
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+    ).toBeTruthy();
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page
+    .getByRole('button', { name: 'Choose conversation: Main conversation', exact: true })
+    .click();
+  await page.screenshot({ path: '/tmp/relay-dsh-picker-desktop.png' });
+  const violations = (await new AxeBuilder({ page }).analyze()).violations;
+  expect(violations).toEqual([]);
+  await page.keyboard.press('Escape');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(() => (document.documentElement.dataset.theme = 'dark'));
+  await page
+    .getByRole('button', { name: 'Choose conversation: Main conversation', exact: true })
+    .click();
+  await picker.getByRole('button', { name: /Image reviewer/ }).click();
+  await page.screenshot({ path: '/tmp/relay-dsh-agent-dark.png' });
+});

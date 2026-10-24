@@ -135,3 +135,83 @@ test('Claude children stay under the exact parent folder and skip symlinks', asy
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test('DSH linked conversations require exact host/parent identity and both read grants', async () => {
+  const f = await fixture({ startRuntime: false });
+  const { createHash } = await import('node:crypto');
+  try {
+    const parent = { ...f.session, harness: 'dsh', nativeSessionId: 'dsh-parent' };
+    const child = {
+      ...parent,
+      id: 'dsh-child',
+      nativeSessionId: 'native-child',
+      parentSessionId: parent.id,
+      sessionName: 'Review changes',
+      status: 'working' as const,
+    };
+    f.gateway.store.saveSession(parent);
+    f.gateway.store.saveSession(child);
+    f.gateway.store.saveSession({ ...child, id: 'wrong-host', hostId: 'other' });
+    f.gateway.store.saveSession({ ...child, id: 'wrong-parent', parentSessionId: 'elsewhere' });
+    let prepared = '';
+    f.gateway.runtime.prepareConversation = async (id) => {
+      prepared = id;
+    };
+    f.gateway.store.event(child, {
+      sourceId: 'child-reply',
+      kind: 'assistant.message',
+      timestamp: new Date().toISOString(),
+      data: { text: 'Review finished' },
+    });
+    const url = `/api/sessions/${parent.id}/subagents`;
+    const list = await f.gateway.app.inject({ url, headers: f.headers });
+    assert.equal(list.statusCode, 200);
+    const agents = list.json().subagents;
+    assert.equal(agents.length, 1);
+    assert.equal(agents[0].name, 'Review changes');
+    assert.equal(agents[0].status, 'working');
+    const opaque = createHash('sha256').update(`${parent.id}:${child.id}`).digest('hex');
+    assert.equal(agents[0].id, opaque);
+    const history = await f.gateway.app.inject({
+      url: `${url}/${opaque}/events?limit=100`,
+      headers: f.headers,
+    });
+    assert.equal(history.statusCode, 200);
+    assert.equal(history.json().events[0].data.text, 'Review finished');
+    assert.equal(prepared, child.id);
+    assert.equal(
+      (await f.gateway.app.inject({ url: `${url}/${'f'.repeat(64)}/events`, headers: f.headers }))
+        .statusCode >= 400,
+      true,
+    );
+    const device = f.gateway.auth.authenticate(f.headers.cookie.replace('rc_access=', ''));
+    f.gateway.store.db.prepare('UPDATE devices SET admin=0 WHERE id=?').run(device.id);
+    f.gateway.store.db
+      .prepare('INSERT INTO grants(device_id,session_id,control) VALUES(?,?,0)')
+      .run(device.id, parent.id);
+    assert.equal(
+      (await f.gateway.app.inject({ url, headers: f.headers })).json().subagents.length,
+      0,
+    );
+    assert.equal(
+      (await f.gateway.app.inject({ url: `${url}/${opaque}/events`, headers: f.headers }))
+        .statusCode,
+      403,
+    );
+    f.gateway.store.db
+      .prepare('INSERT INTO grants(device_id,session_id,control) VALUES(?,?,0)')
+      .run(device.id, child.id);
+    assert.equal(
+      (await f.gateway.app.inject({ url, headers: f.headers })).json().subagents.length,
+      1,
+    );
+    assert.equal(
+      (
+        await f.gateway.app.inject({ url: `${url}/${opaque}/events?before=1`, headers: f.headers })
+      ).json().events.length,
+      0,
+    );
+  } finally {
+    await f.close();
+  }
+});

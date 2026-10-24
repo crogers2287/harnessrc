@@ -99,6 +99,8 @@ private fun RelayAppContent(vm: RelayModel, shared: Intent?, nativeKeyboardVisib
     var screen by rememberSaveable { mutableStateOf("") }
     var quickShortcuts by remember { mutableStateOf(false) }
     var helperOpen by rememberSaveable { mutableStateOf(false) }
+    var conversationAgent by rememberSaveable(vm.selected) { mutableStateOf("") }
+    var conversationActivity by rememberSaveable(vm.selected) { mutableStateOf(false) }
     LaunchedEffect(vm.commandAction) {
         if (vm.commandAction == "help") quickShortcuts = true
         else if (vm.commandAction.isNotEmpty()) screen = commandScreen(vm.commandAction)
@@ -121,7 +123,11 @@ private fun RelayAppContent(vm: RelayModel, shared: Intent?, nativeKeyboardVisib
     BackHandler(enabled = screen.isNotEmpty()) { screen = "" }
     BackHandler(enabled = screen.isEmpty()) {
         scope.launch {
-            if (drawer.targetValue == DrawerValue.Closed) drawer.open() else drawer.close()
+            when {
+                drawer.targetValue != DrawerValue.Closed -> drawer.close()
+                conversationAgent.isNotEmpty() -> { conversationAgent = ""; conversationActivity = false }
+                else -> drawer.open()
+            }
         }
     }
     Box(Modifier.fillMaxSize()) {
@@ -209,7 +215,7 @@ private fun RelayAppContent(vm: RelayModel, shared: Intent?, nativeKeyboardVisib
                                     true,
                                 )
                         }
-                        .let { sortedSessions(it, vm.lastOpenedAt) }
+                        .let { matching -> sortedSessions(matching.filter { child -> matching.none { it.id == child.data.str("parentSessionId") } }, vm.lastOpenedAt) }
                 LazyColumn(Modifier.weight(1f)) {
                     if (rows.isEmpty())
                         item {
@@ -248,7 +254,7 @@ private fun RelayAppContent(vm: RelayModel, shared: Intent?, nativeKeyboardVisib
                         Column(
                             Modifier.fillMaxWidth()
                                 .padding(horizontal = 8.dp, vertical = 2.dp)
-                                .clip(RoundedCornerShape(16.dp))
+                                .clip(RoundedCornerShape(8.dp))
                                 .background(
                                     if (s.id == vm.selected)
                                         MaterialTheme.colorScheme.primaryContainer
@@ -262,7 +268,7 @@ private fun RelayAppContent(vm: RelayModel, shared: Intent?, nativeKeyboardVisib
                                     },
                                     onLongClick = { rowActions = s },
                                 )
-                                .padding(14.dp)
+                                .padding(horizontal = 14.dp, vertical = 10.dp)
                         ) {
                             Row {
                                 Text(
@@ -347,7 +353,7 @@ private fun RelayAppContent(vm: RelayModel, shared: Intent?, nativeKeyboardVisib
                 "new" -> LaunchScreen(vm, showSessions = { screen = ""; scope.launch { drawer.open() } }) { screen = "" }
                 "details" -> DetailsScreen(vm, openTasks = { screen = "tasks" }, openSubagents = { screen = "subagents" }, openQuestions = { screen = "questions" }) { screen = "" }
                 "questions" -> QuestionsScreen(vm) { screen = "" }
-                "subagents" -> SubagentsScreen(vm) { screen = "tasks" }
+                "subagents" -> SubagentsScreen(vm) { screen = "" }
                 "tasks" -> AgentTasksScreen(vm, openQueue = { screen = "queue" }, openSubagents = { screen = "subagents" }) { screen = "" }
                 "queue" -> QueueScreen(vm) { screen = "" }
                 else ->
@@ -411,6 +417,7 @@ private fun RelayAppContent(vm: RelayModel, shared: Intent?, nativeKeyboardVisib
                                 )
                                 TextButton(onClick = vm::reload) { Text("Retry") }
                             }
+                        if (vm.session != null) AgentConversationNavigation(vm, conversationAgent, conversationActivity, { conversationAgent = it; conversationActivity = false }, { conversationActivity = it }, showBar = !keyboard)
                         if (vm.session == null)
                             Box(
                                 Modifier.weight(1f).fillMaxWidth(),
@@ -429,10 +436,11 @@ private fun RelayAppContent(vm: RelayModel, shared: Intent?, nativeKeyboardVisib
                                     }
                                 }
                             }
-                        else conversationState.SaveableStateProvider(vm.selected) { Chat(vm, Modifier.weight(1f)) }
+                        else if (conversationAgent.isNotEmpty()) conversationState.SaveableStateProvider("${vm.selected}:agent:$conversationAgent:$conversationActivity") { AgentConversation(vm, conversationAgent, conversationActivity, Modifier.weight(1f)) }
+                        else conversationState.SaveableStateProvider("${vm.selected}:parent:$conversationActivity") { Chat(vm, Modifier.weight(1f), conversationActivity) }
                         if (vm.error.isNotBlank())
                             ErrorNotice(vm.error, onDismiss = { vm.error = "" })
-                        if (vm.session != null) {
+                        if (vm.session != null && conversationAgent.isEmpty()) {
                             AnswerTray(vm) { screen = "questions" }
                             Composer(vm)
                         }
@@ -522,10 +530,10 @@ fun ErrorNotice(text: String, onDismiss: () -> Unit) {
 }
 
 @Composable
-fun Chat(vm: RelayModel, modifier: Modifier) {
-    val rows = remember(vm.events) { conversationRows(vm.events) }
-    val groups = remember(rows, vm.activityDetail) {
-        when (vm.activityDetail) {
+fun Chat(vm: RelayModel, modifier: Modifier, activityOnly: Boolean = false) {
+    val rows = remember(vm.events, activityOnly) { conversationRows(vm.events).filter { !activityOnly || isGroupedActivity(it) } }
+    val groups = remember(rows, vm.activityDetail, activityOnly) {
+        if (activityOnly) groupConversationActivity(rows) else when (vm.activityDetail) {
             "responses" -> rows.filterNot { isGroupedActivity(it) }.map { listOf(it) }
             "everything" -> rows.map { listOf(it) }
             else -> groupConversationActivity(rows)

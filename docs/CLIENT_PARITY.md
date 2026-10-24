@@ -466,3 +466,17 @@ retained in the database; the drawer exposes the current chat. Android's physica
 edge gestures and OS notification restrictions still require a phone check.
 Closed-browser Web Push remains unimplemented; connected-browser notifications
 and Android's enabled background connection service retain their existing limits.
+
+### DSH layout experiment — Android 0.1.37-dsh-preview
+
+The `experiment/dsh-conversation-layout` branch adds a direct conversation picker
+and Chat/Activity tabs to both clients. Workspace navigation defaults to folders
+for fresh preferences; existing preferences are retained. Child views preserve
+the parent session and draft and expose no child composer. Web uses a searchable
+modal dialog and child deep links; Android uses a native bottom sheet and
+saveable child selection with system Back. Exact DSH parent links now join the
+existing Claude/Codex reader, with both parent/child read grants checked.
+
+This is an experimental branch, not a production web deployment. See
+[DSH_LAYOUT_EXPERIMENT.md](DSH_LAYOUT_EXPERIMENT.md) for the design, preview setup,
+validation and remaining limits.

@@ -71,6 +71,7 @@ export const sessionSchema = z.object({
   modelUpdatedAt: z.string().optional(),
   agentPreset: z.string().optional(),
   nativeSessionId: z.string(),
+  parentSessionId: z.string().optional(),
   nativeSessionKind: z.enum(['id', 'path']),
   terminalId: z.string(),
   paneId: z.string(),

@@ -29,7 +29,7 @@ class RelayModel @JvmOverloads constructor(application: Application, private val
         private set
     var haptics by mutableStateOf(prefs.getBoolean("haptics", true))
         private set
-    var groupByDir by mutableStateOf(prefs.getBoolean("groupByDir", false))
+    var groupByDir by mutableStateOf(prefs.getBoolean("groupByDir", true))
         private set
     fun updateGroupByDir(value: Boolean) {
         groupByDir = value
