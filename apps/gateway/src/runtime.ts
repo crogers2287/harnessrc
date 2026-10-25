@@ -1,5 +1,6 @@
 import { ClaudeQuestions } from './claude-questions.ts';
 import { SubagentReader } from '../../../packages/adapters/src/subagents.ts';
+import { CodexExecWorkers } from './codex-exec-workers.ts';
 import { importNativeImage } from './artifacts.ts';
 import { ClaudeSteering } from './claude-steering.ts';
 import { DshHost } from './dsh-host.ts';
@@ -26,6 +27,7 @@ import type { Config } from './config.ts';
 import { prune } from './prune.ts';
 export class Runtime extends EventEmitter {
   subagents: SubagentReader;
+  execWorkers: CodexExecWorkers;
   claudeQuestions = new ClaudeQuestions(this);
   claudeSteering = new ClaudeSteering(this);
   dshHosts = new Map<string, DshHost>();
@@ -49,7 +51,11 @@ export class Runtime extends EventEmitter {
     public config: Config,
   ) {
     super();
-    this.subagents = new SubagentReader(config.transcripts);
+    this.execWorkers = new CodexExecWorkers(
+      store,
+      new Set(config.hosts.filter((h) => h.localFiles).map((h) => h.id)),
+    );
+    this.subagents = new SubagentReader(config.transcripts, (s) => this.execWorkers.list(s));
     for (const s of store.sessions()) {
       s.connected = false;
       s.status = 'offline';
@@ -476,6 +482,7 @@ export class Runtime extends EventEmitter {
     this.tickBusy = true;
     try {
       for (const id of this.clients.keys()) await this.refresh(id);
+      await this.execWorkers.refresh();
       for (const host of this.dshHosts.values()) {
         await host.refresh();
         for (const [id, a] of host.adapters) this.adapters.set(id, a);

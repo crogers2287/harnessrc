@@ -497,3 +497,18 @@ This gateway-only change needs no APK update; a failed existing chat stays saved
 and can be resumed by sending `continue`. The 2026-10-24 screenshot coincided
 with the configured proxy stopping from 20:40:52 to 20:42:52 EDT; model inference
 was verified after it returned.
+
+Codex shell workers: local Linux `codex exec --json` workers can now appear in
+the same conversation picker as native sub-agents. Discovery requires the live
+process's inherited `CODEX_THREAD_ID`, its emitted `thread.started` child ID,
+and the matching native `exec` transcript. Project paths and display names never
+establish a relationship. Exact links are saved so conversations remain readable
+after worker exit or gateway restart; exited workers display Ended, while live
+workers retain their native turn state and model. Both clients use the existing
+read-only child conversation API, without an APK change.
+
+This fallback requires a configured local-files host and JSON stdout redirected
+to a regular file. Workers that finished before discovery, pipe-only output and
+remote processes cannot be reconstructed from names or timestamps. Regression
+coverage checks parent isolation, native-link conflicts, invalid child IDs, PID
+reuse, model/state display, authenticated history and persistence after exit.

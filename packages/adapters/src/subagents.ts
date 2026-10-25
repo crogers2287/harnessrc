@@ -14,13 +14,17 @@ export type Subagent = {
   status: string;
 };
 type Entry = Subagent & { file: string };
+export type ExecWorker = { nativeSessionId: string; name: string; status?: string };
 /** Native parent linkage only: never infer children from names, CWD or model text. */
 export class SubagentReader {
   private catalogs = new Map<string, { at: number; entries: Entry[] }>();
   private metadata = new Map<string, { modified: number; records: any[] }>();
   private histories = new Map<string, { adapter: JsonlAdapter; events: Event[] }>();
   private summaries = new SubagentMetadata();
-  constructor(private roots: { claude: string; codex: string }) {}
+  constructor(
+    private roots: { claude: string; codex: string },
+    private execWorkers?: (parent: Session) => Promise<ExecWorker[]>,
+  ) {}
   supported(s: Session) {
     return ['claude', 'codex'].includes(s.harness) && s.nativeSessionKind === 'id';
   }
@@ -68,6 +72,12 @@ export class SubagentReader {
       await walk(root);
     }
     const entries: Entry[] = [];
+    const workers = new Map(
+      (s.harness === 'codex' ? ((await this.execWorkers?.(s)) ?? []) : []).map((w) => [
+        w.nativeSessionId,
+        w,
+      ]),
+    );
     for (const candidate of candidates) {
       const file = await realpath(candidate);
       if (!file.startsWith(root + path.sep)) continue;
@@ -114,7 +124,9 @@ export class SubagentReader {
       }
       const meta = records.find((r) => r.type === 'session_meta')?.payload;
       const spawn = meta?.source?.subagent?.thread_spawn;
-      if (s.harness === 'codex' && spawn?.parent_thread_id !== s.nativeSessionId) continue;
+      const worker = meta?.source === 'exec' ? workers.get(meta.id) : undefined;
+      if (s.harness === 'codex' && spawn?.parent_thread_id !== s.nativeSessionId && !worker)
+        continue;
       const nativeSessionId =
         s.harness === 'codex' ? meta.id : path.basename(file, '.jsonl').slice(6);
       if (typeof nativeSessionId !== 'string' || !/^[a-zA-Z0-9_-]{1,160}$/.test(nativeSessionId))
@@ -125,11 +137,11 @@ export class SubagentReader {
         id: createHash('sha256').update(`${key}:${nativeSessionId}`).digest('hex'),
         nativeSessionId,
         name: String(
-          spawn?.agent_path ?? spawn?.agent_nickname ?? `Agent ${nativeSessionId}`,
+          spawn?.agent_path ?? spawn?.agent_nickname ?? worker?.name ?? `Agent ${nativeSessionId}`,
         ).slice(0, 256),
         model: summary.model,
         updatedAt: info.mtime.toISOString(),
-        status: ended && ended.at >= summary.at ? ended.status : summary.status,
+        status: worker?.status ?? (ended && ended.at >= summary.at ? ended.status : summary.status),
         file,
       });
     }
