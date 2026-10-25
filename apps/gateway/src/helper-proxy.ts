@@ -1,3 +1,52 @@
+import { setTimeout as sleep } from 'node:timers/promises';
+
+const transientConnections = new Set([
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'EPIPE',
+  'ETIMEDOUT',
+  'EHOSTUNREACH',
+  'ENETUNREACH',
+  'EAI_AGAIN',
+  'UND_ERR_CONNECT_TIMEOUT',
+  'UND_ERR_SOCKET',
+]);
+const connectionFailure = (error: unknown) => {
+  const value = error as { message?: string; cause?: { code?: string }; code?: string };
+  return (
+    transientConnections.has(value?.cause?.code ?? value?.code ?? '') ||
+    value?.message === 'fetch failed'
+  );
+};
+export function helperFailureMessage(error: unknown): string {
+  if (connectionFailure(error))
+    return 'The model proxy connection failed. Your message is saved. Send “continue” when the proxy is available again. Completed session actions remain applied.';
+  if ((error as Error)?.name === 'TimeoutError')
+    return 'The model proxy timed out. Your message is saved. Send “continue” to resume; completed session actions remain applied.';
+  return error instanceof Error
+    ? error.message
+    : 'The helper request failed. Your conversation is saved.';
+}
+
+/** Retry only transport failures before a response is received, never tools or response streams. */
+export async function helperProxyRequest(
+  fetcher: (url: string, init?: RequestInit) => Promise<Response>,
+  url: string,
+  init: RequestInit,
+) {
+  const delays = [250, 1000, 2000];
+  for (let attempt = 0; ; attempt++) {
+    init.signal?.throwIfAborted();
+    try {
+      return await fetcher(url, init);
+    } catch (error) {
+      init.signal?.throwIfAborted();
+      if (!connectionFailure(error) || attempt >= delays.length) throw error;
+      await sleep(delays[attempt], undefined, { signal: init.signal ?? undefined });
+    }
+  }
+}
+
 /** Bounded OpenAI-compatible response reader; forwards only assistant text. */
 export async function helperCompletion(response: Response, onText: (text: string) => void) {
   const reader = response.body?.getReader();

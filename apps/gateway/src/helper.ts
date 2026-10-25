@@ -1,4 +1,4 @@
-import { helperCompletion } from './helper-proxy.ts';
+import { helperCompletion, helperFailureMessage, helperProxyRequest } from './helper-proxy.ts';
 import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
@@ -161,6 +161,9 @@ export class HelperConversations {
       current: current
         ? {
             ...current,
+            ...(current.error === 'fetch failed'
+              ? { error: helperFailureMessage(new Error(current.error)) }
+              : {}),
             messages: current.messages
               .filter((m) => m.role === 'user' || (m.role === 'assistant' && m.content))
               .map((m) => ({ role: m.role, content: m.content })),
@@ -277,22 +280,26 @@ export class HelperConversations {
             throw new Error(
               'Helper history is full. Start a new helper chat; previous history remains saved.',
             );
-          const response = await this.fetcher(p.baseUrl.replace(/\/$/, '') + '/chat/completions', {
-            method: 'POST',
-            headers: this.headers(p),
-            redirect: 'error',
-            signal: AbortSignal.any([controller.signal, AbortSignal.timeout(180000)]),
-            body: JSON.stringify({
-              model: chat.model,
-              messages: [{ role: 'system', content: HELPER_INSTRUCTIONS }, ...chat.messages],
-              tools: bridge.list.map((t) => ({
-                type: 'function',
-                function: { name: t.name, description: t.description, parameters: t.inputSchema },
-              })),
-              stream: true,
-              stream_options: { include_usage: true },
-            }),
-          });
+          const response = await helperProxyRequest(
+            this.fetcher,
+            p.baseUrl.replace(/\/$/, '') + '/chat/completions',
+            {
+              method: 'POST',
+              headers: this.headers(p),
+              redirect: 'error',
+              signal: AbortSignal.any([controller.signal, AbortSignal.timeout(180000)]),
+              body: JSON.stringify({
+                model: chat.model,
+                messages: [{ role: 'system', content: HELPER_INSTRUCTIONS }, ...chat.messages],
+                tools: bridge.list.map((t) => ({
+                  type: 'function',
+                  function: { name: t.name, description: t.description, parameters: t.inputSchema },
+                })),
+                stream: true,
+                stream_options: { include_usage: true },
+              }),
+            },
+          );
           if (!response.ok) throw new Error(`Proxy request failed (HTTP ${response.status})`);
           let streamed: any;
           let savedAt = 0;
@@ -378,7 +385,7 @@ export class HelperConversations {
         chat.status = controller.signal.aborted ? 'stopped' : 'error';
         chat.error = controller.signal.aborted
           ? 'Turn stopped. Completed tool actions remain applied.'
-          : (e as Error).message;
+          : helperFailureMessage(e);
       } finally {
         this.save(chat);
         this.running.delete(chat.id);

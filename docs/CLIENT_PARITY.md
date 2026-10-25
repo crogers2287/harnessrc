@@ -488,3 +488,12 @@ and reads linked Claude/Codex model and lifecycle records incrementally. Both
 web and Android receive these fixes through their existing APIs, with no APK
 change. Native Claude completion notifications mark ended children, and later
 resumed activity takes precedence. Missing lifecycle evidence stays Recorded.
+
+Helper proxy outages: both clients receive an actionable saved-message error
+instead of raw `fetch failed`. Completion requests retry at most three times
+after brief connection failures, with Stop cancelling backoff. HTTP responses,
+partial streams and completed tool calls are never replayed automatically.
+This gateway-only change needs no APK update; a failed existing chat stays saved
+and can be resumed by sending `continue`. The 2026-10-24 screenshot coincided
+with the configured proxy stopping from 20:40:52 to 20:42:52 EDT; model inference
+was verified after it returned.

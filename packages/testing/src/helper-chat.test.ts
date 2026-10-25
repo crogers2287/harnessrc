@@ -16,7 +16,7 @@ const input = () => ({
   prompt: 'List my sessions',
 });
 async function settle(helper: HelperConversations, device = 'phone') {
-  for (let i = 0; i < 100; i++) {
+  for (let i = 0; i < 2500; i++) {
     const view = await helper.view(device);
     if (view.current?.status !== 'running') return view;
     await new Promise((resolve) => setTimeout(resolve, 2));
@@ -132,6 +132,166 @@ test('helper stop aborts only its own request and restart never repeats tool mut
     assert.equal((await restarted.view('phone')).current?.status, 'stopped');
   } finally {
     helper.close();
+    store.close();
+  }
+});
+
+test('helper retries temporary proxy connection failures without replaying completed tools', async () => {
+  const store = new Store(':memory:');
+  const bodies: any[] = [];
+  let mutations = 0;
+  const helper = new HelperConversations(store, [connection], async (url, init) => {
+    if (url.endsWith('/models')) return Response.json({ data: [{ id: 'chosen-model' }] });
+    bodies.push(JSON.parse(String(init!.body)));
+    if (bodies.length === 1 || bodies.length === 3)
+      throw new TypeError('fetch failed', {
+        cause: Object.assign(new Error('Connection refused'), { code: 'ECONNREFUSED' }),
+      });
+    return Response.json({
+      choices: [
+        {
+          message:
+            bodies.length === 2
+              ? {
+                  role: 'assistant',
+                  content: null,
+                  tool_calls: [
+                    {
+                      id: 'once',
+                      type: 'function',
+                      function: { name: 'session_action', arguments: '{}' },
+                    },
+                  ],
+                }
+              : { role: 'assistant', content: 'The action completed.' },
+        },
+      ],
+    });
+  });
+  const tools = async () => ({
+    list: [{ name: 'session_action', inputSchema: { type: 'object' } }],
+    call: async () => {
+      mutations++;
+      return { receipt: 'completed' };
+    },
+    close: async () => {},
+  });
+  try {
+    await helper.start(input(), 'phone', tools);
+    const view = await settle(helper);
+    assert.equal(view.current?.status, 'idle');
+    assert.equal(mutations, 1);
+    assert.equal(bodies.length, 4);
+    assert.deepEqual(bodies[0], bodies[1]);
+    assert.deepEqual(bodies[2], bodies[3]);
+    assert.equal(bodies[3].messages.at(-1).role, 'tool');
+    assert.equal(view.current?.messages.filter((m) => m.role === 'user').length, 1);
+  } finally {
+    await helper.close();
+    store.close();
+  }
+});
+
+test('helper retains the message and gives recovery instructions after a proxy outage', async () => {
+  const store = new Store(':memory:');
+  let attempts = 0;
+  const helper = new HelperConversations(store, [connection], async (url) => {
+    if (url.endsWith('/models')) return Response.json({ data: [{ id: 'chosen-model' }] });
+    attempts++;
+    throw new TypeError('fetch failed');
+  });
+  const tools = async () => ({ list: [], call: async () => null, close: async () => {} });
+  try {
+    const request = input();
+    await helper.start(request, 'phone', tools);
+    const view = await settle(helper);
+    assert.equal(attempts, 4);
+    assert.equal(view.current?.status, 'error');
+    assert.match(
+      view.current?.error ?? '',
+      /model proxy connection failed.*message is saved.*continue/,
+    );
+    assert.equal(view.current?.messages[0].content, request.prompt);
+    assert.equal(view.current?.messages.length, 1);
+    const chat = JSON.parse(
+      store.db.prepare('SELECT body FROM helper_chats').get()!.body as string,
+    );
+    chat.error = 'fetch failed';
+    store.db.prepare('UPDATE helper_chats SET body=?').run(JSON.stringify(chat));
+    assert.match((await helper.view('phone')).current?.error ?? '', /message is saved/);
+    assert.equal(attempts, 4, 'viewing the error never resumes an earlier turn');
+  } finally {
+    await helper.close();
+    store.close();
+  }
+});
+
+test('helper stop interrupts connection backoff and HTTP errors and partial streams are never retried', async () => {
+  const store = new Store(':memory:');
+  let attempts = 0;
+  let mode = 'offline';
+  const helper = new HelperConversations(store, [connection], async (url) => {
+    if (url.endsWith('/models')) return Response.json({ data: [{ id: 'chosen-model' }] });
+    attempts++;
+    if (mode === 'offline') throw new TypeError('fetch failed');
+    if (mode === 'rejected') return new Response('Denied', { status: 401 });
+    return new Response(
+      'data: ' +
+        JSON.stringify({
+          choices: [
+            {
+              delta: {
+                content: 'Partial reply',
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: 'partial',
+                    function: { name: 'session_action', arguments: '{}' },
+                  },
+                ],
+              },
+            },
+          ],
+        }) +
+        '\n\n',
+      { headers: { 'content-type': 'text/event-stream' } },
+    );
+  });
+  let actions = 0;
+  const tools = async () => ({
+    list: [{ name: 'session_action', inputSchema: {} }],
+    call: async () => {
+      actions++;
+    },
+    close: async () => {},
+  });
+  try {
+    const receipt = await helper.start(input(), 'phone', tools);
+    await new Promise((r) => setTimeout(r, 10));
+    helper.stop('phone');
+    assert.equal((await settle(helper)).current?.status, 'stopped');
+    assert.equal(attempts, 1);
+    mode = 'rejected';
+    await helper.message(
+      { requestId: randomUUID(), conversationId: receipt.conversationId, prompt: 'Continue' },
+      'phone',
+      tools,
+    );
+    assert.match((await settle(helper)).current?.error ?? '', /HTTP 401/);
+    assert.equal(attempts, 2);
+    mode = 'stream';
+    await helper.message(
+      { requestId: randomUUID(), conversationId: receipt.conversationId, prompt: 'Continue' },
+      'phone',
+      tools,
+    );
+    const view = await settle(helper);
+    assert.match(view.current?.error ?? '', /disconnected/);
+    assert.equal(attempts, 3);
+    assert.equal(actions, 0);
+    assert.equal(view.current?.messages.at(-1)?.content, 'Partial reply');
+  } finally {
+    await helper.close();
     store.close();
   }
 });
