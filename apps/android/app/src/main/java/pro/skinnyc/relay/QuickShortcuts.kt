@@ -23,7 +23,7 @@ fun QuickShortcuts(vm: RelayModel, close: () -> Unit) {
                 }
             }
             if ((session?.pending ?: 0) > 0 || session?.status == "blocked") TextButton(onClick = { close(); vm.commandAction = "questions" }) { Text("Answer current question") }
-            slashShortcuts.filter { it != "help" && it != "stop" }.forEach { name ->
+            vm.slashCommands.filter { it != "help" && it != "stop" && it != "esc" }.forEach { name ->
                 OutlinedButton(onClick = { close(); vm.command("/$name") }, enabled = available, modifier = Modifier.fillMaxWidth()) { Text("/$name") }
             }
         } }, confirmButton = { TextButton(onClick = close) { Text("Close") } })

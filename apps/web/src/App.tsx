@@ -43,6 +43,7 @@ import { HelperDrawer } from './HelperDrawer.tsx';
 import { ComposerStatus } from './ComposerStatus.tsx';
 import { useEffect, useRef, useState, useMemo, type FormEvent, type ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { GoalPanel } from './GoalPanel.tsx';
 import { MessageMarkdown } from './MessageMarkdown.tsx';
 import {
   Keyboard,
@@ -87,6 +88,7 @@ type Detail = {
   session: SessionView;
   interactions: Interaction[];
   tasks: Task[];
+  commands?: { name: string }[];
 };
 type Route = {
   session?: string;
@@ -952,8 +954,16 @@ function Conversation({
           view: result.action === 'tasks' ? 'queue' : result.action,
         });
       void query.invalidateQueries({ queryKey: ['detail', session.id] });
+      void query.invalidateQueries({ queryKey: ['goal', session.id] });
     },
   });
+  const shortcuts = detail.data?.commands?.map((c) => c.name) ?? [
+    'help',
+    'model',
+    'permissions',
+    'tasks',
+    'agents',
+  ];
   const canEscape =
     session.connected &&
     (session.capabilities.sendEscape || session.capabilities.interruptTurn) &&
@@ -1148,6 +1158,21 @@ function Conversation({
         >
           Sub-agent conversations
         </button>
+        <GoalPanel
+          sessionId={session.id}
+          canControl={
+            session.connected &&
+            (session.capabilities.sendMessage || session.capabilities.steerActiveTurn)
+          }
+          pending={command.isPending}
+          command={(line) => command.mutate({ line, preserveDraft: true })}
+        />
+        {command.error && (
+          <p className="error" role="alert">
+            {command.error.message}
+          </p>
+        )}
+        {notice && <p role="status">{notice}</p>}
         <section className="plan-card" aria-label="Agent plan">
           {detail.data?.plan ? (
             <>
@@ -1485,16 +1510,7 @@ function Conversation({
               {voice.panel}
               {draft.startsWith('/') && (
                 <div className="slash-suggestions" aria-label="Slash commands">
-                  {[
-                    'help',
-                    'model',
-                    'permissions',
-                    'plan',
-                    'compact',
-                    'tasks',
-                    'agents',
-                    'stop',
-                  ].map((name) => (
+                  {shortcuts.map((name) => (
                     <button
                       type="button"
                       key={name}
@@ -1660,15 +1676,17 @@ function Conversation({
                   Answer current question
                 </button>
               )}
-              {['model', 'permissions', 'plan', 'compact', 'tasks', 'agents'].map((name) => (
-                <button
-                  key={name}
-                  disabled={command.isPending}
-                  onClick={() => command.mutate('/' + name)}
-                >
-                  /{name}
-                </button>
-              ))}
+              {shortcuts
+                .filter((name) => !['help', 'stop', 'esc'].includes(name))
+                .map((name) => (
+                  <button
+                    key={name}
+                    disabled={command.isPending}
+                    onClick={() => command.mutate('/' + name)}
+                  >
+                    /{name}
+                  </button>
+                ))}
             </div>
           </Dialog>
         )}

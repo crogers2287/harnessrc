@@ -1,4 +1,5 @@
 import { CodexAsyncQuestions } from '../../../packages/adapters/src/codex-async-questions.ts';
+import { CodexGoals } from '../../../packages/adapters/src/codex-goals.ts';
 import { CodexSettings } from '../../../packages/adapters/src/codex-settings.ts';
 import { randomUUID } from 'node:crypto';
 import type { Agent, HerdrClient } from '@harnessrc/herdr';
@@ -342,12 +343,17 @@ export class CodexLinks {
     prompt: (s: Session, t: Task) => string = (_s, t) => t.prompt,
     images: (s: Session, t: Task) => string[] = () => [],
   ) {
-    const settings = new CodexSettings(this.native, async (s) => {
+    const assertOwner = async (s: Session) => {
       if (!this.hasLink(s)) throw new Error('Codex binding is not verified');
       await this.assertDelivery(client, s);
       await client.assertBinding(s);
-    });
+    };
+    const settings = new CodexSettings(this.native, assertOwner);
+    const goals = new CodexGoals(this.native, assertOwner);
     return {
+      goal: (s: Session) => goals.read(s),
+      setGoal: (s: Session, change: import('@harnessrc/protocol').GoalChange) =>
+        goals.set(s, change),
       models: (s: Session) => settings.models(s),
       setModel: (s: Session, value: import('@harnessrc/protocol').ModelSelection) =>
         settings.setModel(s, value),

@@ -770,8 +770,33 @@ fun ChoiceField(
 
 @Composable
 fun AgentTasksScreen(vm: RelayModel, openQueue: () -> Unit, openSubagents: () -> Unit, back: () -> Unit) {
+    LaunchedEffect(vm.selected) { while (true) { vm.refreshGoal(); delay(5000) } }
     Page("Agent tasks", back) {
         OutlinedButton(onClick = openSubagents, modifier = Modifier.heightIn(min = 48.dp)) { Text("Sub-agent conversations") }
+        Text("Goal", style = MaterialTheme.typography.titleMedium)
+        if (vm.goalLoading) Text("Loading goal…")
+        if (vm.goalError.isNotBlank()) {
+            Text("Could not load the current goal. ${vm.goalError}", color = MaterialTheme.colorScheme.error)
+            OutlinedButton(onClick = { vm.refreshGoal() }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Retry goal") }
+        }
+        val snapshot = vm.goal
+        val goal = snapshot?.optJSONObject("goal")
+        if (snapshot != null && !snapshot.optBoolean("supported")) Text(snapshot.str("reason"))
+        else if (snapshot != null && goal == null) Text("No goal set. Send /goal followed by your objective to start one.")
+        if (goal != null) {
+            val status = goal.str("status")
+            Text(goalStatus(status), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            Text(goal.str("objective"))
+            val budget = if (goal.has("tokenBudget") && !goal.isNull("tokenBudget")) " / ${goal.optLong("tokenBudget")}" else ""
+            val elapsed = goal.optLong("timeUsedSeconds")
+            Text("${goal.optLong("tokensUsed")}$budget tokens · ${elapsed / 60}m ${elapsed % 60}s elapsed", style = MaterialTheme.typography.bodySmall)
+            if (vm.connected && (vm.session?.can("sendMessage") == true || vm.session?.can("steerActiveTurn") == true) && status in listOf("active", "paused", "blocked", "usageLimited", "budgetLimited")) {
+                OutlinedButton(onClick = { vm.command(if (status == "active") "/goal pause" else "/goal resume", preserveDraft = true) }, enabled = !vm.working && !vm.sending, modifier = Modifier.heightIn(min = 48.dp)) { Text(if (status == "active") "Pause goal" else "Resume goal") }
+            }
+        }
+        if (vm.commandNotice.isNotBlank()) Text(vm.commandNotice)
+        if (vm.error.isNotBlank()) Text(vm.error, color = MaterialTheme.colorScheme.error)
+        HorizontalDivider()
         val plan = vm.plan
         val steps = plan?.rows("steps") ?: emptyList()
         if (plan == null) {

@@ -512,3 +512,30 @@ to a regular file. Workers that finished before discovery, pipe-only output and
 remote processes cannot be reconstructed from names or timestamps. Regression
 coverage checks parent isolation, native-link conflicts, invalid child IDs, PID
 reuse, model/state display, authenticated history and persistence after exit.
+
+### Native goals — Android 0.1.38-dsh-preview
+
+Web and Android show the current native Codex goal above the structured plan in
+Agent tasks, including distinct goal state, objective, consumed tokens, optional
+budget and elapsed time. Pause/Resume use durable command receipts and retain the
+parent chat draft. Both clients refresh goal state every five seconds while the
+task screen is open, expose retry on read failure, and distinguish unsupported
+connections from an empty goal. Web additionally draws a token-budget progress
+bar; Android shows the same counters as native text.
+
+Command suggestions now come from the session's gateway catalog. Codex goals and
+base settings commands use the existing verified native owner rather than hidden
+terminal menus; other harness commands keep their own native transport. See
+[SESSION_COMMANDS.md](SESSION_COMMANDS.md) for exact syntax, support and limits.
+The gateway update fixes typed commands in existing clients. The Android task
+screen and dynamic suggestions require the supplied 0.1.38 preview APK; deploying
+the web bundle alone does not update installed Android code.
+
+Validation: 227 backend tests, TypeScript, ESLint and production web build pass.
+Four browser flows cover goal commands/counters/pause/resume/read errors, draft
+preservation, harness command suggestions, mobile overflow, native approvals and
+queued work. The 390px goal screen was visually inspected, with 320px overflow
+checked. Android unit tests, lint, debug/test builds and the privately signed
+release build pass. Native goal instrumentation is compiled; execution remains
+unverified because this host denies KVM access and the software-only disposable
+emulator has not booted. Physical Android UI/keyboard behavior is unverified.

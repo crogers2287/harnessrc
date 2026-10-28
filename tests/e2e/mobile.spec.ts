@@ -3640,3 +3640,95 @@ test('DSH layout switches parent and agents without losing drafts and follows is
   await picker.getByRole('button', { name: /Image reviewer/ }).click();
   await page.screenshot({ path: '/tmp/relay-dsh-agent-dark.png' });
 });
+
+test('native goals appear in Agent tasks and commands preserve the parent draft', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  let goal: any = null;
+  let failRead = false;
+  const commands: any[] = [];
+  let chatWrites = 0;
+  page.on('request', (r) => {
+    if (r.method() === 'POST' && /\/(messages|tasks)$/.test(new URL(r.url()).pathname))
+      chatWrites++;
+  });
+  await page.route('**/api/sessions/*', async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    await route.fulfill({
+      response,
+      json: {
+        ...data,
+        commands: ['help', 'model', 'permissions', 'status', 'goal', 'tasks', 'agents', 'stop'].map(
+          (name) => ({ name }),
+        ),
+      },
+    });
+  });
+  await page.route('**/api/sessions/*/goal', (route) =>
+    failRead
+      ? route.fulfill({ status: 503, json: { error: 'Native connection unavailable' } })
+      : route.fulfill({ json: { supported: true, goal } }),
+  );
+  await page.route('**/api/sessions/*/commands', (route) => {
+    const body = route.request().postDataJSON();
+    commands.push(body);
+    if (
+      body.line.startsWith('/goal ') &&
+      !['/goal pause', '/goal resume', '/goal clear'].includes(body.line)
+    )
+      goal = {
+        objective: body.line.slice(6),
+        status: 'active',
+        tokensUsed: 1200,
+        tokenBudget: 10000,
+        timeUsedSeconds: 65,
+      };
+    if (body.line === '/goal pause') goal.status = 'paused';
+    if (body.line === '/goal resume') goal.status = 'active';
+    if (body.line === '/goal clear') goal = null;
+    return route.fulfill({ json: { mode: 'command', action: 'tasks', message: 'Goal updated.' } });
+  });
+  await pair(page);
+  await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
+  const input = page.getByLabel('Instruction', { exact: true });
+  await input.fill('/goal Verify the release\nand keep existing workflows working');
+  await expect(page.getByRole('button', { name: '/goal', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '/compact', exact: true })).toHaveCount(0);
+  await input.press('Enter');
+  const panel = page.getByRole('region', { name: 'Session goal' });
+  await expect(
+    panel.getByText('Verify the release\nand keep existing workflows working'),
+  ).toBeVisible();
+  await expect(panel.getByRole('heading', { name: 'Goal · Running' })).toBeVisible();
+  await expect(panel.getByRole('progressbar', { name: 'Goal token budget' })).toHaveAttribute(
+    'value',
+    '1200',
+  );
+  await page.screenshot({ path: 'test-results/goal-tasks-mobile.png' });
+  await page.getByRole('button', { name: 'Back to sessions', exact: true }).click();
+  await input.fill('Keep this separate draft');
+  await page.getByRole('button', { name: 'Agent tasks', exact: true }).click();
+  await panel.getByRole('button', { name: 'Pause goal', exact: true }).click();
+  await expect(panel.getByRole('heading', { name: 'Goal · Paused' })).toBeVisible();
+  await panel.getByRole('button', { name: 'Resume goal', exact: true }).click();
+  await expect(panel.getByRole('heading', { name: 'Goal · Running' })).toBeVisible();
+  failRead = true;
+  await page.waitForTimeout(5200);
+  await expect(panel.getByRole('alert')).toContainText('Could not load the current goal');
+  failRead = false;
+  await panel.getByRole('button', { name: 'Retry goal' }).click();
+  await expect(panel.getByRole('alert')).toHaveCount(0);
+  await page.setViewportSize({ width: 320, height: 740 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.getByRole('button', { name: 'Back to sessions', exact: true }).click();
+  await expect(input).toHaveText('Keep this separate draft');
+  expect(commands.map((c) => c.line)).toEqual([
+    '/goal Verify the release\nand keep existing workflows working',
+    '/goal pause',
+    '/goal resume',
+  ]);
+  expect(commands.every((c) => c.requestId && c.generation)).toBe(true);
+  expect(chatWrites).toBe(0);
+});

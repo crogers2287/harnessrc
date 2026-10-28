@@ -1101,7 +1101,7 @@ fun Composer(vm: RelayModel) {
                     }
             }
             if (vm.draft.startsWith("/")) LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(slashShortcuts) { name -> AssistChip(onClick = { vm.command("/$name") }, label = { Text("/$name") }, enabled = !vm.working && !vm.sending) }
+                items(vm.slashCommands) { name -> AssistChip(onClick = { vm.command("/$name") }, label = { Text("/$name") }, enabled = !vm.working && !vm.sending) }
             }
             NativeComposer(
                 vm.draft,

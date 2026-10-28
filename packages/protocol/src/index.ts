@@ -175,6 +175,8 @@ export type Host = {
   diagnostic?: string;
 };
 export type Adapter = {
+  goal?: (session: Session) => Promise<GoalSnapshot>;
+  setGoal?: (session: Session, change: GoalChange) => Promise<GoalSnapshot>;
   models?: (session: Session) => Promise<ModelCatalog>;
   setModel?: (session: Session, selection: ModelSelection) => Promise<ModelCatalog>;
   permissions?: (session: Session) => Promise<PermissionSettings>;
@@ -209,6 +211,21 @@ export type Adapter = {
   interrupt?: (session: Session) => Promise<void>;
 };
 export type ModelSelection = { provider: string; model: string; reasoningEffort?: string };
+export type GoalChange = { objective?: string; status?: 'active' | 'paused'; clear?: boolean };
+export type GoalSnapshot = {
+  supported: boolean;
+  reason?: string;
+  goal?: {
+    threadId: string;
+    objective: string;
+    status: string;
+    tokensUsed: number;
+    tokenBudget?: number | null;
+    timeUsedSeconds: number;
+    createdAt: number;
+    updatedAt: number;
+  } | null;
+};
 export type ModelCatalog = {
   current?: ModelSelection;
   default: ModelSelection;

@@ -46,6 +46,8 @@ export class HerdrCliAdapter implements Adapter {
       | 'reconcile'
       | 'models'
       | 'setModel'
+      | 'goal'
+      | 'setGoal'
     >,
   ) {
     const reconcile = this.reconcile.bind(this);

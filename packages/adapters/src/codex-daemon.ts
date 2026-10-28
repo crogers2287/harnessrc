@@ -94,6 +94,9 @@ export class CodexDaemon {
   async request(
     method:
       | 'thread/compact/start'
+      | 'thread/goal/get'
+      | 'thread/goal/set'
+      | 'thread/goal/clear'
       | 'thread/read'
       | 'thread/resume'
       | 'thread/settings/update'

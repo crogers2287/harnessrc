@@ -86,6 +86,30 @@ class RelayModel @JvmOverloads constructor(application: Application, private val
     val session
         get() = sessions.find { it.id == selected }
 
+    var slashCommands by mutableStateOf(slashShortcuts)
+        private set
+    var goal by mutableStateOf<JSONObject?>(null)
+        private set
+    var goalError by mutableStateOf("")
+        private set
+    var goalLoading by mutableStateOf(false)
+        private set
+    private var goalJob: Job? = null
+    fun refreshGoal() {
+        val id = selected
+        if (goalJob?.isActive == true) return
+        goalJob = viewModelScope.launch {
+            goalLoading = goal == null
+            try {
+                val result = api.api("/api/sessions/$id/goal")
+                if (selected == id) { goal = result; goalError = "" }
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                if (selected == id) goalError = friendly(e)
+            } finally { if (selected == id) goalLoading = false }
+        }
+    }
+
     var plan by mutableStateOf<JSONObject?>(null)
     var terminalOutput by mutableStateOf("")
         private set
@@ -309,6 +333,10 @@ class RelayModel @JvmOverloads constructor(application: Application, private val
         terminalOutput = ""
         interactions = emptyList()
         tasks = emptyList()
+        goal = null
+        goalError = ""
+        goalLoading = false
+        slashCommands = slashShortcuts
         notice = ""
         error = ""
         restoreDraft()
@@ -412,6 +440,7 @@ class RelayModel @JvmOverloads constructor(application: Application, private val
             interactions = data.rows("interactions")
             tasks = data.rows("tasks")
             plan = data.optJSONObject("plan")
+            slashCommands = data.rows("commands").map { it.str("name") }.ifEmpty { slashShortcuts }
             data.optJSONObject("session")?.let { updated ->
                 sessions = sessions.map { if (it.id == id) Session(updated) else it }
             }
@@ -544,6 +573,7 @@ class RelayModel @JvmOverloads constructor(application: Application, private val
                 notice = result.str("message")
                 commandNotice = result.str("message")
                 commandAction = result.str("action")
+                if (line.startsWith("/goal")) refreshGoal()
                 viewModelScope.launch { loadCurrent() }
             }
         }
@@ -853,6 +883,10 @@ class RelayModel @JvmOverloads constructor(application: Application, private val
         plan = null
         interactions = emptyList()
         tasks = emptyList()
+        goal = null
+        goalError = ""
+        goalLoading = false
+        slashCommands = slashShortcuts
         events = emptyList()
         sessions = emptyList()
         error = ""

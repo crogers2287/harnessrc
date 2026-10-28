@@ -561,7 +561,19 @@ export async function createGateway(
       interactions: store.interactions(id),
       tasks: store.tasks(id),
       plan: store.latestPlan(id),
+      commands: commands.catalog(id),
     };
+  });
+  app.get('/api/sessions/:id/goal', async (req) => {
+    const { id } = req.params as { id: string };
+    check(req, id);
+    const adapter = runtime.adapters.get(id);
+    if (!adapter?.goal)
+      return {
+        supported: false,
+        reason: 'This harness connection does not expose native goals to Relay.',
+      };
+    return adapter.goal(store.session(id));
   });
   app.get('/api/sessions/:id/subagents', async (req) => {
     const { id } = req.params as { id: string };

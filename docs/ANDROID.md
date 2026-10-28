@@ -292,3 +292,20 @@ notification behavior remains unverified.
 
 Signed APK 0.1.34 (versionCode 35) is published in the gateway data directory.
 SHA-256: `18f99820e41255e49c86a21b708813c26d17d1d87b91236068c89b675c6e9dc3`.
+
+### 0.1.38-dsh-preview — Native goals and session commands (2026-10-28)
+
+The preview adds a native Goal section above task progress, including objective,
+Running/Paused/Blocked/Completed and limit states, token counters, elapsed time,
+and Pause/Resume without losing the chat draft. Command suggestions come from
+the selected session. Typed Codex goal and base settings commands use the
+verified native server; the existing APK also receives that gateway routing fix.
+
+Unit tests, lint, debug/test builds and signed release build pass. The new native
+goal test is compiled but has not executed: KVM access is denied on this host and
+the software-only disposable emulator has not booted. Physical rendering/input
+remain unverified. The authenticated default APK download stays on its existing
+release; this experimental update is supplied as a chat artifact.
+
+Signed preview APK SHA-256:
+`64801881972b1929fc76137d032ae773f182ef98d21bb381fa0403777f5f24ae`.

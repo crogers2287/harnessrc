@@ -4205,8 +4205,25 @@ body,
   border-radius: 24px;
   padding: 8px 20px;
 }
-.conversation-picker-dialog { margin: auto; }
-.conversation-picker-dialog::backdrop { background: #0002; }
+.conversation-picker-dialog {
+  margin: auto;
+}
+.conversation-picker-dialog::backdrop {
+  background: #0002;
+}
 @media (min-width: 768px) {
-  .conversation-picker-dialog { margin: 88px 0 24px 320px; width: min(460px, calc(100vw - 344px)); }
+  .conversation-picker-dialog {
+    margin: 88px 0 24px 320px;
+    width: min(460px, calc(100vw - 344px));
+  }
+}
+
+.goal-panel .goal-objective {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.goal-panel h2 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4em;
 }

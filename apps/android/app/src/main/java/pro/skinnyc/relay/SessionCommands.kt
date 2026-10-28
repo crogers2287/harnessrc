@@ -7,3 +7,13 @@ fun commandScreen(action: String): String = when (action) {
     "tasks" -> "tasks"
     else -> ""
 }
+
+fun goalStatus(status: String): String = when (status) {
+    "active" -> "Running"
+    "paused" -> "Paused"
+    "blocked" -> "Blocked"
+    "usageLimited" -> "Usage limit reached"
+    "budgetLimited" -> "Token budget reached"
+    "complete" -> "Completed"
+    else -> status
+}

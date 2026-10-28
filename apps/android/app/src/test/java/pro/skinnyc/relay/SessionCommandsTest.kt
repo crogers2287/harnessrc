@@ -3,6 +3,15 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SessionCommandsTest {
+    @Test fun goalStatesRemainDistinctFromTurnStates() {
+        assertEquals("Running", goalStatus("active"))
+        assertEquals("Paused", goalStatus("paused"))
+        assertEquals("Blocked", goalStatus("blocked"))
+        assertEquals("Completed", goalStatus("complete"))
+        assertEquals("Token budget reached", goalStatus("budgetLimited"))
+        assertEquals("Usage limit reached", goalStatus("usageLimited"))
+        assertTrue(isSlashCommand("/goal Verify tests\nPreserve behavior"))
+    }
     @Test fun slashInputIsNotAnOrdinaryMessageOrFilesystemPath() {
         assertTrue(isSlashCommand("/compact"))
         assertTrue(isSlashCommand(" /model codex/example "))
