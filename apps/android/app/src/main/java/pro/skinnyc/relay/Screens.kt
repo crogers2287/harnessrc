@@ -772,6 +772,7 @@ fun ChoiceField(
 fun AgentTasksScreen(vm: RelayModel, openQueue: () -> Unit, openSubagents: () -> Unit, back: () -> Unit) {
     LaunchedEffect(vm.selected) { while (true) { vm.refreshGoal(); delay(5000) } }
     Page("Agent tasks", back) {
+        Text("${vm.session?.title.orEmpty()} · ${vm.session?.agent.orEmpty()}", style = MaterialTheme.typography.bodySmall)
         OutlinedButton(onClick = openSubagents, modifier = Modifier.heightIn(min = 48.dp)) { Text("Sub-agent conversations") }
         Text("Goal", style = MaterialTheme.typography.titleMedium)
         if (vm.goalLoading) Text("Loading goal…")
@@ -782,16 +783,27 @@ fun AgentTasksScreen(vm: RelayModel, openQueue: () -> Unit, openSubagents: () ->
         val snapshot = vm.goal
         val goal = snapshot?.optJSONObject("goal")
         if (snapshot != null && !snapshot.optBoolean("supported")) Text(snapshot.str("reason"))
-        else if (snapshot != null && goal == null) Text("No goal set. Send /goal followed by your objective to start one.")
+        else if (snapshot != null && goal == null) Text(snapshot.str("reason").ifBlank { "No goal set. Send /goal followed by your objective to start one." })
         if (goal != null) {
             val status = goal.str("status")
             Text(goalStatus(status), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
             Text(goal.str("objective"))
             val budget = if (goal.has("tokenBudget") && !goal.isNull("tokenBudget")) " / ${goal.optLong("tokenBudget")}" else ""
             val elapsed = goal.optLong("timeUsedSeconds")
-            Text("${goal.optLong("tokensUsed")}$budget tokens · ${elapsed / 60}m ${elapsed % 60}s elapsed", style = MaterialTheme.typography.bodySmall)
-            if (vm.connected && (vm.session?.can("sendMessage") == true || vm.session?.can("steerActiveTurn") == true) && status in listOf("active", "paused", "blocked", "usageLimited", "budgetLimited")) {
+            val metrics = buildList {
+                if (goal.has("tokensUsed") && !goal.isNull("tokensUsed")) add("${goal.optLong("tokensUsed")}$budget tokens")
+                if (goal.has("timeUsedSeconds") && !goal.isNull("timeUsedSeconds")) add("${elapsed / 60}m ${elapsed % 60}s elapsed")
+            }
+            if (metrics.isNotEmpty()) Text(metrics.joinToString(" · "), style = MaterialTheme.typography.bodySmall)
+            val controls = if (snapshot?.has("controls") == true) snapshot.getJSONArray("controls").let { list -> (0 until list.length()).map { list.getString(it) } } else listOf("pause", "resume")
+            val canControl = vm.connected && (vm.session?.can("sendMessage") == true || vm.session?.can("steerActiveTurn") == true)
+            if (canControl && (if (status == "active") "pause" else "resume") in controls && status in listOf("active", "paused", "blocked", "usageLimited", "budgetLimited")) {
                 OutlinedButton(onClick = { vm.command(if (status == "active") "/goal pause" else "/goal resume", preserveDraft = true) }, enabled = !vm.working && !vm.sending, modifier = Modifier.heightIn(min = 48.dp)) { Text(if (status == "active") "Pause goal" else "Resume goal") }
+            }
+            if (canControl && "clear" in controls && status == "active") {
+                val ready = vm.session?.status in listOf("idle", "done", "working")
+                OutlinedButton(onClick = { vm.command("/goal clear", preserveDraft = true) }, enabled = ready && !vm.sending && !vm.working, modifier = Modifier.heightIn(min = 48.dp)) { Text("Clear goal") }
+                if (!ready) Text("Resolve the pending question before changing the Claude goal.", style = MaterialTheme.typography.bodySmall)
             }
         }
         if (vm.commandNotice.isNotBlank()) Text(vm.commandNotice)

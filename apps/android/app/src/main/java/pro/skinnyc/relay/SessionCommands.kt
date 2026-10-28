@@ -15,5 +15,7 @@ fun goalStatus(status: String): String = when (status) {
     "usageLimited" -> "Usage limit reached"
     "budgetLimited" -> "Token budget reached"
     "complete" -> "Completed"
+    "cleared" -> "Cleared"
+    "failed" -> "Failed"
     else -> status
 }

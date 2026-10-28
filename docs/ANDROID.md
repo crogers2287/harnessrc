@@ -309,3 +309,20 @@ release; this experimental update is supplied as a chat artifact.
 
 Signed preview APK SHA-256:
 `64801881972b1929fc76137d032ae773f182ef98d21bb381fa0403777f5f24ae`.
+
+
+### 0.1.39-dsh-preview: Claude goal support
+
+Signed APK SHA-256: `1d0cf62824a5ac1f6e35e71e58c3bdd8160515f59291f19f4f553fc0da2acfb8`.
+
+The previous 0.1.38 preview only connected Codex goals. This release also reads
+Claude native goal markers, hides unreported counters and Codex Pause/Resume,
+provides native Clear, and identifies the session on Agent tasks. Claude commands
+are native CLI submissions, including during work; unresolved questions remain
+fenced. No native goal is manufactured from a delivery receipt.
+
+Android unit tests (29), lint, debug/test APKs and the signed release build pass.
+The added Claude instrumentation regression compiles but has not run: the host
+cannot access KVM and its disposable software emulator did not complete booting.
+No physical phone was used for fixture tests. The preview is attached to Relay
+chat; the stable APK download is unchanged.

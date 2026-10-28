@@ -3,7 +3,13 @@ import { claudeUsage, codexUsage } from './usage.ts';
 import { readdir, realpath, stat, open } from 'node:fs/promises';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { capabilities, type Adapter, type Session, type SourceEvent } from '@harnessrc/protocol';
+import {
+  capabilities,
+  type Adapter,
+  type Session,
+  type SourceEvent,
+  type GoalSnapshot,
+} from '@harnessrc/protocol';
 export function textContent(content: any): string {
   if (typeof content === 'string') return content;
   if (!Array.isArray(content)) return '';
@@ -40,6 +46,39 @@ function source(
 }
 export function normalizeClaude(record: any): SourceEvent[] {
   const id = record.uuid;
+  const goal = record.attachment;
+  if (
+    id &&
+    record.type === 'attachment' &&
+    goal?.type === 'goal_status' &&
+    typeof goal.condition === 'string' &&
+    goal.condition.trim() &&
+    (typeof goal.met === 'boolean' || goal.failed === true)
+  ) {
+    const at = Date.parse(record.timestamp);
+    return [
+      source(record, id, 'agent.status', {
+        nativeMeta: true,
+        goal: {
+          threadId: record.sessionId,
+          objective: goal.condition,
+          status: goal.failed
+            ? 'failed'
+            : goal.met
+              ? goal.sentinel
+                ? 'cleared'
+                : 'complete'
+              : 'active',
+          ...(Number.isFinite(goal.tokens) && goal.tokens >= 0 ? { tokensUsed: goal.tokens } : {}),
+          ...(Number.isFinite(goal.durationMs) && goal.durationMs >= 0
+            ? { timeUsedSeconds: goal.durationMs / 1000 }
+            : {}),
+          createdAt: Number.isFinite(at) ? at : 0,
+          updatedAt: Number.isFinite(at) ? at : 0,
+        },
+      }),
+    ];
+  }
   if (!id || !['user', 'assistant'].includes(record.type)) return [];
   const content = record.message?.content;
   const events: SourceEvent[] = [];
@@ -171,14 +210,20 @@ export function normalizeCodex(record: any, index: number): SourceEvent[] {
   if (record.type === 'event_msg') {
     if (p.type === 'token_count') {
       const usage = codexUsage(p.info);
-      return usage ? [source(record, `${prefix}:usage`, 'progress', { usage, nativeMeta: true })] : [];
+      return usage
+        ? [source(record, `${prefix}:usage`, 'progress', { usage, nativeMeta: true })]
+        : [];
     }
     if (p.type === 'task_started')
       return [source(record, prefix, 'turn.started', { turnId: p.turn_id })];
     if (p.type === 'turn_aborted')
-      return [source(record, prefix, 'turn.completed', {
-        turnId: p.turn_id, status: 'interrupted', text: 'Turn stopped',
-      })];
+      return [
+        source(record, prefix, 'turn.completed', {
+          turnId: p.turn_id,
+          status: 'interrupted',
+          text: 'Turn stopped',
+        }),
+      ];
     // A turn the provider rejected still ends in task_complete, but carries the error.
     if (p.type === 'task_complete' && p.error)
       return [
@@ -284,6 +329,14 @@ export class JsonlAdapter implements Adapter {
     string,
     { file: string; inode: number; offset: number; index: number; partial: string }
   >();
+  hasMore(session: Session) {
+    return this.remaining.has(session.id);
+  }
+  private remaining = new Set<string>();
+  private revisions = new Map<string, number>();
+  revision(session: Session) {
+    return this.revisions.get(session.id) ?? 0;
+  }
   constructor(
     private root: string,
     private harness: 'claude' | 'codex' | 'omp',
@@ -302,8 +355,10 @@ export class JsonlAdapter implements Adapter {
     file ??= await resolveTranscript(session, this.root);
     const s = await stat(file);
     let c = this.cursors.get(session.id);
-    if (!c || c.file !== file || c.inode !== s.ino || s.size < c.offset)
+    if (!c || c.file !== file || c.inode !== s.ino || s.size < c.offset) {
       c = { file, inode: s.ino, offset: 0, index: 0, partial: '' };
+      this.revisions.set(session.id, this.revision(session) + 1);
+    }
     // Import arbitrarily long histories in bounded chunks, including after restart.
     const handle = await open(file, 'r');
     try {
@@ -311,6 +366,8 @@ export class JsonlAdapter implements Adapter {
       const buffer = Buffer.alloc(size);
       const { bytesRead } = await handle.read(buffer, 0, size, c.offset);
       c.offset += bytesRead;
+      if (c.offset < s.size) this.remaining.add(session.id);
+      else this.remaining.delete(session.id);
       /* Buffer remainder avoids splitting UTF-8 across read boundaries. */ const combined =
         Buffer.concat([Buffer.from(c.partial, 'base64'), buffer.subarray(0, bytesRead)]);
       const last = combined.lastIndexOf(10);
@@ -348,6 +405,48 @@ export class JsonlAdapter implements Adapter {
     } finally {
       await handle.close();
     }
+  }
+}
+/** Independent bounded transcript cursor: goal reads never consume chat history. */
+export class ClaudeGoals {
+  private reader: JsonlAdapter;
+  private goals = new Map<string, GoalSnapshot['goal']>();
+  private pending = new Map<string, Promise<GoalSnapshot>>();
+  constructor(root: string) {
+    this.reader = new JsonlAdapter(root, 'claude');
+  }
+  read(session: Session): Promise<GoalSnapshot> {
+    const prior = this.pending.get(session.id);
+    if (prior) return prior;
+    const run = this.load(session).finally(() => this.pending.delete(session.id));
+    this.pending.set(session.id, run);
+    return run;
+  }
+  private async load(session: Session): Promise<GoalSnapshot> {
+    for (let batch = 0; batch < 16; batch++) {
+      const revision = this.reader.revision(session);
+      const events = await this.reader.read(session);
+      if (revision !== this.reader.revision(session)) this.goals.delete(session.id);
+      for (const event of events) {
+        const raw = event.raw as { sessionId?: string; isSidechain?: boolean } | undefined;
+        if (raw?.sessionId !== session.nativeSessionId || raw?.isSidechain) continue;
+        const goal = event.data.goal as GoalSnapshot['goal'];
+        if (event.kind === 'agent.status' && goal) this.goals.set(session.id, goal);
+      }
+      if (!this.reader.hasMore(session))
+        return {
+          supported: true,
+          controls: ['clear'],
+          goal: this.goals.get(session.id) ?? null,
+          ...(!this.goals.has(session.id)
+            ? {
+                reason:
+                  'Claude has not recorded a native goal status in this session yet. Use /goal <condition> to set one.',
+              }
+            : {}),
+        };
+    }
+    throw new Error('Still reading native Claude goal history. Retry shortly.');
   }
 }
 export class HermesAdapter implements Adapter {

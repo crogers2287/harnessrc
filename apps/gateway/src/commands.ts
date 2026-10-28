@@ -23,7 +23,7 @@ const screens: Record<string, string> = {
   tasks: 'tasks',
   agents: 'subagents',
 };
-/** Commands never enter the model's chat or the follow-up queue. */
+/** Native command routing is separate from ordinary messages and the follow-up queue. */
 export class SessionCommands {
   constructor(private runtime: Runtime) {
     runtime.store.db.exec(`CREATE TABLE IF NOT EXISTS command_receipts (
@@ -34,7 +34,7 @@ export class SessionCommands {
     const s = this.runtime.store.session(id);
     const adapter = this.runtime.adapters.get(id);
     const names = ['help', 'model', 'permissions', 'status', 'tasks', 'agents'];
-    if (s.harness === 'codex' && adapter?.goal) names.splice(3, 0, 'goal');
+    if (adapter?.goal) names.splice(3, 0, 'goal');
     if (adapter?.mode || s.ownership === 'herdr-cli' || s.harness === 'dsh')
       names.push('plan', 'compact');
     if (s.capabilities.interruptTurn || s.capabilities.sendEscape) names.push('stop', 'esc');
@@ -64,7 +64,15 @@ export class SessionCommands {
     const adapter = runtime.adapters.get(id);
     const nativeGoal =
       s.harness === 'codex' && adapter?.goal && adapter?.setGoal && name === 'goal';
-    if (nativeGoal && (!args.length || ['status', 'edit'].includes(argument)))
+    const claudeGoal = s.harness === 'claude' && name === 'goal';
+    if (claudeGoal && ['pause', 'resume'].includes(argument))
+      throw new Error(
+        'Claude Code goals support /goal <condition> and /goal clear. Pause/Resume are not Claude goal commands.',
+      );
+    if (
+      (nativeGoal && (!args.length || ['status', 'edit'].includes(argument))) ||
+      (claudeGoal && adapter?.goal && !args.length)
+    )
       return {
         mode: 'command',
         action: 'tasks',
@@ -75,6 +83,8 @@ export class SessionCommands {
       };
     if (/[\n\r\t]/.test(value.line) && !nativeGoal)
       throw new Error('This native slash command must be a single line.');
+    if (claudeGoal && argument.length > 4000)
+      throw new Error('Claude Code goal conditions are limited to 4000 characters.');
     if (!args.length && screens[name])
       return { mode: 'command', action: screens[name], message: 'Opened session controls.' };
     const client = runtime.clients.get(s.hostId);
@@ -112,6 +122,7 @@ export class SessionCommands {
     if (
       !cancel &&
       !nativeGoal &&
+      !claudeGoal &&
       !nativeSetting &&
       !nativePlan &&
       !['idle', 'done'].includes(state ?? '')

@@ -215,13 +215,14 @@ export type GoalChange = { objective?: string; status?: 'active' | 'paused'; cle
 export type GoalSnapshot = {
   supported: boolean;
   reason?: string;
+  controls?: ('pause' | 'resume' | 'clear')[];
   goal?: {
     threadId: string;
     objective: string;
     status: string;
-    tokensUsed: number;
+    tokensUsed?: number;
     tokenBudget?: number | null;
-    timeUsedSeconds: number;
+    timeUsedSeconds?: number;
     createdAt: number;
     updatedAt: number;
   } | null;

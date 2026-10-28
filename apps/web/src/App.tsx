@@ -1152,6 +1152,9 @@ function Conversation({
     return (
       <>
         <PageHeader title="Agent tasks" back={() => navigate({ session: session.id })} />
+        <p className="muted">
+          {session.sessionName || session.project} · {agentLabel(session.harness)}
+        </p>
         <button
           className="secondary"
           onClick={() => navigate({ session: session.id, view: 'subagents' })}
@@ -1160,6 +1163,7 @@ function Conversation({
         </button>
         <GoalPanel
           sessionId={session.id}
+          cliReady={['idle', 'done', 'working'].includes(session.status)}
           canControl={
             session.connected &&
             (session.capabilities.sendMessage || session.capabilities.steerActiveTurn)

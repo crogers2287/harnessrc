@@ -1,4 +1,5 @@
 import { ClaudeQuestions } from './claude-questions.ts';
+import { ClaudeGoals } from '../../../packages/adapters/src/transcripts.ts';
 import { SubagentReader } from '../../../packages/adapters/src/subagents.ts';
 import { CodexExecWorkers } from './codex-exec-workers.ts';
 import { importNativeImage } from './artifacts.ts';
@@ -30,6 +31,7 @@ export class Runtime extends EventEmitter {
   execWorkers: CodexExecWorkers;
   claudeQuestions = new ClaudeQuestions(this);
   claudeSteering = new ClaudeSteering(this);
+  private claudeGoals: ClaudeGoals;
   dshHosts = new Map<string, DshHost>();
   zcodeHosts = new Map<string, ZcodeHost>();
   clients = new Map<string, HerdrClient>();
@@ -51,6 +53,7 @@ export class Runtime extends EventEmitter {
     public config: Config,
   ) {
     super();
+    this.claudeGoals = new ClaudeGoals(config.transcripts.claude);
     this.execWorkers = new CodexExecWorkers(
       store,
       new Set(config.hosts.filter((h) => h.localFiles).map((h) => h.id)),
@@ -329,6 +332,12 @@ export class Runtime extends EventEmitter {
                 : undefined,
             );
           }
+          if (
+            adapter &&
+            s.harness === 'claude' &&
+            this.config.hosts.find((h) => h.id === hostId)?.localFiles
+          )
+            adapter.goal = (session) => this.claudeGoals.read(session);
           s.capabilities = adapter?.capabilities ?? capabilities([]);
           if (s.harness === 'claude')
             s.capabilities = {

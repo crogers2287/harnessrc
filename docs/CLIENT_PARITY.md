@@ -539,3 +539,21 @@ checked. Android unit tests, lint, debug/test builds and the privately signed
 release build pass. Native goal instrumentation is compiled; execution remains
 unverified because this host denies KVM access and the software-only disposable
 emulator has not booted. Physical Android UI/keyboard behavior is unverified.
+
+
+### Claude goals correction, 2026-10-28
+
+Web and Android 0.1.39 show the selected session/harness on Agent tasks, read
+Claude native goal markers, display only reported counters, and offer Clear
+instead of Codex Pause/Resume. Bare `/goal` opens Tasks for Claude too. Native
+Claude goal commands are permitted while working, but never answer a pending
+question or become a queued follow-up. No marker yet is distinct from unsupported.
+The local-files Claude integration reads native history rather than a Codex RPC;
+remote Claude hosts without local transcripts remain unsupported for goal reads.
+
+Validation: 229 backend tests, TypeScript, lint, web build, 29 Android unit tests,
+Android lint/debug/test APKs and signed release pass. Five distinct browser flows
+pass: approvals/queue/reconnect, shortcuts/drafts, task progress, Codex goals and
+Claude Clear/counters/draft retention. The Claude instrumentation test compiles;
+execution and physical keyboard/font-scale checks remain unverified. Pegfall's
+live native goal was not mutated for tests.

@@ -3732,3 +3732,74 @@ test('native goals appear in Agent tasks and commands preserve the parent draft'
   expect(commands.every((c) => c.requestId && c.generation)).toBe(true);
   expect(chatWrites).toBe(0);
 });
+
+test('Claude goals show native status with Clear and omit unavailable counters and Codex controls', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  let goal: any = { objective: 'Finish Pegfall acceptance checks', status: 'active' };
+  const commands: string[] = [];
+  let chatWrites = 0;
+  page.on('request', (r) => {
+    if (r.method() === 'POST' && /\/(messages|tasks)$/.test(new URL(r.url()).pathname))
+      chatWrites++;
+  });
+  await page.route('**/api/sessions', async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    await route.fulfill({
+      response,
+      json: {
+        ...data,
+        sessions: data.sessions.map((s: any) => ({ ...s, harness: 'claude', status: 'working' })),
+      },
+    });
+  });
+  await page.route('**/api/sessions/*', async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    await route.fulfill({
+      response,
+      json: {
+        ...data,
+        session: { ...data.session, harness: 'claude', status: 'working' },
+        commands: ['goal', 'tasks', 'help'].map((name) => ({ name })),
+      },
+    });
+  });
+  await page.route('**/api/sessions/*/goal', (route) =>
+    route.fulfill({ json: { supported: true, controls: ['clear'], goal } }),
+  );
+  await page.route('**/api/sessions/*/commands', (route) => {
+    const { line } = route.request().postDataJSON();
+    commands.push(line);
+    if (line === '/goal clear') goal = { ...goal, status: 'cleared' };
+    return route.fulfill({
+      json: { mode: 'command', action: 'tasks', message: 'Native command submitted.' },
+    });
+  });
+  await pair(page);
+  await page.locator('button.session-row').filter({ hasText: 'Atlas API' }).click();
+  const input = page.getByLabel('Instruction', { exact: true });
+  await input.fill('/goal');
+  await expect(page.getByRole('button', { name: '/goal', exact: true })).toBeVisible();
+  await input.press('Enter');
+  const panel = page.getByRole('region', { name: 'Session goal' });
+  await expect(page.getByText('Atlas API · Claude Code', { exact: true })).toBeVisible();
+  await expect(panel.getByText('Finish Pegfall acceptance checks')).toBeVisible();
+  await expect(panel.getByRole('button', { name: 'Pause goal', exact: true })).toHaveCount(0);
+  await expect(panel.getByRole('button', { name: 'Resume goal', exact: true })).toHaveCount(0);
+  await expect(panel).not.toContainText('tokens');
+  await expect(panel).not.toContainText('elapsed');
+  await page.getByRole('button', { name: 'Back to sessions', exact: true }).click();
+  await input.fill('Keep the parent draft');
+  await page.getByRole('button', { name: 'Agent tasks', exact: true }).click();
+  await page.evaluate(() => (document.documentElement.dataset.theme = 'dark'));
+  await page.screenshot({ path: 'test-results/claude-goals-mobile.png' });
+  await panel.getByRole('button', { name: 'Clear goal', exact: true }).click();
+  await expect(panel.getByRole('heading', { name: 'Goal · Cleared' })).toBeVisible();
+  await page.getByRole('button', { name: 'Back to sessions', exact: true }).click();
+  await expect(input).toHaveText('Keep the parent draft');
+  expect(commands).toEqual(['/goal', '/goal clear']);
+  expect(chatWrites).toBe(0);
+});

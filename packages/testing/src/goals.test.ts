@@ -1,8 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { appendFile, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { ClaudeGoals, JsonlAdapter } from '../../adapters/src/transcripts.ts';
 import { CodexGoals } from '../../adapters/src/codex-goals.ts';
-import type { GoalSnapshot, Session } from '@harnessrc/protocol';
+import type { GoalChange, GoalSnapshot, Session } from '@harnessrc/protocol';
 import { fixture } from './helpers.ts';
 
 function nativeFixture() {
@@ -130,7 +133,7 @@ test('goal commands work during native work, pause while blocked, isolate owners
     runtime.assertBinding = async () => {};
     runtime.adapters.set(s.id, {
       goal: () => n.native.read(s),
-      setGoal: (_s, change) => n.native.set(s, change),
+      setGoal: (_s: Session, change: GoalChange) => n.native.set(s, change),
       turnState: async () => state,
     } as any);
     const command = (line: string, requestId = randomUUID(), generation = s.generation) =>
@@ -175,6 +178,7 @@ test('goal commands work during native work, pause while blocked, isolate owners
     assert.equal((await command('/goal A new objective')).statusCode, 200);
     assert.deepEqual(f.mock.prompts, []);
     assert.deepEqual(store.tasks(s.id), []);
+    runtime.adapters.delete(s.id);
     store.saveSession({ ...s, harness: 'claude' });
     assert.ok(
       !(await app.inject({ url: `/api/sessions/${s.id}`, headers: f.headers }))
@@ -197,7 +201,7 @@ test('an uncertain goal acknowledgement never repeats a native mutation or creat
     runtime.assertBinding = async () => {};
     runtime.adapters.set(s.id, {
       goal: () => n.native.read(s),
-      setGoal: (_s, change) => n.native.set(s, change),
+      setGoal: (_s: Session, change: GoalChange) => n.native.set(s, change),
       turnState: async () => 'idle',
     } as any);
     const payload = {
@@ -277,6 +281,133 @@ test('base settings commands use adapter APIs without interactive CLI menus and 
       'default',
     ]);
     assert.deepEqual(f.mock.prompts, []);
+  } finally {
+    await f.close();
+  }
+});
+
+test('Claude native goal records track lifecycle without inferring goals from prose or inventing counters', async () => {
+  const f = await fixture({ harness: 'claude', startRuntime: false });
+  try {
+    const s = f.session;
+    const file = path.join(f.dir, `${s.nativeSessionId}.jsonl`);
+    const record = (attachment: unknown, extra = {}) =>
+      JSON.stringify({
+        type: 'attachment',
+        sessionId: s.nativeSessionId,
+        uuid: randomUUID(),
+        timestamp: '2026-10-28T04:00:00Z',
+        attachment,
+        ...extra,
+      }) + '\n';
+    await writeFile(
+      file,
+      JSON.stringify({
+        type: 'user',
+        uuid: 'prose',
+        sessionId: s.nativeSessionId,
+        message: { content: 'Our goal is to ship; /goal should work' },
+      }) + '\n',
+    );
+    const native = new ClaudeGoals(f.dir);
+    assert.equal((await native.read(s)).goal, null);
+    assert.match((await native.read(s)).reason!, /not recorded/);
+    await appendFile(
+      file,
+      record({ type: 'goal_status', condition: 'Ship the release', met: false, sentinel: true }),
+    );
+    const active = await native.read(s);
+    assert.equal(active.goal?.status, 'active');
+    assert.equal(active.goal?.objective, 'Ship the release');
+    assert.deepEqual(active.controls, ['clear']);
+    assert.equal(active.goal?.tokensUsed, undefined);
+    assert.equal(active.goal?.timeUsedSeconds, undefined);
+    await appendFile(
+      file,
+      record({ type: 'goal_status', condition: 'Wrong owner', met: true }, { sessionId: 'other' }) +
+        record({ type: 'goal_status', condition: 'Child goal', met: true }, { isSidechain: true }),
+    );
+    assert.equal((await native.read(s)).goal?.status, 'active');
+    await appendFile(
+      file,
+      record({
+        type: 'goal_status',
+        condition: 'Ship the release',
+        met: true,
+        tokens: 4321,
+        durationMs: 65000,
+      }),
+    );
+    const complete = await native.read(s);
+    assert.equal(complete.goal?.status, 'complete');
+    assert.equal(complete.goal?.tokensUsed, 4321);
+    assert.equal(complete.goal?.timeUsedSeconds, 65);
+    await appendFile(
+      file,
+      record({ type: 'goal_status', condition: 'Ship the release', met: false, failed: true }),
+    );
+    assert.equal((await native.read(s)).goal?.status, 'failed');
+    await appendFile(
+      file,
+      record({ type: 'goal_status', condition: 'Ship the release', met: true, sentinel: true }),
+    );
+    assert.equal((await native.read(s)).goal?.status, 'cleared');
+    // Goal reads have a separate cursor and cannot steal conversation messages.
+    const chat = await new JsonlAdapter(f.dir, 'claude').read(s);
+    assert.ok(chat.some((e) => e.kind === 'user.message' && e.sourceId === 'prose'));
+    await writeFile(file, '');
+    assert.equal((await native.read(s)).goal, null);
+  } finally {
+    await f.close();
+  }
+});
+
+test('Claude runtime exposes goals across refresh; native commands retain CLI routing and busy-turn fences', async () => {
+  const f = await fixture({ harness: 'claude', startRuntime: false });
+  try {
+    const s = f.session;
+    await writeFile(path.join(f.dir, `${s.nativeSessionId}.jsonl`), '');
+    await f.gateway.runtime.refresh('test');
+    const { app, store } = f.gateway;
+    const url = `/api/sessions/${s.id}`;
+    const command = (line: string) =>
+      app.inject({
+        method: 'POST',
+        url: url + '/commands',
+        headers: f.headers,
+        payload: { line, requestId: randomUUID(), generation: f.session.generation },
+      });
+    assert.equal(
+      (await app.inject({ url: url + '/goal', headers: f.headers })).json().supported,
+      true,
+    );
+    assert.ok(
+      (await app.inject({ url, headers: f.headers }))
+        .json()
+        .commands.some((c: any) => c.name === 'goal'),
+    );
+    assert.equal((await command('/goal')).json().action, 'tasks');
+    assert.match((await command('/goal pause')).json().error, /not Claude/);
+    let state = 'working';
+    f.gateway.runtime.adapters.get(s.id)!.turnState = async () => state as Session['status'];
+    const cli: string[] = [];
+    f.gateway.runtime.assertBinding = async () => {};
+    f.gateway.runtime.clients.get(s.hostId)!.request = async (method, params: any) => {
+      assert.equal(method, 'agent.prompt');
+      cli.push(params.text);
+      return { agent: { terminal_id: s.terminalId, agent_session: { value: s.nativeSessionId } } };
+    };
+    assert.equal((await command('/goal clear')).statusCode, 200);
+    state = 'blocked';
+    assert.notEqual((await command('/goal clear')).statusCode, 200);
+    state = 'idle';
+    const sent = await command('/goal Ship the release');
+    assert.equal(sent.statusCode, 200, sent.body);
+    assert.deepEqual(cli, ['/goal clear', '/goal Ship the release']);
+    assert.deepEqual(f.mock.prompts, []);
+    assert.deepEqual(store.tasks(s.id), []);
+    // CLI submission alone never fabricates an active native goal.
+    assert.equal((await app.inject({ url: url + '/goal', headers: f.headers })).json().goal, null);
   } finally {
     await f.close();
   }

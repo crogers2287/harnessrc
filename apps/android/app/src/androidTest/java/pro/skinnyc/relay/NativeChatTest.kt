@@ -51,6 +51,7 @@ class NativeChatTest {
     @Volatile private var recoveredHistory = false
     @Volatile private var helperCurrent: JSONObject? = null
     @Volatile private var goalState = "active"
+    @Volatile private var claudeGoal = false
     private val ctx
         get() = ApplicationProvider.getApplicationContext<Context>()
 
@@ -128,6 +129,7 @@ class NativeChatTest {
                             path == "/api/launch/folders" -> """{"path":"/home/test/Phone project"}"""
                             path == "/api/launch" -> """{"requestId":"test","status":"started","terminalId":"new-terminal"}"""
                             path.endsWith("/mode") -> """{"supported":true,"current":"$selectedMode","options":[{"value":"default","name":"Build"},{"value":"plan","name":"Plan","description":"Applies to subsequent turns."}]}"""
+                            path.endsWith("/goal") && claudeGoal -> json("supported" to true, "controls" to org.json.JSONArray().put("clear"), "goal" to json("objective" to "Finish Pegfall acceptance checks", "status" to "active")).toString()
                             path.endsWith("/goal") -> json("supported" to true, "goal" to json("objective" to "Verify release with native evidence", "status" to goalState, "tokensUsed" to 1200, "tokenBudget" to 10000, "timeUsedSeconds" to 65)).toString()
                             path.endsWith("/usage") -> """{"supported":true,"input":12000,"output":500,"total":12500,"contextUsed":4200,"contextWindow":200000}"""
                             path.endsWith("/models") || path.endsWith("/model") -> """{"current":{"provider":"fred","model":"$selectedModel","reasoningEffort":"$selectedEffort"},"default":{"provider":"fred","model":"flash-next"},"groups":[{"id":"fred","name":"Fred","models":[{"id":"flash-next","name":"Flash Next","reasoningEfforts":["low","medium","high"]},{"id":"astra","name":"Astra","reasoningEfforts":["low","medium","high"]}]}]}"""
@@ -200,6 +202,21 @@ class NativeChatTest {
         val lines = requests.filter { it.path?.endsWith("/commands") == true }.map { JSONObject(it.body.clone().readUtf8()).str("line") }
         assertEquals(listOf("/goal pause", "/goal resume"), lines)
         assertFalse(requests.any { it.path?.endsWith("/messages") == true || it.path?.endsWith("/tasks") == true })
+    }
+
+    @Test
+    fun claudeGoalsOmitUnavailableCountersAndCodexControls() {
+        claudeGoal = true
+        scenario.onActivity { it.model.edit("Keep the parent draft") }
+        compose.onNodeWithContentDescription("Agent tasks").performClick()
+        compose.waitUntil(10000) { compose.onAllNodesWithText("Finish Pegfall acceptance checks").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Pause goal").assertDoesNotExist()
+        compose.onNodeWithText("Resume goal").assertDoesNotExist()
+        compose.onNodeWithText("Clear goal").assertIsEnabled()
+        compose.onNodeWithText("1200 / 10000 tokens · 1m 5s elapsed").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Back").performClick()
+        scenario.onActivity { assertEquals("Keep the parent draft", it.model.draft) }
+        assertFalse(requests.any { it.path?.endsWith("/commands") == true || it.path?.endsWith("/messages") == true || it.path?.endsWith("/tasks") == true })
     }
 
     @Test
